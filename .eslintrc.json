@@ -1,0 +1,40 @@
+{
+    "env": {
+      "browser": true,
+      "commonjs": true,
+      "es2021": true
+    },
+    "extends": "standard",
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+      "ecmaVersion": "latest",
+      "sourceType": "module"
+    },
+    "plugins": [
+      "@typescript-eslint",
+      "prettier",
+      "jest"
+    ],
+    "rules": {
+      "indent": ["error", 2, { "SwitchCase": 1 }],
+      "semi": ["error", "never"],
+      "quotes": ["error", "single"],
+      "comma-dangle": [2, "always-multiline"],
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": ["error", { "ignoreRestSiblings": true }],
+      "no-useless-constructor": "off",
+      "@typescript-eslint/no-useless-constructor": "error"
+    },
+    "overrides": [
+      {
+        "files": [
+          "**/__tests__/**/*.[jt]s?(x)",
+          "**/?(*.)+(spec|test).[tj]s?(x)"
+        ],
+        "env": {
+          "jest": true
+        }
+      }
+    ]
+  }
+  

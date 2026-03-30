@@ -1,0 +1,9 @@
+/node_modules
+/dist
+.eslintrc.json
+.eslintignore
+jest.config.ts
+package.json
+package-lock.json
+yarn.lock
+serverless.ts
