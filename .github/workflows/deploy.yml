@@ -1,0 +1,188 @@
+name: MintlyApi Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to deploy
+        required: true
+        type: choice
+        options:
+          - vercel
+          - aws
+      environment:
+        description: Which environment to deploy
+        required: true
+        default: production
+        type: choice
+        options:
+          - staging
+          - production
+      confirm_deploy:
+        description: Confirm that you want to run this deployment
+        required: true
+        default: false
+        type: boolean
+
+concurrency:
+  group: mintlyapi-deploy-${{ inputs.target }}-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  verify-inputs:
+    name: Confirm deployment request
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [ "${{ inputs.confirm_deploy }}" != "true" ]; then
+            echo "Deployment cancelled because confirm_deploy was not checked."
+            exit 1
+          fi
+
+  deploy-vercel:
+    name: Deploy to Vercel
+    needs: verify-inputs
+    if: ${{ inputs.target == 'vercel' }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    env:
+      API_URL: ${{ secrets.API_URL }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup npm
+        run: npm install --global npm@11.11.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Validate Swagger
+        run: npm run validate:swagger
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel environment
+        run: |
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+          else
+            vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+          fi
+
+      - name: Build Vercel artifacts
+        run: |
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+          else
+            vercel build --token=${{ secrets.VERCEL_TOKEN }}
+          fi
+
+      - name: Deploy to Vercel
+        run: |
+          if [ "${{ inputs.environment }}" = "production" ]; then
+            vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+          else
+            vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
+          fi
+
+  deploy-aws:
+    name: Deploy to AWS EC2
+    needs: verify-inputs
+    if: ${{ inputs.target == 'aws' }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    env:
+      API_URL: ${{ secrets.API_URL }}
+      AWS_EC2_HOST: ${{ secrets.AWS_EC2_HOST }}
+      AWS_EC2_USER: ${{ secrets.AWS_EC2_USER }}
+      AWS_APP_DIR: ${{ secrets.AWS_APP_DIR }}
+      AWS_PROCESS_NAME: ${{ secrets.AWS_PROCESS_NAME }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup npm
+        run: npm install --global npm@11.11.0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Validate Swagger
+        run: npm run validate:swagger
+
+      - name: Create deployment archive
+        run: tar -czf mintly-api-deploy.tgz dist package.json package-lock.json
+
+      - name: Configure SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AWS_EC2_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "$AWS_EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload deployment package
+        run: scp mintly-api-deploy.tgz "$AWS_EC2_USER@$AWS_EC2_HOST:/tmp/mintly-api-deploy.tgz"
+
+      - name: Deploy on EC2 instance
+        run: |
+          ssh "$AWS_EC2_USER@$AWS_EC2_HOST" <<EOF
+            set -e
+            mkdir -p "$AWS_APP_DIR"
+            tar -xzf /tmp/mintly-api-deploy.tgz -C "$AWS_APP_DIR"
+            cd "$AWS_APP_DIR"
+            npm ci --omit=dev
+            if command -v pm2 >/dev/null 2>&1; then
+              pm2 describe "$AWS_PROCESS_NAME" >/dev/null 2>&1 && pm2 restart "$AWS_PROCESS_NAME" --update-env || pm2 start dist/server.js --name "$AWS_PROCESS_NAME"
+            elif command -v systemctl >/dev/null 2>&1; then
+              sudo systemctl restart "$AWS_PROCESS_NAME"
+            else
+              pkill -f "node dist/server.js" || true
+              nohup node dist/server.js > /tmp/"$AWS_PROCESS_NAME".log 2>&1 &
+            fi
+          EOF
