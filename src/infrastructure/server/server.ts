@@ -5,6 +5,7 @@ import { mongoConnection } from '../db/mongodb'
 import { personRoutes } from '../../app/person/person-routes'
 import { BaseError } from '../../core/errors/core/base-error'
 import { AuroraValidationError } from 'mintly-lib'
+import { tenantIsolationHook } from '../../core/middleware/tenant-isolation'
 
 dotenv.config()
 
@@ -25,6 +26,9 @@ async function start () {
       reply.header('Content-Security-Policy', `default-src 'self'; connect-src 'self' ${process.env.API_URL || 'http://localhost:3000'};`)
       return payload
     })
+
+    // 3.1. Hook de tenant isolation (antes das rotas)
+    server.addHook('preHandler', tenantIsolationHook)
 
     // 4. Error handler global
     server.setErrorHandler((error, request, reply) => {

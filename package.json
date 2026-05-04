@@ -9,7 +9,9 @@
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "build": "tsc",
-    "test": "vitest"
+    "test": "vitest",
+    "test-schema-validation": "tsx scripts/test-schema-validation.ts",
+    "test-tenant-isolation": "tsx scripts/test-tenant-isolation.ts"
   },
   "keywords": [],
   "author": "",
@@ -18,12 +20,12 @@
     "@fastify/cors": "^10.0.1",
     "fastify": "^5.0.0",
     "http-status-codes": "^2.3.0",
-    "mongodb": "^6.3.0",
-    "mintly-lib": "1.0.0"
+    "mintly-lib": "1.0.0",
+    "mongodb": "^6.3.0"
   },
   "devDependencies": {
     "@types/http-status-codes": "^1.2.0",
-    "@types/node": "^20.11.5",
+    "@types/node": "^20.19.39",
     "@typescript-eslint/eslint-plugin": "6.4.0",
     "dotenv": "^16.4.5",
     "eslint": "8.0.1",
