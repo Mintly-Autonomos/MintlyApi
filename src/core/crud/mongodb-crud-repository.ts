@@ -1,7 +1,7 @@
 import { Collection, ObjectId, Filter, Document } from 'mongodb'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { CrudRepository } from './crud-repository-interface'
-import { PaginationDto } from 'mintly-lib'
+import { PaginationDto } from '../types/pagination'
 
 export class MongodbCrudRepository<T extends Document, ID> implements CrudRepository<T, ID> {
   constructor (

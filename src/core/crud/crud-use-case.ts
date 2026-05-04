@@ -1,5 +1,5 @@
 import { CrudRepository } from './crud-repository-interface'
-import { PaginationDto } from 'mintly-lib'
+import { PaginationDto } from '../types/pagination'
 
 export class CrudUseCase<T, ID> {
   constructor (private readonly repository: CrudRepository<T, ID>) {}

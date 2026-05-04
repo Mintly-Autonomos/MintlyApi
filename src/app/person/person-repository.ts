@@ -1,5 +1,5 @@
 import { MongodbCrudRepository } from '../../core/crud/mongodb-crud-repository'
-import { Person } from 'mintly-lib'
+import { Person } from './person-model'
 
 export class PersonRepository extends MongodbCrudRepository<Person, string> {
   constructor () {

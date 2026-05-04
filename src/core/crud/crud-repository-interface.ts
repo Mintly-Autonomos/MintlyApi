@@ -1,4 +1,4 @@
-import { PaginationDto } from 'mintly-lib'
+import { PaginationDto } from '../types/pagination'
 
 export interface CrudRepository<T, ID> {
   insert(item: T, env: string): Promise<T>
