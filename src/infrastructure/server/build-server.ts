@@ -7,9 +7,7 @@ import { personRoutes } from '../../app/person/person-routes'
 import { healthRoutes } from '../../app/health/health-routes'
 import { BaseError } from '../../core/errors/core/base-error'
 
-export async function buildServer (): Promise<FastifyInstance> {
-  const server = Fastify()
-
+export async function buildServer (server: FastifyInstance = Fastify()): Promise<FastifyInstance> {
   await server.register(cors, { origin: true })
 
   await server.register(swagger, {
