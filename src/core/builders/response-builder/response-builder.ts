@@ -1,6 +1,6 @@
 import { FastifyReply } from 'fastify'
 import { StatusCodes } from 'http-status-codes'
-import { PaginationResponseDto } from '../../types/pagination'
+import { PaginationResponseDto } from 'mintly-lib'
 
 type ResponsePayload = string | object | any[] | null
 

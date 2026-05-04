@@ -15,6 +15,9 @@ jobs:
   quality:
     name: Quality Checks
     runs-on: ubuntu-latest
+    env:
+      API_URL: ${{ secrets.API_URL }}
+      BACK_END_URL: ${{ secrets.BACK_END_URL }}
 
     steps:
       - name: Checkout

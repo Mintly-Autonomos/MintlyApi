@@ -2,6 +2,7 @@ import Fastify, { FastifyInstance } from 'fastify'
 import cors from '@fastify/cors'
 import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
+import { AuroraValidationError } from 'mintly-lib'
 import { personRoutes } from '../../app/person/person-routes'
 import { healthRoutes } from '../../app/health/health-routes'
 import { BaseError } from '../../core/errors/core/base-error'
@@ -54,6 +55,14 @@ export async function buildServer (): Promise<FastifyInstance> {
     }
 
     console.error('Erro não tratado:', error)
+    if (error instanceof AuroraValidationError) {
+      return reply.status(400).send({
+        code: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+        details: error.details,
+      })
+    }
+
     return reply.status(500).send({
       code: 'INTERNAL_ERROR',
       message: 'An unexpected error occurred',
