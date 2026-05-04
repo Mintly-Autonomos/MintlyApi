@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Node.js project with TypeScript and MongoDB",
   "main": "dist/server.js",
+  "packageManager": "npm@11.11.0",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
