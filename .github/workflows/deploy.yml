@@ -50,7 +50,6 @@ jobs:
 
     env:
       API_URL: ${{ secrets.API_URL }}
-      BACK_END_URL: ${{ secrets.BACK_END_URL }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
@@ -118,7 +117,6 @@ jobs:
 
     env:
       API_URL: ${{ secrets.API_URL }}
-      BACK_END_URL: ${{ secrets.BACK_END_URL }}
       AWS_EC2_HOST: ${{ secrets.AWS_EC2_HOST }}
       AWS_EC2_USER: ${{ secrets.AWS_EC2_USER }}
       AWS_APP_DIR: ${{ secrets.AWS_APP_DIR }}
