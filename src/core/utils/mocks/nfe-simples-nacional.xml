@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe">
+  <NFe>
+    <infNFe Id="NFe35201111111111111111550010000000021000000020" versao="4.00">
+      <ide>
+        <cUF>35</cUF>
+        <cNF>00000002</cNF>
+        <mod>55</mod>
+        <dhEmi>2024-05-02T11:00:00-03:00</dhEmi>
+      </ide>
+      <emit>
+        <CNPJ>33333333333333</CNPJ>
+        <xNome>Restaurante Simples Nacional</xNome>
+        <UF>SP</UF>
+      </emit>
+      <dest>
+        <CNPJ>44444444444444</CNPJ>
+      </dest>
+      <det nItem="1">
+        <prod>
+          <xProd>Batata</xProd>
+          <qCom>5.0000</qCom>
+          <vUnCom>8.00</vUnCom>
+          <vProd>40.00</vProd>
+          <uCom>kg</uCom>
+          <NCM>07019000</NCM>
+        </prod>
+        <imposto>
+          <ICMS>
+            <ICMSSN102>
+              <orig>0</orig>
+              <CSOSN>102</CSOSN>
+            </ICMSSN102>
+          </ICMS>
+          <PIS>
+            <PISAliq>
+              <CST>01</CST>
+              <vBC>40.00</vBC>
+              <pPIS>1.65</pPIS>
+              <vPIS>0.66</vPIS>
+            </PISAliq>
+          </PIS>
+          <COFINS>
+            <COFINSAliq>
+              <CST>01</CST>
+              <vBC>40.00</vBC>
+              <pCOFINS>7.60</pCOFINS>
+              <vCOFINS>3.04</vCOFINS>
+            </COFINSAliq>
+          </COFINS>
+        </imposto>
+      </det>
+      <total>
+        <ICMSTot>
+          <vNF>40.00</vNF>
+          <vICMS>0.00</vICMS>
+          <vPIS>0.66</vPIS>
+          <vCOFINS>3.04</vCOFINS>
+        </ICMSTot>
+      </total>
+    </infNFe>
+    <Signature>...</Signature>
+  </NFe>
+  <protNFe>
+    <infProt>
+      <chNFe>35201111111111111111550010000000021000000020</chNFe>
+    </infProt>
+  </protNFe>
+</nfeProc>

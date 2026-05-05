@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe">
+  <NFe>
+    <infNFe Id="NFe35211111111111111111650010000000031000000030" versao="4.00">
+      <ide>
+        <cUF>35</cUF>
+        <cNF>00000003</cNF>
+        <mod>65</mod>
+        <dhEmi>2024-05-03T12:00:00-03:00</dhEmi>
+      </ide>
+      <emit>
+        <CNPJ>55555555555555</CNPJ>
+        <xNome>Restaurante NFC-e</xNome>
+        <UF>SP</UF>
+      </emit>
+      <dest>
+        <CNPJ>66666666666666</CNPJ>
+      </dest>
+      <det nItem="1">
+        <prod>
+          <xProd>Refrigerante</xProd>
+          <qCom>2.0000</qCom>
+          <vUnCom>6.00</vUnCom>
+          <vProd>12.00</vProd>
+          <uCom>un</uCom>
+          <NCM>22021000</NCM>
+        </prod>
+        <imposto>
+          <ICMS>
+            <ICMS00>
+              <orig>0</orig>
+              <CST>00</CST>
+              <modBC>3</modBC>
+              <vBC>12.00</vBC>
+              <pICMS>18.00</pICMS>
+              <vICMS>2.16</vICMS>
+            </ICMS00>
+          </ICMS>
+          <PIS>
+            <PISAliq>
+              <CST>01</CST>
+              <vBC>12.00</vBC>
+              <pPIS>1.65</pPIS>
+              <vPIS>0.20</vPIS>
+            </PISAliq>
+          </PIS>
+          <COFINS>
+            <COFINSAliq>
+              <CST>01</CST>
+              <vBC>12.00</vBC>
+              <pCOFINS>7.60</pCOFINS>
+              <vCOFINS>0.91</vCOFINS>
+            </COFINSAliq>
+          </COFINS>
+        </imposto>
+      </det>
+      <total>
+        <ICMSTot>
+          <vNF>12.00</vNF>
+          <vICMS>2.16</vICMS>
+          <vPIS>0.20</vPIS>
+          <vCOFINS>0.91</vCOFINS>
+        </ICMSTot>
+      </total>
+    </infNFe>
+    <Signature>...</Signature>
+  </NFe>
+  <protNFe>
+    <infProt>
+      <chNFe>35211111111111111111650010000000031000000030</chNFe>
+    </infProt>
+  </protNFe>
+</nfeProc>

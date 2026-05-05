@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc versao="4.00" xmlns="http://www.portalfiscal.inf.br/nfe">
+  <NFe>
+    <infNFe Id="NFe35191111111111111111550010000000011000000010" versao="4.00">
+      <ide>
+        <cUF>35</cUF>
+        <cNF>00000001</cNF>
+        <mod>55</mod>
+        <dhEmi>2024-05-01T10:00:00-03:00</dhEmi>
+      </ide>
+      <emit>
+        <CNPJ>11111111111111</CNPJ>
+        <xNome>Restaurante Lucro Presumido</xNome>
+        <UF>SP</UF>
+      </emit>
+      <dest>
+        <CNPJ>22222222222222</CNPJ>
+      </dest>
+      <det nItem="1">
+        <prod>
+          <xProd>Frango</xProd>
+          <qCom>10.0000</qCom>
+          <vUnCom>20.00</vUnCom>
+          <vProd>200.00</vProd>
+          <uCom>kg</uCom>
+          <NCM>02071400</NCM>
+        </prod>
+        <imposto>
+          <ICMS>
+            <ICMS00>
+              <orig>0</orig>
+              <CST>00</CST>
+              <modBC>3</modBC>
+              <vBC>200.00</vBC>
+              <pICMS>18.00</pICMS>
+              <vICMS>36.00</vICMS>
+            </ICMS00>
+          </ICMS>
+          <PIS>
+            <PISAliq>
+              <CST>01</CST>
+              <vBC>200.00</vBC>
+              <pPIS>1.65</pPIS>
+              <vPIS>3.30</vPIS>
+            </PISAliq>
+          </PIS>
+          <COFINS>
+            <COFINSAliq>
+              <CST>01</CST>
+              <vBC>200.00</vBC>
+              <pCOFINS>7.60</pCOFINS>
+              <vCOFINS>15.20</vCOFINS>
+            </COFINSAliq>
+          </COFINS>
+        </imposto>
+      </det>
+      <total>
+        <ICMSTot>
+          <vNF>200.00</vNF>
+          <vICMS>36.00</vICMS>
+          <vPIS>3.30</vPIS>
+          <vCOFINS>15.20</vCOFINS>
+        </ICMSTot>
+      </total>
+    </infNFe>
+    <Signature>...</Signature>
+  </NFe>
+  <protNFe>
+    <infProt>
+      <chNFe>35191111111111111111550010000000011000000010</chNFe>
+    </infProt>
+  </protNFe>
+</nfeProc>
