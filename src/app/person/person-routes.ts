@@ -35,7 +35,8 @@ export async function personRoutes (fastify: FastifyInstance) {
     return personController.update(request.params.id, request.body as Partial<Person>, request.headers)
   })
 
-  fastify.delete('/:id', (request: DeletePersonRequest) => {
-    return personController.delete(request.params.id, request.headers)
+  fastify.delete('/:id', async (request: DeletePersonRequest, reply) => {
+    await personController.delete(request.params.id, request.headers)
+    return reply.code(204).send()
   })
 }
