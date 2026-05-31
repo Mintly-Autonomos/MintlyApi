@@ -2,7 +2,8 @@ import { CrudRepository } from './crud-repository-interface'
 import { CrudUseCase } from './crud-use-case'
 import { IncomingHttpHeaders } from 'http'
 import { GetEnv } from '../utils/get-env'
-import { ObjectField, PaginationDto } from 'mintly-lib'
+import { PaginationDto } from 'mintly-lib'
+import { Field } from '@ascendance-hub/sapphire-core'
 import { NotFoundError } from '../errors/core/not-found-error'
 import { Resource } from '../types/resource'
 import { ResponseBuilder } from '../builders/response-builder/response-builder'
@@ -13,7 +14,7 @@ export class CrudController <T extends Record<string, any>, ID = any> {
 
   constructor (
     private readonly repository: CrudRepository<T, ID>,
-    private readonly orm: ObjectField<any, any>,
+    private readonly orm: Field,
   ) {
     const useCase = new CrudUseCase<T, ID>(this.repository)
     this.useCase = useCase
@@ -22,7 +23,7 @@ export class CrudController <T extends Record<string, any>, ID = any> {
   async insert (item: T, headers?: IncomingHttpHeaders): Promise<T> {
     const env = GetEnv.getEnv(headers)
 
-    this.orm.validate(item)
+    this.orm.parse(item)
 
     const result = await this.useCase.insert(item, env)
 
@@ -69,7 +70,7 @@ export class CrudController <T extends Record<string, any>, ID = any> {
   async update (id: ID, item: Partial<T>, headers?: IncomingHttpHeaders): Promise<T> {
     const env = GetEnv.getEnv(headers)
 
-    this.orm.validate(item)
+    this.orm.parse(item)
 
     const result = await this.useCase.update(id, item, env)
     return new ResponseBuilder()
