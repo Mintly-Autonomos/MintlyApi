@@ -3,6 +3,8 @@ import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connectio
 import { CrudRepository } from './crud-repository-interface'
 import { PaginationDto } from 'mintly-lib'
 import { RequestContext } from '../context/request-context'
+import { Query } from './query'
+import { UnsupportedQueryKindError } from '../errors/core/unsupported-query-kind-error'
 
 export class MongodbCrudRepository<T extends Document, ID> implements CrudRepository<T, ID> {
   constructor (
@@ -88,36 +90,20 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     }
   }
 
-  async query<Q> (query: Object | Array<any> | string, ctx: RequestContext): Promise<Q> {
+  async query<Q> (q: Query, ctx: RequestContext): Promise<Q> {
     const collection = this.getCollection(ctx)
 
-    // Se for um array, trata como aggregation pipeline
-    if (Array.isArray(query)) {
-      const result = await collection.aggregate(query).toArray()
-      return result as Q
-    }
-
-    // Se for um objeto, trata como filtro de find
-    if (typeof query === 'object' && query !== null) {
-      const result = await collection.find(query as Filter<T>).toArray()
-      return result as Q
-    }
-
-    // Se for string, tenta parsear como JSON e executar
-    if (typeof query === 'string') {
-      try {
-        const parsedQuery = JSON.parse(query)
-        if (Array.isArray(parsedQuery)) {
-          const result = await collection.aggregate(parsedQuery).toArray()
-          return result as Q
-        }
-        const result = await collection.find(parsedQuery as Filter<T>).toArray()
+    switch (q.kind) {
+      case 'mongo:pipeline': {
+        const result = await collection.aggregate(q.pipeline).toArray()
         return result as Q
-      } catch (error) {
-        throw new Error('Query string inválida. Deve ser um JSON válido.')
       }
+      case 'mongo:filter': {
+        const result = await collection.find(q.filter as Filter<T>).toArray()
+        return result as Q
+      }
+      default:
+        throw new UnsupportedQueryKindError(q.kind, 'mongodb')
     }
-
-    throw new Error('Tipo de query não suportado')
   }
 }

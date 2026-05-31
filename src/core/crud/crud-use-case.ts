@@ -1,6 +1,7 @@
 import { CrudRepository } from './crud-repository-interface'
 import { PaginationDto } from 'mintly-lib'
 import { RequestContext } from '../context/request-context'
+import { Query } from './query'
 
 export class CrudUseCase<T, ID> {
   constructor (private readonly repository: CrudRepository<T, ID>) {}
@@ -30,7 +31,7 @@ export class CrudUseCase<T, ID> {
     await this.repository.delete(id, ctx)
   }
 
-  async query<Q> (query: Object | Array<any> | string, ctx: RequestContext): Promise<Q> {
-    return await this.repository.query<Q>(query, ctx)
+  async query<Q> (q: Query, ctx: RequestContext): Promise<Q> {
+    return await this.repository.query<Q>(q, ctx)
   }
 }

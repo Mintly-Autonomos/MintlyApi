@@ -1,5 +1,6 @@
 import { PaginationDto } from 'mintly-lib'
 import { RequestContext } from '../context/request-context'
+import { Query } from './query'
 
 export interface CrudRepository<T, ID> {
   insert(item: T, ctx: RequestContext): Promise<T>
@@ -8,5 +9,5 @@ export interface CrudRepository<T, ID> {
   findAll(filter: Partial<T> & PaginationDto, ctx: RequestContext): Promise<Array<T>>
   update(id: ID, item: Partial<T>, ctx: RequestContext): Promise<T>
   delete(id: ID, ctx: RequestContext): Promise<void>
-  query<Q>(query: Object | Array<any> | string, ctx: RequestContext): Promise<Q>
+  query<Q>(q: Query, ctx: RequestContext): Promise<Q>
 }
