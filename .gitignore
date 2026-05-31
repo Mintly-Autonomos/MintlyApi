@@ -1,7 +1,9 @@
 .env
+.env.e2e
 
 node_modules/
 
 yarn.lock
 dist/
 artifacts/
+coverage/
