@@ -2,40 +2,52 @@ import { Collection, ObjectId, Filter, Document } from 'mongodb'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { CrudRepository } from './crud-repository-interface'
 import { PaginationDto } from 'mintly-lib'
+import { RequestContext } from '../context/request-context'
+import { Query } from './query'
+import { UnsupportedQueryKindError } from '../errors/core/unsupported-query-kind-error'
 
+/**
+ * Repositório CRUD com backend MongoDB.
+ *
+ * Suporta os seguintes Query kinds em `.query()`:
+ * - `mongo:pipeline` — aggregation pipeline (Document[])
+ * - `mongo:filter`   — find com filter (Filter<T>)
+ *
+ * Lança `UnsupportedQueryKindError` para qualquer outra kind.
+ */
 export class MongodbCrudRepository<T extends Document, ID> implements CrudRepository<T, ID> {
   constructor (
     private readonly collectionName: string,
   ) {}
 
-  private getCollection (env: string): Collection<T> {
-    const db = MongoDBConnection.getInstance().getDatabase(env)
+  private getCollection (ctx: RequestContext): Collection<T> {
+    const db = MongoDBConnection.getInstance().getDatabase(ctx.env)
     return db.collection<T>(this.collectionName)
   }
 
-  async insert (item: T, env: string): Promise<T> {
-    const collection = this.getCollection(env)
+  async insert (item: T, ctx: RequestContext): Promise<T> {
+    const collection = this.getCollection(ctx)
     const result = await collection.insertOne(item as any)
     return { ...item, _id: result.insertedId } as T
   }
 
-  async findById (id: ID, env: string): Promise<T | null> {
-    const collection = this.getCollection(env)
+  async findById (id: ID, ctx: RequestContext): Promise<T | null> {
+    const collection = this.getCollection(ctx)
     const filter = { _id: new ObjectId(id as string) } as Filter<T>
     const result = await collection.findOne(filter)
     return result as T | null
   }
 
-  async find (filter: Partial<T>, env: string): Promise<T> {
-    const collection = this.getCollection(env)
+  async find (filter: Partial<T>, ctx: RequestContext): Promise<T> {
+    const collection = this.getCollection(ctx)
 
     const result = await collection.findOne(filter as Filter<T>)
 
     return result as T
   }
 
-  async findAll (filter: Partial<T> & PaginationDto, env: string): Promise<Array<T>> {
-    const collection = this.getCollection(env)
+  async findAll (filter: Partial<T> & PaginationDto, ctx: RequestContext): Promise<Array<T>> {
+    const collection = this.getCollection(ctx)
     const { page = 1, size = 10, orderBy, orderDirection = 'asc', createdAtDirection, ...queryFilter } = filter
 
     const skip = (page - 1) * size
@@ -59,8 +71,8 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     return result as T[]
   }
 
-  async update (id: ID, item: Partial<T>, env: string): Promise<T> {
-    const collection = this.getCollection(env)
+  async update (id: ID, item: Partial<T>, ctx: RequestContext): Promise<T> {
+    const collection = this.getCollection(ctx)
     const filter = { _id: new ObjectId(id as string) } as Filter<T>
     const updateDoc = { $set: item }
 
@@ -77,8 +89,8 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     return result as T
   }
 
-  async delete (id: ID, env: string): Promise<void> {
-    const collection = this.getCollection(env)
+  async delete (id: ID, ctx: RequestContext): Promise<void> {
+    const collection = this.getCollection(ctx)
     const filter = { _id: new ObjectId(id as string) } as Filter<T>
     const result = await collection.deleteOne(filter)
 
@@ -87,36 +99,20 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     }
   }
 
-  async query<Q> (query: Object | Array<any> | string, env: string): Promise<Q> {
-    const collection = this.getCollection(env)
+  async query<Q> (q: Query, ctx: RequestContext): Promise<Q> {
+    const collection = this.getCollection(ctx)
 
-    // Se for um array, trata como aggregation pipeline
-    if (Array.isArray(query)) {
-      const result = await collection.aggregate(query).toArray()
-      return result as Q
-    }
-
-    // Se for um objeto, trata como filtro de find
-    if (typeof query === 'object' && query !== null) {
-      const result = await collection.find(query as Filter<T>).toArray()
-      return result as Q
-    }
-
-    // Se for string, tenta parsear como JSON e executar
-    if (typeof query === 'string') {
-      try {
-        const parsedQuery = JSON.parse(query)
-        if (Array.isArray(parsedQuery)) {
-          const result = await collection.aggregate(parsedQuery).toArray()
-          return result as Q
-        }
-        const result = await collection.find(parsedQuery as Filter<T>).toArray()
+    switch (q.kind) {
+      case 'mongo:pipeline': {
+        const result = await collection.aggregate(q.pipeline).toArray()
         return result as Q
-      } catch (error) {
-        throw new Error('Query string inválida. Deve ser um JSON válido.')
       }
+      case 'mongo:filter': {
+        const result = await collection.find(q.filter as Filter<T>).toArray()
+        return result as Q
+      }
+      default:
+        throw new UnsupportedQueryKindError(q.kind, 'mongodb')
     }
-
-    throw new Error('Tipo de query não suportado')
   }
 }
