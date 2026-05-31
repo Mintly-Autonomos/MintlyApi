@@ -1,7 +1,7 @@
 import { CrudRepository } from './crud-repository-interface'
 import { CrudUseCase } from './crud-use-case'
 import { IncomingHttpHeaders } from 'http'
-import { GetEnv } from '../utils/get-env'
+import { buildRequestContext } from '../context/build-request-context'
 import { PaginationDto } from 'mintly-lib'
 import { Field } from '@ascendance-hub/sapphire-core'
 import { NotFoundError } from '../errors/core/not-found-error'
@@ -21,11 +21,11 @@ export class CrudController <T extends Record<string, any>, ID = any> {
   }
 
   async insert (item: T, headers?: IncomingHttpHeaders): Promise<T> {
-    const env = GetEnv.getEnv(headers)
+    const ctx = buildRequestContext(headers)
 
     this.orm.parse(item)
 
-    const result = await this.useCase.insert(item, env)
+    const result = await this.useCase.insert(item, ctx)
 
     return new ResponseBuilder()
       .payload(result)
@@ -33,8 +33,8 @@ export class CrudController <T extends Record<string, any>, ID = any> {
   }
 
   async findById (id: ID, headers?: IncomingHttpHeaders): Promise<T | null> {
-    const env = GetEnv.getEnv(headers)
-    const result = await this.useCase.findById(id, env)
+    const ctx = buildRequestContext(headers)
+    const result = await this.useCase.findById(id, ctx)
     if (!result) {
       throw new NotFoundError(Resource.Person, id)
     }
@@ -45,8 +45,8 @@ export class CrudController <T extends Record<string, any>, ID = any> {
   }
 
   async find (filter: Partial<T>, headers?: IncomingHttpHeaders): Promise<T> {
-    const env = GetEnv.getEnv(headers)
-    const result = await this.useCase.find(filter, env)
+    const ctx = buildRequestContext(headers)
+    const result = await this.useCase.find(filter, ctx)
 
     return new ResponseBuilder()
       .payload(result)
@@ -54,8 +54,8 @@ export class CrudController <T extends Record<string, any>, ID = any> {
   }
 
   async findAll (filter: Partial<T> & PaginationDto, headers?: IncomingHttpHeaders): Promise<Array<T>> {
-    const env = GetEnv.getEnv(headers)
-    const result = await this.useCase.findAll(filter, env)
+    const ctx = buildRequestContext(headers)
+    const result = await this.useCase.findAll(filter, ctx)
 
     return new ResponseBuilder()
       .payload(result)
@@ -68,19 +68,19 @@ export class CrudController <T extends Record<string, any>, ID = any> {
   }
 
   async update (id: ID, item: Partial<T>, headers?: IncomingHttpHeaders): Promise<T> {
-    const env = GetEnv.getEnv(headers)
+    const ctx = buildRequestContext(headers)
 
     this.orm.parse(item)
 
-    const result = await this.useCase.update(id, item, env)
+    const result = await this.useCase.update(id, item, ctx)
     return new ResponseBuilder()
       .payload(result)
       .build()
   }
 
   async delete (id: ID, headers?: IncomingHttpHeaders): Promise<void> {
-    const env = GetEnv.getEnv(headers)
-    await this.useCase.delete(id, env)
+    const ctx = buildRequestContext(headers)
+    await this.useCase.delete(id, ctx)
 
     return new ResponseBuilder()
       .status(StatusCodes.NO_CONTENT)
