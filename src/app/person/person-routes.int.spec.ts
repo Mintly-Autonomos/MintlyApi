@@ -46,7 +46,9 @@ describe('Person routes (integration)', () => {
 
   it('GET /people/:id devolve a pessoa criada', async () => {
     const created = await server.inject({
-      method: 'POST', url: '/people/', headers,
+      method: 'POST',
+      url: '/people/',
+      headers,
       payload: { name: 'Ada', age: 30 },
     })
     const id = created.json().payload._id
@@ -96,7 +98,9 @@ describe('Person routes (integration)', () => {
     const id = created.json().payload._id
 
     const response = await server.inject({
-      method: 'PATCH', url: `/people/${id}`, headers,
+      method: 'PATCH',
+      url: `/people/${id}`,
+      headers,
       payload: { age: 31 },
     })
     expect(response.statusCode).toBe(200)
@@ -110,7 +114,9 @@ describe('Person routes (integration)', () => {
     const id = created.json().payload._id
 
     const response = await server.inject({
-      method: 'PATCH', url: `/people/${id}`, headers,
+      method: 'PATCH',
+      url: `/people/${id}`,
+      headers,
       payload: { age: 'não é número' },
     })
     expect(response.statusCode).toBe(400)
