@@ -6,6 +6,15 @@ import { RequestContext } from '../context/request-context'
 import { Query } from './query'
 import { UnsupportedQueryKindError } from '../errors/core/unsupported-query-kind-error'
 
+/**
+ * Repositório CRUD com backend MongoDB.
+ *
+ * Suporta os seguintes Query kinds em `.query()`:
+ * - `mongo:pipeline` — aggregation pipeline (Document[])
+ * - `mongo:filter`   — find com filter (Filter<T>)
+ *
+ * Lança `UnsupportedQueryKindError` para qualquer outra kind.
+ */
 export class MongodbCrudRepository<T extends Document, ID> implements CrudRepository<T, ID> {
   constructor (
     private readonly collectionName: string,
