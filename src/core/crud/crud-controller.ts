@@ -15,6 +15,7 @@ export class CrudController <T extends Record<string, any>, ID = any> {
   constructor (
     private readonly repository: CrudRepository<T, ID>,
     private readonly orm: Field,
+    private readonly ormPartial: Field = orm,
   ) {
     const useCase = new CrudUseCase<T, ID>(this.repository)
     this.useCase = useCase
@@ -70,7 +71,7 @@ export class CrudController <T extends Record<string, any>, ID = any> {
   async update (id: ID, item: Partial<T>, headers?: IncomingHttpHeaders): Promise<T> {
     const ctx = buildRequestContext(headers)
 
-    this.orm.parse(item)
+    this.ormPartial.parse(item)
 
     const result = await this.useCase.update(id, item, ctx)
     return new ResponseBuilder()
