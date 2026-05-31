@@ -65,6 +65,19 @@ describe('Person routes (integration)', () => {
     expect(response.statusCode).toBe(404)
   })
 
+  it('GET /people?isMultipleResponse=true&name=X chama find (single)', async () => {
+    await server.inject({ method: 'POST', url: '/people/', headers, payload: { name: 'Ada', age: 30 } })
+    await server.inject({ method: 'POST', url: '/people/', headers, payload: { name: 'Bob', age: 40 } })
+
+    const response = await server.inject({
+      method: 'GET',
+      url: '/people/?isMultipleResponse=true&name=Ada',
+      headers,
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json().payload).toMatchObject({ name: 'Ada' })
+  })
+
   it('GET /people lista todas as pessoas com paginação', async () => {
     await server.inject({ method: 'POST', url: '/people/', headers, payload: { name: 'A', age: 1 } })
     await server.inject({ method: 'POST', url: '/people/', headers, payload: { name: 'B', age: 2 } })
