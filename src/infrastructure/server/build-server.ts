@@ -53,11 +53,14 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
     }
 
     console.error('Erro não tratado:', error)
-    if (error instanceof SapphireValidationError) {
+    // Usa name check em vez de instanceof por causa do dual package hazard
+    // do sapphire-core (CJS/ESM têm classes separadas). flatten() existe em ambas.
+    const errName = (error as { name?: string } | null | undefined)?.name
+    if (errName === 'SapphireValidationError' || error instanceof SapphireValidationError) {
       return reply.status(400).send({
         code: 'VALIDATION_ERROR',
         message: 'Validation failed',
-        details: error.flatten().fieldErrors,
+        details: (error as SapphireValidationError).flatten().fieldErrors,
       })
     }
 
