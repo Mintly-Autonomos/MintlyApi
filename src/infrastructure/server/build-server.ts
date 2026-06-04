@@ -2,7 +2,7 @@ import Fastify, { FastifyInstance } from 'fastify'
 import cors from '@fastify/cors'
 import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
-import { AuroraValidationError } from 'mintly-lib'
+import { SapphireValidationError } from '@ascendance-hub/sapphire-core'
 import { personRoutes } from '../../app/person/person-routes'
 import { healthRoutes } from '../../app/health/health-routes'
 import { BaseError } from '../../core/errors/core/base-error'
@@ -53,11 +53,11 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
     }
 
     console.error('Erro não tratado:', error)
-    if (error instanceof AuroraValidationError) {
+    if (error instanceof SapphireValidationError) {
       return reply.status(400).send({
         code: 'VALIDATION_ERROR',
         message: 'Validation failed',
-        details: error.details,
+        details: error.flatten().fieldErrors,
       })
     }
 
