@@ -1,11 +1,11 @@
+import type { Person } from 'mintly-lib'
+
 export type UserStatus = 'active' | 'inactive' | 'blocked'
 export type UserRole = 'admin' | 'member'
 
-export interface User {
+/** Documento MongoDB completo — estende os campos públicos de Person da mintly-lib. */
+export interface User extends Omit<Person, 'id' | '_id'> {
   _id?: string
-  name: string
-  email: string
-  cpf?: string
   passwordHash: string
   status: UserStatus
   role: UserRole
