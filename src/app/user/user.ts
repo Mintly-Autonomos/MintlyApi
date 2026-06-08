@@ -1,20 +1,12 @@
-import type { Person } from 'mintly-lib'
+import type { User as PublicUser } from 'mintly-lib'
 
-export type UserStatus = 'active' | 'inactive' | 'blocked'
-export type UserRole = 'admin' | 'member'
+export type { UserStatus, UserRole } from 'mintly-lib'
 
-/** Documento MongoDB completo — estende os campos públicos de Person da mintly-lib. */
-export interface User extends Omit<Person, 'id' | '_id'> {
-  _id?: string
+/** Documento MongoDB — estende o User público da mintly-lib com internos de autenticação. */
+export interface User extends PublicUser {
   passwordHash: string
-  status: UserStatus
-  role: UserRole
-  restaurantId?: string
   loginAttempts: number
   blockedUntil?: string | null
   termsAccepted: boolean
   termsAcceptedAt?: string
-  lastAccessAt?: string
-  createdAt: string
-  updatedAt: string
 }
