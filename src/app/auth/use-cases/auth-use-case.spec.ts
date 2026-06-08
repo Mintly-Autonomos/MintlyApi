@@ -1,20 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { randomBytes, scryptSync } from 'crypto'
 import { UnauthorizedError } from '../../../core/errors/auth/unauthorized-error'
+import { ForbiddenError } from '../../../core/errors/auth/forbidden-error'
+import { TooManyRequestsError } from '../../../core/errors/auth/too-many-requests-error'
 import { User } from '../../user/user'
 
-// ─── hoisted mocks (disponíveis no factory E nos testes) ─────────────────────
+// ─── hoisted mocks ────────────────────────────────────────────────────────────
 
-const mockFindByEmail    = vi.hoisted(() => vi.fn())
-const mockUpdateLastAcc  = vi.hoisted(() => vi.fn())
-const mockGenerate       = vi.hoisted(() => vi.fn())
-const mockRefreshJwt     = vi.hoisted(() => vi.fn())
-const mockRevokeRefresh  = vi.hoisted(() => vi.fn())
+const mockFindByEmail          = vi.hoisted(() => vi.fn())
+const mockUpdateLastAcc        = vi.hoisted(() => vi.fn())
+const mockIncrementAttempts    = vi.hoisted(() => vi.fn())
+const mockResetAttempts        = vi.hoisted(() => vi.fn())
+const mockSetTemporaryBlock    = vi.hoisted(() => vi.fn())
+const mockGenerate             = vi.hoisted(() => vi.fn())
+const mockRefreshJwt           = vi.hoisted(() => vi.fn())
+const mockRevokeRefresh        = vi.hoisted(() => vi.fn())
+const mockLogAudit             = vi.hoisted(() => vi.fn())
 
 vi.mock('../auth-repository', () => ({
   AuthRepository: class {
-    findByEmail   = mockFindByEmail
-    updateLastAccess = mockUpdateLastAcc
+    findByEmail          = mockFindByEmail
+    updateLastAccess     = mockUpdateLastAcc
+    incrementLoginAttempts = mockIncrementAttempts
+    resetLoginAttempts   = mockResetAttempts
+    setTemporaryBlock    = mockSetTemporaryBlock
   },
 }))
 
@@ -24,6 +33,10 @@ vi.mock('../../../infrastructure/jwt/jwt-service', () => ({
     refresh:             mockRefreshJwt,
     revokeRefreshToken:  mockRevokeRefresh,
   })),
+}))
+
+vi.mock('../../audit/audit-service', () => ({
+  logAudit: mockLogAudit,
 }))
 
 // ─── import APÓS os mocks ─────────────────────────────────────────────────────
@@ -43,6 +56,9 @@ const MOCK_USER: User = {
   nome: 'João Silva',
   email: 'joao@restaurante.com',
   passwordHash: makePasswordHash('Senha123'),
+  status: 'ativo',
+  loginAttempts: 0,
+  bloqueadoAte: null,
   termosAceitos: true,
   aceitouTermosEm: '2024-01-01T00:00:00.000Z',
   createdAt: '2024-01-01T00:00:00.000Z',
@@ -69,11 +85,15 @@ describe('AuthUseCase', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockUpdateLastAcc.mockResolvedValue(undefined)
+    mockResetAttempts.mockResolvedValue(undefined)
+    mockIncrementAttempts.mockResolvedValue(1)
+    mockSetTemporaryBlock.mockResolvedValue(undefined)
     mockGenerate.mockResolvedValue(MOCK_TOKENS)
+    mockLogAudit.mockResolvedValue(undefined)
     useCase = new AuthUseCase()
   })
 
-  // ── login ─────────────────────────────────────────────────────────────────
+  // ── login — happy path ────────────────────────────────────────────────────
 
   describe('login', () => {
     it('retorna accessToken e refreshToken com credenciais válidas', async () => {
@@ -120,6 +140,41 @@ describe('AuthUseCase', () => {
       )
     })
 
+    it('atualiza ultimoAcesso após login bem-sucedido', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+
+      await useCase.login('joao@restaurante.com', 'Senha123')
+
+      expect(mockUpdateLastAcc).toHaveBeenCalledWith('user-id-123')
+    })
+
+    it('reseta loginAttempts após login bem-sucedido', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+
+      await useCase.login('joao@restaurante.com', 'Senha123')
+
+      expect(mockResetAttempts).toHaveBeenCalledWith('user-id-123')
+    })
+
+    it('registra auditoria de login com ip e userAgent', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+
+      await useCase.login('joao@restaurante.com', 'Senha123', {
+        ip: '192.168.1.1',
+        userAgent: 'Mozilla/5.0',
+      })
+
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        'login',
+        'user-id-123',
+        expect.objectContaining({ ip: '192.168.1.1', userAgent: 'Mozilla/5.0' }),
+      )
+    })
+  })
+
+  // ── login — erros de credenciais ──────────────────────────────────────────
+
+  describe('login — credenciais inválidas', () => {
     it('lança UnauthorizedError quando o usuário não existe', async () => {
       mockFindByEmail.mockResolvedValue(null)
 
@@ -144,12 +199,90 @@ describe('AuthUseCase', () => {
       expect(errUser.message).toBe(errPass.message)
     })
 
-    it('atualiza ultimoAcesso após login bem-sucedido', async () => {
+    it('incrementa loginAttempts ao falhar senha', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
 
-      await useCase.login('joao@restaurante.com', 'Senha123')
+      await useCase.login('joao@restaurante.com', 'Errada1').catch(() => null)
 
-      expect(mockUpdateLastAcc).toHaveBeenCalledWith('user-id-123')
+      expect(mockIncrementAttempts).toHaveBeenCalledWith('user-id-123')
+    })
+
+    it('registra auditoria de login_falhou', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+
+      await useCase.login('joao@restaurante.com', 'Errada1').catch(() => null)
+
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        'login_falhou',
+        'user-id-123',
+        expect.objectContaining({ tentativa: 1 }),
+      )
+    })
+
+    it('bloqueia temporariamente após MAX tentativas', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+      mockIncrementAttempts.mockResolvedValue(5)
+
+      await useCase.login('joao@restaurante.com', 'Errada1').catch(() => null)
+
+      expect(mockSetTemporaryBlock).toHaveBeenCalledOnce()
+      expect(mockLogAudit).toHaveBeenCalledWith(
+        'conta_bloqueada_temporariamente',
+        'user-id-123',
+        expect.objectContaining({ tentativas: 5 }),
+      )
+    })
+
+    it('não bloqueia antes de atingir MAX tentativas', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+      mockIncrementAttempts.mockResolvedValue(3)
+
+      await useCase.login('joao@restaurante.com', 'Errada1').catch(() => null)
+
+      expect(mockSetTemporaryBlock).not.toHaveBeenCalled()
+    })
+  })
+
+  // ── login — status da conta ───────────────────────────────────────────────
+
+  describe('login — status da conta', () => {
+    it('lança ForbiddenError para conta inativa', async () => {
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, status: 'inativo' })
+
+      await expect(useCase.login('joao@restaurante.com', 'Senha123'))
+        .rejects.toBeInstanceOf(ForbiddenError)
+    })
+
+    it('lança ForbiddenError para conta bloqueada permanentemente', async () => {
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, status: 'bloqueado' })
+
+      await expect(useCase.login('joao@restaurante.com', 'Senha123'))
+        .rejects.toBeInstanceOf(ForbiddenError)
+    })
+
+    it('lança TooManyRequestsError para bloqueio temporário ativo', async () => {
+      const futuro = new Date(Date.now() + 10 * 60_000).toISOString()
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, bloqueadoAte: futuro })
+
+      await expect(useCase.login('joao@restaurante.com', 'Senha123'))
+        .rejects.toBeInstanceOf(TooManyRequestsError)
+    })
+
+    it('permite login quando bloqueio temporário expirou', async () => {
+      const passado = new Date(Date.now() - 1).toISOString()
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, bloqueadoAte: passado })
+
+      await expect(useCase.login('joao@restaurante.com', 'Senha123'))
+        .resolves.toBeDefined()
+    })
+
+    it('mensagem de bloqueio informa tempo restante em minutos', async () => {
+      const futuro = new Date(Date.now() + 15 * 60_000).toISOString()
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, bloqueadoAte: futuro })
+
+      const err = await useCase.login('joao@restaurante.com', 'Senha123').catch(e => e)
+
+      expect(err.message).toMatch(/minuto/)
     })
   })
 
@@ -202,6 +335,18 @@ describe('AuthUseCase', () => {
     it('não retorna nada (void)', async () => {
       const result = await useCase.logout('some-refresh-token')
       expect(result).toBeUndefined()
+    })
+
+    it('registra auditoria de logout quando userId é informado', async () => {
+      await useCase.logout('some-refresh-token', 'user-id-123')
+
+      expect(mockLogAudit).toHaveBeenCalledWith('logout', 'user-id-123', {})
+    })
+
+    it('não registra auditoria de logout sem userId', async () => {
+      await useCase.logout('some-refresh-token')
+
+      expect(mockLogAudit).not.toHaveBeenCalled()
     })
   })
 })

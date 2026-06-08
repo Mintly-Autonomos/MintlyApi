@@ -3,6 +3,12 @@ export type AuditEvent =
   | 'organizacao_criada'
   | 'termos_aceitos'
   | 'onboarding_concluido'
+  | 'login'
+  | 'login_falhou'
+  | 'logout'
+  | 'conta_bloqueada_temporariamente'
+  | 'senha_recuperacao_solicitada'
+  | 'senha_redefinida'
 
 export interface AuditLog {
   _id?: string

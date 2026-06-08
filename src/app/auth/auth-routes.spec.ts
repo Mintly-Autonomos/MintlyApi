@@ -2,13 +2,17 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { SapphireValidationError } from '@ascendance-hub/sapphire-core'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
 import { UnauthorizedError } from '../../core/errors/auth/unauthorized-error'
+import { ForbiddenError } from '../../core/errors/auth/forbidden-error'
+import { TooManyRequestsError } from '../../core/errors/auth/too-many-requests-error'
 
 // ─── hoisted mocks ────────────────────────────────────────────────────────────
 
-const mockExecute = vi.hoisted(() => vi.fn())
-const mockLogin   = vi.hoisted(() => vi.fn())
-const mockRefresh = vi.hoisted(() => vi.fn())
-const mockLogout  = vi.hoisted(() => vi.fn())
+const mockExecute         = vi.hoisted(() => vi.fn())
+const mockLogin           = vi.hoisted(() => vi.fn())
+const mockRefresh         = vi.hoisted(() => vi.fn())
+const mockLogout          = vi.hoisted(() => vi.fn())
+const mockRequestRecovery = vi.hoisted(() => vi.fn())
+const mockResetPassword   = vi.hoisted(() => vi.fn())
 
 vi.mock('./use-cases/register-use-case', () => ({
   RegisterUseCase: class { execute = mockExecute },
@@ -19,6 +23,13 @@ vi.mock('./use-cases/auth-use-case', () => ({
     login   = mockLogin
     refresh = mockRefresh
     logout  = mockLogout
+  },
+}))
+
+vi.mock('./use-cases/password-recovery-use-case', () => ({
+  PasswordRecoveryUseCase: class {
+    requestRecovery = mockRequestRecovery
+    resetPassword   = mockResetPassword
   },
 }))
 
@@ -208,6 +219,116 @@ describe('Auth Routes', () => {
       })
 
       expect(response.statusCode).toBe(204)
+    })
+  })
+
+  // ── POST /auth/recuperar-senha ────────────────────────────────────────────
+
+  describe('POST /auth/recuperar-senha', () => {
+    it('retorna 202 independente de o e-mail existir (sem revelar)', async () => {
+      mockRequestRecovery.mockResolvedValue(undefined)
+
+      const response = await server.inject({
+        method: 'POST',
+        url: '/auth/recuperar-senha',
+        payload: { email: 'qualquer@email.com' },
+      })
+
+      expect(response.statusCode).toBe(202)
+      expect(response.json().message).toBeDefined()
+    })
+
+    it('retorna 400 para e-mail inválido via SapphireValidationError', async () => {
+      mockRequestRecovery.mockRejectedValue(
+        new SapphireValidationError([
+          { path: ['email'], code: 'format', message: 'Informe um e-mail válido.' },
+        ]),
+      )
+
+      const response = await server.inject({
+        method: 'POST',
+        url: '/auth/recuperar-senha',
+        payload: { email: 'invalido' },
+      })
+
+      expect(response.statusCode).toBe(400)
+      expect(response.json().code).toBe('VALIDATION_ERROR')
+    })
+  })
+
+  // ── POST /auth/redefinir-senha ────────────────────────────────────────────
+
+  describe('POST /auth/redefinir-senha', () => {
+    it('retorna 200 com mensagem de sucesso para token válido', async () => {
+      mockResetPassword.mockResolvedValue(undefined)
+
+      const response = await server.inject({
+        method: 'POST',
+        url: '/auth/redefinir-senha',
+        payload: { token: 'valid-token', novaSenha: 'NovaSenha1', confirmarNovaSenha: 'NovaSenha1' },
+      })
+
+      expect(response.statusCode).toBe(200)
+      expect(response.json().message).toBeDefined()
+    })
+
+    it('retorna 401 para token inválido ou expirado', async () => {
+      mockResetPassword.mockRejectedValue(new UnauthorizedError('Token inválido ou expirado.'))
+
+      const response = await server.inject({
+        method: 'POST',
+        url: '/auth/redefinir-senha',
+        payload: { token: 'expirado', novaSenha: 'NovaSenha1', confirmarNovaSenha: 'NovaSenha1' },
+      })
+
+      expect(response.statusCode).toBe(401)
+    })
+
+    it('retorna 400 quando as senhas não conferem (SapphireValidationError)', async () => {
+      mockResetPassword.mockRejectedValue(
+        new SapphireValidationError([
+          { path: ['confirmarNovaSenha'], code: 'custom' as any, message: 'As senhas não conferem.' },
+        ]),
+      )
+
+      const response = await server.inject({
+        method: 'POST',
+        url: '/auth/redefinir-senha',
+        payload: { token: 'tok', novaSenha: 'NovaSenha1', confirmarNovaSenha: 'Diferente1' },
+      })
+
+      expect(response.statusCode).toBe(400)
+      expect(response.json().code).toBe('VALIDATION_ERROR')
+    })
+  })
+
+  // ── login — status / brute force ──────────────────────────────────────────
+
+  describe('POST /auth/login — status e brute force', () => {
+    it('retorna 403 para conta inativa (ForbiddenError)', async () => {
+      mockLogin.mockRejectedValue(new ForbiddenError('Conta inativa.'))
+
+      const response = await server.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: { email: 'joao@restaurante.com', password: 'Senha123' },
+      })
+
+      expect(response.statusCode).toBe(403)
+      expect(response.json().code).toBe('AUTH-0003')
+    })
+
+    it('retorna 429 para bloqueio temporário (TooManyRequestsError)', async () => {
+      mockLogin.mockRejectedValue(new TooManyRequestsError('Bloqueado por 15 minuto(s).'))
+
+      const response = await server.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: { email: 'joao@restaurante.com', password: 'Errada1' },
+      })
+
+      expect(response.statusCode).toBe(429)
+      expect(response.json().code).toBe('AUTH-0004')
     })
   })
 
