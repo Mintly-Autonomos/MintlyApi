@@ -29,6 +29,7 @@
     "http-status-codes": "^2.3.0",
     "mintly-lib": "^1.1.0",
     "mongodb": "^6.3.0",
+    "resend": "^6.12.4",
     "valkyrie-jwt": "^0.1.1"
   },
   "devDependencies": {
