@@ -5,6 +5,8 @@ import swaggerUi from '@fastify/swagger-ui'
 import { SapphireValidationError } from '@ascendance-hub/sapphire-core'
 import { personRoutes } from '../../app/person/person-routes'
 import { healthRoutes } from '../../app/health/health-routes'
+import { authRoutes } from '../../app/auth/auth-routes'
+import { verifyJwt } from '../../core/hooks/verify-jwt'
 import { BaseError } from '../../core/errors/core/base-error'
 
 export async function buildServer (server: FastifyInstance = Fastify()): Promise<FastifyInstance> {
@@ -68,7 +70,13 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
   })
 
   await server.register(healthRoutes)
-  await server.register(personRoutes, { prefix: '/people' })
+  await server.register(authRoutes, { prefix: '/auth' })
+
+  // Protected routes — JWT required
+  await server.register(async (protected_: FastifyInstance) => {
+    protected_.addHook('preHandler', verifyJwt)
+    await protected_.register(personRoutes, { prefix: '/people' })
+  })
 
   return server
 }
