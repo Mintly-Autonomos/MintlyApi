@@ -6,6 +6,7 @@ import { ForbiddenError } from '../../../core/errors/auth/forbidden-error'
 import { TooManyRequestsError } from '../../../core/errors/auth/too-many-requests-error'
 import { logAudit } from '../../audit/audit-service'
 import { User } from '../../user/user'
+import type { MintlyClaims } from '../jwt-claims'
 
 const TENANT = 'mintly'
 const MAX_LOGIN_ATTEMPTS = Number(process.env.MAX_LOGIN_ATTEMPTS ?? 5)
@@ -64,15 +65,15 @@ export class AuthUseCase {
     await this.repo(env).updateLastAccess(String(person._id)).catch(() => null)
 
     const jwt = getJwtService()
-    const tokens = await jwt.generate({
-      tenantId: TENANT,
-      subject: String(person._id),
-      claims: {
-        name: person.name,
-        email: person.email,
-        ...(person.cpf ? { cpf: person.cpf } : {}),
-      },
-    })
+    const claims: MintlyClaims = {
+      name: person.name,
+      email: person.email,
+      restaurantId: person.restaurantId ?? '',
+      role: person.role,
+      status: person.status,
+      ...(person.cpf ? { cpf: person.cpf } : {}),
+    }
+    const tokens = await jwt.generate({ tenantId: TENANT, subject: String(person._id), claims })
 
     logAudit('login', String(person._id), { ip: ctx.ip ?? null, userAgent: ctx.userAgent ?? null }, undefined, env).catch(() => null)
 

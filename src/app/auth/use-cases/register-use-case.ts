@@ -10,6 +10,7 @@ import { FinancialAccount } from '../../financial/financial-account'
 import { FinancialCategory } from '../../financial/financial-category'
 import { AuditLog } from '../../audit/audit-log'
 import { authDbName } from '../auth-db'
+import type { MintlyClaims } from '../jwt-claims'
 
 const TENANT = 'mintly'
 
@@ -153,16 +154,14 @@ export class RegisterUseCase {
 
         // ── Generate JWT ──────────────────────────────────────────────────────
         const jwt = getJwtService()
-        const tokens = await jwt.generate({
-          tenantId: TENANT,
-          subject: userId,
-          claims: {
-            name: data.name,
-            email: data.email,
-            restaurantId: restaurantId.toString(),
-            role: 'admin',
-          },
-        })
+        const claims: MintlyClaims = {
+          name: data.name,
+          email: data.email,
+          restaurantId: restaurantId.toString(),
+          role: 'admin',
+          status: 'active',
+        }
+        const tokens = await jwt.generate({ tenantId: TENANT, subject: userId, claims })
 
         result = {
           accessToken: tokens.accessToken,

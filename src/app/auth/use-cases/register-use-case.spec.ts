@@ -209,7 +209,7 @@ describe('RegisterUseCase', () => {
       expect(events).toContain('onboarding_completed')
     })
 
-    it('gera token com claims de name, email, role e restaurantId', async () => {
+    it('gera token com todos os claims necessários para queries sem DB', async () => {
       makeMongoMock()
 
       await useCase.execute(VALID_INPUT)
@@ -220,7 +220,9 @@ describe('RegisterUseCase', () => {
           claims: expect.objectContaining({
             name: 'João Silva',
             email: 'joao@restaurante.com',
+            restaurantId: expect.any(String),
             role: 'admin',
+            status: 'active',
           }),
         }),
       )

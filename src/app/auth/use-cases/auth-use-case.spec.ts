@@ -58,6 +58,7 @@ const MOCK_USER: User = {
   passwordHash: makePasswordHash('Senha123'),
   status: 'active',
   role: 'admin',
+  restaurantId: 'rest-id-456',
   loginAttempts: 0,
   blockedUntil: null,
   termsAccepted: true,
@@ -115,7 +116,7 @@ describe('AuthUseCase', () => {
       expect(result.user.email).toBe('joao@restaurante.com')
     })
 
-    it('gera token com claims corretos (name e email)', async () => {
+    it('gera token com todos os claims necessários para queries sem DB', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
 
       await useCase.login('joao@restaurante.com', 'Senha123')
@@ -124,7 +125,13 @@ describe('AuthUseCase', () => {
         expect.objectContaining({
           tenantId: 'mintly',
           subject: 'user-id-123',
-          claims: expect.objectContaining({ name: 'João Silva', email: 'joao@restaurante.com' }),
+          claims: expect.objectContaining({
+            name: 'João Silva',
+            email: 'joao@restaurante.com',
+            restaurantId: 'rest-id-456',
+            role: 'admin',
+            status: 'active',
+          }),
         }),
       )
     })

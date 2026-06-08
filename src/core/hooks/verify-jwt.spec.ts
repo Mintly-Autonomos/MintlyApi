@@ -100,7 +100,7 @@ describe('verifyJwt', () => {
       failureReason: null,
       subject: 'user-123',
       tenantId: 'mintly',
-      claims: { nome: 'João', email: 'joao@test.com' },
+      claims: { name: 'João', email: 'joao@test.com', restaurantId: 'rest-id', role: 'admin', status: 'active' },
     }
 
     it('não chama reply.send quando o token é válido', async () => {
