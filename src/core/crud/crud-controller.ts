@@ -6,8 +6,6 @@ import { PaginationDto } from 'mintly-lib'
 import { Field } from '@ascendance-hub/sapphire-core'
 import { NotFoundError } from '../errors/core/not-found-error'
 import { Resource } from '../types/resource'
-import { ResponseBuilder } from '../builders/response-builder/response-builder'
-import { StatusCodes } from 'http-status-codes'
 
 export class CrudController <T extends Record<string, any>, ID = any> {
   private readonly useCase: CrudUseCase<T, ID>
@@ -20,70 +18,51 @@ export class CrudController <T extends Record<string, any>, ID = any> {
     this.useCase = useCase
   }
 
-  async insert (item: T, headers?: IncomingHttpHeaders): Promise<T> {
+  async insert (item: T, headers?: IncomingHttpHeaders): Promise<{ payload: T }> {
     const ctx = buildRequestContext(headers)
-
     this.orm.parse(item)
-
     const result = await this.useCase.insert(item, ctx)
-
-    return new ResponseBuilder()
-      .payload(result)
-      .build()
+    return { payload: result }
   }
 
-  async findById (id: ID, headers?: IncomingHttpHeaders): Promise<T | null> {
+  async findById (id: ID, headers?: IncomingHttpHeaders): Promise<{ payload: T }> {
     const ctx = buildRequestContext(headers)
     const result = await this.useCase.findById(id, ctx)
     if (!result) {
       throw new NotFoundError(Resource.Person, id)
     }
-
-    return new ResponseBuilder()
-      .payload(result)
-      .build()
+    return { payload: result }
   }
 
-  async find (filter: Partial<T>, headers?: IncomingHttpHeaders): Promise<T> {
+  async find (filter: Partial<T>, headers?: IncomingHttpHeaders): Promise<{ payload: T }> {
     const ctx = buildRequestContext(headers)
     const result = await this.useCase.find(filter, ctx)
-
-    return new ResponseBuilder()
-      .payload(result)
-      .build()
+    return { payload: result }
   }
 
-  async findAll (filter: Partial<T> & PaginationDto, headers?: IncomingHttpHeaders): Promise<Array<T>> {
+  async findAll (filter: Partial<T> & PaginationDto, headers?: IncomingHttpHeaders): Promise<{ payload: Array<T>; pagination: object }> {
     const ctx = buildRequestContext(headers)
     const result = await this.useCase.findAll(filter, ctx)
-
-    return new ResponseBuilder()
-      .payload(result)
-      .pagination({
+    return {
+      payload: result,
+      pagination: {
         ...filter,
         totalItems: result.length,
         totalPages: Math.ceil(result.length / (filter.size || 10)),
-      })
-      .build()
+      },
+    }
   }
 
-  async update (id: ID, item: Partial<T>, headers?: IncomingHttpHeaders): Promise<T> {
+  async update (id: ID, item: Partial<T>, headers?: IncomingHttpHeaders): Promise<{ payload: T }> {
     const ctx = buildRequestContext(headers)
-
     this.orm.parse(item)
-
     const result = await this.useCase.update(id, item, ctx)
-    return new ResponseBuilder()
-      .payload(result)
-      .build()
+    return { payload: result }
   }
 
-  async delete (id: ID, headers?: IncomingHttpHeaders): Promise<void> {
+  async delete (id: ID, headers?: IncomingHttpHeaders): Promise<null> {
     const ctx = buildRequestContext(headers)
     await this.useCase.delete(id, ctx)
-
-    return new ResponseBuilder()
-      .status(StatusCodes.NO_CONTENT)
-      .build()
+    return null
   }
 }
