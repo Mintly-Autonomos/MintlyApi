@@ -56,13 +56,14 @@ import { PasswordRecoveryUseCase } from './password-recovery-use-case'
 
 const MOCK_USER = {
   _id: 'user-id-123',
-  nome: 'João Silva',
+  name: 'João Silva',
   email: 'joao@restaurante.com',
-  status: 'ativo' as const,
+  status: 'active' as const,
+  role: 'admin' as const,
   loginAttempts: 0,
-  bloqueadoAte: null,
+  blockedUntil: null,
   passwordHash: 'hash',
-  termosAceitos: true,
+  termsAccepted: true,
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 }
@@ -145,22 +146,24 @@ describe('PasswordRecoveryUseCase', () => {
     })
 
     it('não faz nada para conta inativa (sem revelar)', async () => {
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, status: 'inativo' })
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, status: 'inactive' })
 
       await useCase.requestRecovery({ email: 'joao@restaurante.com' })
 
       expect(mockCreateToken).not.toHaveBeenCalled()
     })
 
-    it('registra auditoria de senha_recuperacao_solicitada', async () => {
+    it('registra auditoria de password_recovery_requested', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
 
       await useCase.requestRecovery({ email: 'joao@restaurante.com' })
 
       expect(mockLogAudit).toHaveBeenCalledWith(
-        'senha_recuperacao_solicitada',
+        'password_recovery_requested',
         'user-id-123',
         expect.objectContaining({ email: 'joao@restaurante.com' }),
+        undefined,
+        'default',
       )
     })
 
@@ -178,8 +181,8 @@ describe('PasswordRecoveryUseCase', () => {
 
       await useCase.resetPassword({
         token: 'valid-token-hex',
-        novaSenha: 'NovaSenha1',
-        confirmarNovaSenha: 'NovaSenha1',
+        newPassword: 'NovaSenha1',
+        confirmNewPassword: 'NovaSenha1',
       })
 
       expect(mockUpdatePassword).toHaveBeenCalledWith(
@@ -193,8 +196,8 @@ describe('PasswordRecoveryUseCase', () => {
 
       await useCase.resetPassword({
         token: 'valid-token-hex',
-        novaSenha: 'NovaSenha1',
-        confirmarNovaSenha: 'NovaSenha1',
+        newPassword: 'NovaSenha1',
+        confirmNewPassword: 'NovaSenha1',
       })
 
       expect(mockMarkUsed).toHaveBeenCalledWith('valid-token-hex')
@@ -205,8 +208,8 @@ describe('PasswordRecoveryUseCase', () => {
 
       await useCase.resetPassword({
         token: 'valid-token-hex',
-        novaSenha: 'NovaSenha1',
-        confirmarNovaSenha: 'NovaSenha1',
+        newPassword: 'NovaSenha1',
+        confirmNewPassword: 'NovaSenha1',
       })
 
       expect(mockUpdateMany).toHaveBeenCalledWith(
@@ -215,16 +218,16 @@ describe('PasswordRecoveryUseCase', () => {
       )
     })
 
-    it('registra auditoria de senha_redefinida', async () => {
+    it('registra auditoria de password_reset', async () => {
       mockFindValid.mockResolvedValue(VALID_TOKEN_RECORD)
 
       await useCase.resetPassword({
         token: 'valid-token-hex',
-        novaSenha: 'NovaSenha1',
-        confirmarNovaSenha: 'NovaSenha1',
+        newPassword: 'NovaSenha1',
+        confirmNewPassword: 'NovaSenha1',
       })
 
-      expect(mockLogAudit).toHaveBeenCalledWith('senha_redefinida', 'user-id-123', {})
+      expect(mockLogAudit).toHaveBeenCalledWith('password_reset', 'user-id-123', {}, undefined, 'default')
     })
 
     it('lança UnauthorizedError para token inválido ou expirado', async () => {
@@ -232,8 +235,8 @@ describe('PasswordRecoveryUseCase', () => {
 
       await expect(useCase.resetPassword({
         token: 'token-invalido',
-        novaSenha: 'NovaSenha1',
-        confirmarNovaSenha: 'NovaSenha1',
+        newPassword: 'NovaSenha1',
+        confirmNewPassword: 'NovaSenha1',
       })).rejects.toBeInstanceOf(UnauthorizedError)
     })
 
@@ -242,8 +245,8 @@ describe('PasswordRecoveryUseCase', () => {
 
       await expect(useCase.resetPassword({
         token: 'valid-token-hex',
-        novaSenha: 'NovaSenha1',
-        confirmarNovaSenha: 'Diferente1',
+        newPassword: 'NovaSenha1',
+        confirmNewPassword: 'Diferente1',
       })).rejects.toBeInstanceOf(SapphireValidationError)
     })
 
@@ -252,8 +255,8 @@ describe('PasswordRecoveryUseCase', () => {
 
       await useCase.resetPassword({
         token: 'invalido',
-        novaSenha: 'NovaSenha1',
-        confirmarNovaSenha: 'NovaSenha1',
+        newPassword: 'NovaSenha1',
+        confirmNewPassword: 'NovaSenha1',
       }).catch(() => null)
 
       expect(mockUpdatePassword).not.toHaveBeenCalled()
@@ -264,8 +267,8 @@ describe('PasswordRecoveryUseCase', () => {
 
       await useCase.resetPassword({
         token: 'valid-token-hex',
-        novaSenha: 'NovaSenha1',
-        confirmarNovaSenha: 'NovaSenha1',
+        newPassword: 'NovaSenha1',
+        confirmNewPassword: 'NovaSenha1',
       })
 
       const [, hash] = mockUpdatePassword.mock.calls[0]
@@ -276,8 +279,8 @@ describe('PasswordRecoveryUseCase', () => {
     it('lança SapphireValidationError para senha fraca', async () => {
       await expect(useCase.resetPassword({
         token: 'tok',
-        novaSenha: 'fraca',
-        confirmarNovaSenha: 'fraca',
+        newPassword: 'fraca',
+        confirmNewPassword: 'fraca',
       })).rejects.toBeInstanceOf(SapphireValidationError)
     })
   })

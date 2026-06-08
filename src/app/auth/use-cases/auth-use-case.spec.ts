@@ -53,14 +53,15 @@ function makePasswordHash (password: string): string {
 
 const MOCK_USER: User = {
   _id: 'user-id-123',
-  nome: 'João Silva',
+  name: 'João Silva',
   email: 'joao@restaurante.com',
   passwordHash: makePasswordHash('Senha123'),
-  status: 'ativo',
+  status: 'active',
+  role: 'admin',
   loginAttempts: 0,
-  bloqueadoAte: null,
-  termosAceitos: true,
-  aceitouTermosEm: '2024-01-01T00:00:00.000Z',
+  blockedUntil: null,
+  termsAccepted: true,
+  termsAcceptedAt: '2024-01-01T00:00:00.000Z',
   createdAt: '2024-01-01T00:00:00.000Z',
   updatedAt: '2024-01-01T00:00:00.000Z',
 }
@@ -110,11 +111,11 @@ describe('AuthUseCase', () => {
 
       const result = await useCase.login('joao@restaurante.com', 'Senha123')
 
-      expect(result.user.nome).toBe('João Silva')
+      expect(result.user.name).toBe('João Silva')
       expect(result.user.email).toBe('joao@restaurante.com')
     })
 
-    it('gera token com claims corretos (nome e email)', async () => {
+    it('gera token com claims corretos (name e email)', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
 
       await useCase.login('joao@restaurante.com', 'Senha123')
@@ -123,7 +124,7 @@ describe('AuthUseCase', () => {
         expect.objectContaining({
           tenantId: 'mintly',
           subject: 'user-id-123',
-          claims: expect.objectContaining({ nome: 'João Silva', email: 'joao@restaurante.com' }),
+          claims: expect.objectContaining({ name: 'João Silva', email: 'joao@restaurante.com' }),
         }),
       )
     })
@@ -140,7 +141,7 @@ describe('AuthUseCase', () => {
       )
     })
 
-    it('atualiza ultimoAcesso após login bem-sucedido', async () => {
+    it('atualiza lastAccessAt após login bem-sucedido', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
 
       await useCase.login('joao@restaurante.com', 'Senha123')
@@ -168,6 +169,8 @@ describe('AuthUseCase', () => {
         'login',
         'user-id-123',
         expect.objectContaining({ ip: '192.168.1.1', userAgent: 'Mozilla/5.0' }),
+        undefined,
+        'default',
       )
     })
   })
@@ -207,15 +210,17 @@ describe('AuthUseCase', () => {
       expect(mockIncrementAttempts).toHaveBeenCalledWith('user-id-123')
     })
 
-    it('registra auditoria de login_falhou', async () => {
+    it('registra auditoria de login_failed', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
 
       await useCase.login('joao@restaurante.com', 'Errada1').catch(() => null)
 
       expect(mockLogAudit).toHaveBeenCalledWith(
-        'login_falhou',
+        'login_failed',
         'user-id-123',
-        expect.objectContaining({ tentativa: 1 }),
+        expect.objectContaining({ attempt: 1 }),
+        undefined,
+        'default',
       )
     })
 
@@ -227,9 +232,11 @@ describe('AuthUseCase', () => {
 
       expect(mockSetTemporaryBlock).toHaveBeenCalledOnce()
       expect(mockLogAudit).toHaveBeenCalledWith(
-        'conta_bloqueada_temporariamente',
+        'account_temporarily_blocked',
         'user-id-123',
-        expect.objectContaining({ tentativas: 5 }),
+        expect.objectContaining({ attempts: 5 }),
+        undefined,
+        'default',
       )
     })
 
@@ -247,14 +254,14 @@ describe('AuthUseCase', () => {
 
   describe('login — status da conta', () => {
     it('lança ForbiddenError para conta inativa', async () => {
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, status: 'inativo' })
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, status: 'inactive' })
 
       await expect(useCase.login('joao@restaurante.com', 'Senha123'))
         .rejects.toBeInstanceOf(ForbiddenError)
     })
 
     it('lança ForbiddenError para conta bloqueada permanentemente', async () => {
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, status: 'bloqueado' })
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, status: 'blocked' })
 
       await expect(useCase.login('joao@restaurante.com', 'Senha123'))
         .rejects.toBeInstanceOf(ForbiddenError)
@@ -262,7 +269,7 @@ describe('AuthUseCase', () => {
 
     it('lança TooManyRequestsError para bloqueio temporário ativo', async () => {
       const futuro = new Date(Date.now() + 10 * 60_000).toISOString()
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, bloqueadoAte: futuro })
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, blockedUntil: futuro })
 
       await expect(useCase.login('joao@restaurante.com', 'Senha123'))
         .rejects.toBeInstanceOf(TooManyRequestsError)
@@ -270,7 +277,7 @@ describe('AuthUseCase', () => {
 
     it('permite login quando bloqueio temporário expirou', async () => {
       const passado = new Date(Date.now() - 1).toISOString()
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, bloqueadoAte: passado })
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, blockedUntil: passado })
 
       await expect(useCase.login('joao@restaurante.com', 'Senha123'))
         .resolves.toBeDefined()
@@ -278,7 +285,7 @@ describe('AuthUseCase', () => {
 
     it('mensagem de bloqueio informa tempo restante em minutos', async () => {
       const futuro = new Date(Date.now() + 15 * 60_000).toISOString()
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, bloqueadoAte: futuro })
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, blockedUntil: futuro })
 
       const err = await useCase.login('joao@restaurante.com', 'Senha123').catch(e => e)
 
@@ -340,7 +347,7 @@ describe('AuthUseCase', () => {
     it('registra auditoria de logout quando userId é informado', async () => {
       await useCase.logout('some-refresh-token', 'user-id-123')
 
-      expect(mockLogAudit).toHaveBeenCalledWith('logout', 'user-id-123', {})
+      expect(mockLogAudit).toHaveBeenCalledWith('logout', 'user-id-123', {}, undefined, 'default')
     })
 
     it('não registra auditoria de logout sem userId', async () => {

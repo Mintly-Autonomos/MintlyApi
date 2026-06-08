@@ -11,13 +11,13 @@ vi.mock('../../../infrastructure/jwt/jwt-service')
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 const VALID_INPUT = {
-  nome: 'João Silva',
+  name: 'João Silva',
   email: 'joao@restaurante.com',
-  senha: 'Senha123',
-  confirmarSenha: 'Senha123',
-  nomeRestaurante: 'Restaurante do João',
-  aceitouTermos: true,
-  aceitouPrivacidade: true,
+  password: 'Senha123',
+  confirmPassword: 'Senha123',
+  restaurantName: 'Restaurante do João',
+  acceptedTerms: true,
+  acceptedPrivacy: true,
 }
 
 const MOCK_TOKENS = {
@@ -34,18 +34,15 @@ const MOCK_TOKENS = {
 
 function makeMongoMock (overrides: { userExists?: boolean } = {}) {
   const userId = new ObjectId()
-  const orgId = new ObjectId()
+  const restaurantId = new ObjectId()
 
   const collections: Record<string, any> = {
     users: {
       findOne: vi.fn().mockResolvedValue(overrides.userExists ? { _id: userId, email: VALID_INPUT.email } : null),
       insertOne: vi.fn().mockResolvedValue({ insertedId: userId }),
     },
-    organizations: {
-      insertOne: vi.fn().mockResolvedValue({ insertedId: orgId }),
-    },
-    organization_members: {
-      insertOne: vi.fn().mockResolvedValue({ insertedId: new ObjectId() }),
+    restaurants: {
+      insertOne: vi.fn().mockResolvedValue({ insertedId: restaurantId }),
     },
     financial_accounts: {
       insertOne: vi.fn().mockResolvedValue({ insertedId: new ObjectId() }),
@@ -72,7 +69,7 @@ function makeMongoMock (overrides: { userExists?: boolean } = {}) {
     getDatabase: vi.fn().mockReturnValue(db),
   } as any)
 
-  return { collections, session, db, userId, orgId }
+  return { collections, session, db, userId, restaurantId }
 }
 
 // ─── setup ───────────────────────────────────────────────────────────────────
@@ -104,15 +101,15 @@ describe('RegisterUseCase', () => {
       expect(result.refreshToken).toBe('mock-refresh')
     })
 
-    it('retorna dados do usuário e da organização', async () => {
+    it('retorna dados do usuário e do restaurante', async () => {
       makeMongoMock()
 
       const result = await useCase.execute(VALID_INPUT)
 
-      expect(result.user.nome).toBe('João Silva')
+      expect(result.user.name).toBe('João Silva')
       expect(result.user.email).toBe('joao@restaurante.com')
-      expect(result.organization.nome).toBe('Restaurante do João')
-      expect(result.organization.id).toBeDefined()
+      expect(result.restaurant.name).toBe('Restaurante do João')
+      expect(result.restaurant.id).toBeDefined()
     })
 
     it('cria o usuário com os dados corretos', async () => {
@@ -121,7 +118,7 @@ describe('RegisterUseCase', () => {
       await useCase.execute(VALID_INPUT)
 
       expect(collections.users.insertOne).toHaveBeenCalledWith(
-        expect.objectContaining({ nome: 'João Silva', email: 'joao@restaurante.com', termosAceitos: true }),
+        expect.objectContaining({ name: 'João Silva', email: 'joao@restaurante.com', termsAccepted: true }),
         expect.anything(),
       )
     })
@@ -137,35 +134,34 @@ describe('RegisterUseCase', () => {
       expect(userDoc.passwordHash).toMatch(/^[a-f0-9]{32}:[a-f0-9]{128}$/)
     })
 
-    it('cria a organização com o nome do restaurante', async () => {
+    it('cria o restaurante com o nome informado', async () => {
       const { collections } = makeMongoMock()
 
       await useCase.execute(VALID_INPUT)
 
-      expect(collections.organizations.insertOne).toHaveBeenCalledWith(
-        expect.objectContaining({ nome: 'Restaurante do João' }),
+      expect(collections.restaurants.insertOne).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Restaurante do João' }),
         expect.anything(),
       )
     })
 
-    it('vincula o usuário à organização com papel administrador', async () => {
+    it('vincula o usuário ao restaurante via restaurantId no documento do usuário', async () => {
       const { collections } = makeMongoMock()
 
       await useCase.execute(VALID_INPUT)
 
-      expect(collections.organization_members.insertOne).toHaveBeenCalledWith(
-        expect.objectContaining({ papel: 'administrador' }),
-        expect.anything(),
-      )
+      const userDoc = vi.mocked(collections.users.insertOne).mock.calls[0][0]
+      expect(userDoc.restaurantId).toBeDefined()
+      expect(userDoc.role).toBe('admin')
     })
 
-    it('cria conta financeira padrão do tipo Caixa', async () => {
+    it('cria conta financeira padrão do tipo cash', async () => {
       const { collections } = makeMongoMock()
 
       await useCase.execute(VALID_INPUT)
 
       expect(collections.financial_accounts.insertOne).toHaveBeenCalledWith(
-        expect.objectContaining({ tipo: 'Caixa', ativa: true, padrao: true }),
+        expect.objectContaining({ type: 'cash', isActive: true, isDefault: true }),
         expect.anything(),
       )
     })
@@ -179,16 +175,25 @@ describe('RegisterUseCase', () => {
       expect(categoriesDocs).toHaveLength(6)
     })
 
-    it('cria categorias com tipos corretos (3 Receita + 3 Despesa no total)', async () => {
+    it('cria categorias com tipos corretos (2 income + 4 expense)', async () => {
       const { collections } = makeMongoMock()
 
       await useCase.execute(VALID_INPUT)
 
       const [categoriesDocs] = vi.mocked(collections.financial_categories.insertMany).mock.calls[0]
-      const receitas = categoriesDocs.filter((c: any) => c.tipo === 'Receita')
-      const despesas = categoriesDocs.filter((c: any) => c.tipo === 'Despesa')
-      expect(receitas).toHaveLength(2)
-      expect(despesas).toHaveLength(4)
+      const income = categoriesDocs.filter((c: any) => c.type === 'income')
+      const expense = categoriesDocs.filter((c: any) => c.type === 'expense')
+      expect(income).toHaveLength(2)
+      expect(expense).toHaveLength(4)
+    })
+
+    it('todas as categorias padrão têm isSystem true', async () => {
+      const { collections } = makeMongoMock()
+
+      await useCase.execute(VALID_INPUT)
+
+      const [categoriesDocs] = vi.mocked(collections.financial_categories.insertMany).mock.calls[0]
+      expect(categoriesDocs.every((c: any) => c.isSystem === true)).toBe(true)
     })
 
     it('cria os 4 eventos de auditoria', async () => {
@@ -197,14 +202,14 @@ describe('RegisterUseCase', () => {
       await useCase.execute(VALID_INPUT)
 
       const [auditDocs] = vi.mocked(collections.audit_logs.insertMany).mock.calls[0]
-      const eventos = auditDocs.map((a: any) => a.evento)
-      expect(eventos).toContain('conta_criada')
-      expect(eventos).toContain('organizacao_criada')
-      expect(eventos).toContain('termos_aceitos')
-      expect(eventos).toContain('onboarding_concluido')
+      const events = auditDocs.map((a: any) => a.event)
+      expect(events).toContain('account_created')
+      expect(events).toContain('restaurant_created')
+      expect(events).toContain('terms_accepted')
+      expect(events).toContain('onboarding_completed')
     })
 
-    it('gera token com claims de nome, email, papel e organizationId', async () => {
+    it('gera token com claims de name, email, role e restaurantId', async () => {
       makeMongoMock()
 
       await useCase.execute(VALID_INPUT)
@@ -213,21 +218,21 @@ describe('RegisterUseCase', () => {
         expect.objectContaining({
           tenantId: 'mintly',
           claims: expect.objectContaining({
-            nome: 'João Silva',
+            name: 'João Silva',
             email: 'joao@restaurante.com',
-            papel: 'administrador',
+            role: 'admin',
           }),
         }),
       )
     })
 
-    it('registra aceitouTermosEm no documento do usuário', async () => {
+    it('registra termsAcceptedAt no documento do usuário', async () => {
       const { collections } = makeMongoMock()
 
       await useCase.execute(VALID_INPUT)
 
       const userDoc = vi.mocked(collections.users.insertOne).mock.calls[0][0]
-      expect(userDoc.aceitouTermosEm).toBeDefined()
+      expect(userDoc.termsAcceptedAt).toBeDefined()
     })
 
     it('executa tudo dentro de uma única transação', async () => {
@@ -257,12 +262,12 @@ describe('RegisterUseCase', () => {
       expect(collections.users.insertOne).not.toHaveBeenCalled()
     })
 
-    it('não cria organização quando o e-mail já existe', async () => {
+    it('não cria restaurante quando o e-mail já existe', async () => {
       const { collections } = makeMongoMock({ userExists: true })
 
       await useCase.execute(VALID_INPUT).catch(() => null)
 
-      expect(collections.organizations.insertOne).not.toHaveBeenCalled()
+      expect(collections.restaurants.insertOne).not.toHaveBeenCalled()
     })
   })
 
@@ -272,28 +277,28 @@ describe('RegisterUseCase', () => {
     it('lança SapphireValidationError quando as senhas não conferem', async () => {
       makeMongoMock()
 
-      await expect(useCase.execute({ ...VALID_INPUT, confirmarSenha: 'Diferente1' }))
+      await expect(useCase.execute({ ...VALID_INPUT, confirmPassword: 'Diferente1' }))
         .rejects.toBeInstanceOf(SapphireValidationError)
     })
 
-    it('aponta o campo confirmarSenha quando as senhas não conferem', async () => {
+    it('aponta o campo confirmPassword quando as senhas não conferem', async () => {
       makeMongoMock()
 
-      const error = await useCase.execute({ ...VALID_INPUT, confirmarSenha: 'Diferente1' }).catch(e => e)
-      expect(error.flatten().fieldErrors.confirmarSenha).toBeDefined()
+      const error = await useCase.execute({ ...VALID_INPUT, confirmPassword: 'Diferente1' }).catch(e => e)
+      expect(error.flatten().fieldErrors.confirmPassword).toBeDefined()
     })
 
-    it('lança SapphireValidationError quando aceitouTermos é false', async () => {
+    it('lança SapphireValidationError quando acceptedTerms é false', async () => {
       makeMongoMock()
 
-      await expect(useCase.execute({ ...VALID_INPUT, aceitouTermos: false }))
+      await expect(useCase.execute({ ...VALID_INPUT, acceptedTerms: false }))
         .rejects.toBeInstanceOf(SapphireValidationError)
     })
 
-    it('lança SapphireValidationError quando aceitouPrivacidade é false', async () => {
+    it('lança SapphireValidationError quando acceptedPrivacy é false', async () => {
       makeMongoMock()
 
-      await expect(useCase.execute({ ...VALID_INPUT, aceitouPrivacidade: false }))
+      await expect(useCase.execute({ ...VALID_INPUT, acceptedPrivacy: false }))
         .rejects.toBeInstanceOf(SapphireValidationError)
     })
   })
@@ -311,7 +316,7 @@ describe('RegisterUseCase', () => {
     it('lança SapphireValidationError para senha fraca', async () => {
       makeMongoMock()
 
-      await expect(useCase.execute({ ...VALID_INPUT, senha: 'fraca', confirmarSenha: 'fraca' }))
+      await expect(useCase.execute({ ...VALID_INPUT, password: 'fraca', confirmPassword: 'fraca' }))
         .rejects.toBeInstanceOf(SapphireValidationError)
     })
 

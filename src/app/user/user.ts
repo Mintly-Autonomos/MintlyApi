@@ -1,17 +1,20 @@
-export type UserStatus = 'ativo' | 'inativo' | 'bloqueado'
+export type UserStatus = 'active' | 'inactive' | 'blocked'
+export type UserRole = 'admin' | 'member'
 
 export interface User {
   _id?: string
-  nome: string
+  name: string
   email: string
   cpf?: string
   passwordHash: string
   status: UserStatus
-  termosAceitos: boolean
-  aceitouTermosEm?: string
-  ultimoAcesso?: string
+  role: UserRole
+  restaurantId?: string
   loginAttempts: number
-  bloqueadoAte?: string | null
+  blockedUntil?: string | null
+  termsAccepted: boolean
+  termsAcceptedAt?: string
+  lastAccessAt?: string
   createdAt: string
   updatedAt: string
 }

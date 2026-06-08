@@ -1,14 +1,15 @@
-export type CategoryType = 'Receita' | 'Despesa'
-export type FinancialBehavior = 'Variável' | 'Fixa'
-export type OperationalNature = 'Operacional' | 'Não Operacional'
+export type CategoryType = 'income' | 'expense'
+export type FinancialBehavior = 'variable' | 'fixed'
+export type OperationalNature = 'operational' | 'non_operational'
 
 export interface FinancialCategory {
   _id?: string
-  organizationId: string
-  nome: string
-  tipo: CategoryType
-  comportamentoFinanceiro: FinancialBehavior
-  naturezaOperacional: OperationalNature
+  restaurantId: string
+  name: string
+  type: CategoryType
+  behavior: FinancialBehavior
+  operationalNature: OperationalNature
+  isSystem: boolean
   createdAt: string
   updatedAt: string
 }

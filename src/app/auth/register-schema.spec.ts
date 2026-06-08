@@ -3,13 +3,13 @@ import { SapphireValidationError } from '@ascendance-hub/sapphire-core'
 import { registerSchema, throwFieldError } from './register-schema'
 
 const VALID: Record<string, unknown> = {
-  nome: 'João Silva',
+  name: 'João Silva',
   email: 'joao@restaurante.com',
-  senha: 'Senha123',
-  confirmarSenha: 'Senha123',
-  nomeRestaurante: 'Restaurante do João',
-  aceitouTermos: true,
-  aceitouPrivacidade: true,
+  password: 'Senha123',
+  confirmPassword: 'Senha123',
+  restaurantName: 'Restaurante do João',
+  acceptedTerms: true,
+  acceptedPrivacy: true,
 }
 
 function fieldErrors (input: Record<string, unknown>): Record<string, string[]> {
@@ -30,28 +30,28 @@ describe('registerSchema', () => {
       const result = registerSchema.safeParse(VALID)
       expect(result.success).toBe(true)
       if (result.success) {
-        expect(result.data.nome).toBe('João Silva')
+        expect(result.data.name).toBe('João Silva')
         expect(result.data.email).toBe('joao@restaurante.com')
-        expect(result.data.aceitouTermos).toBe(true)
-        expect(result.data.aceitouPrivacidade).toBe(true)
+        expect(result.data.acceptedTerms).toBe(true)
+        expect(result.data.acceptedPrivacy).toBe(true)
       }
     })
   })
 
-  // ── nome ──────────────────────────────────────────────────────────────────
+  // ── name ──────────────────────────────────────────────────────────────────
 
-  describe('nome', () => {
-    it('rejeita nome ausente', () => {
-      const { nome, ...rest } = VALID
-      expect(fieldErrors(rest).nome).toBeDefined()
+  describe('name', () => {
+    it('rejeita name ausente', () => {
+      const { name, ...rest } = VALID
+      expect(fieldErrors(rest).name).toBeDefined()
     })
 
-    it('rejeita nome com 1 caractere', () => {
-      expect(fieldErrors({ ...VALID, nome: 'J' }).nome).toBeDefined()
+    it('rejeita name com 1 caractere', () => {
+      expect(fieldErrors({ ...VALID, name: 'J' }).name).toBeDefined()
     })
 
-    it('aceita nome com 2 caracteres', () => {
-      expect(fieldErrors({ ...VALID, nome: 'Jo' }).nome).toBeUndefined()
+    it('aceita name com 2 caracteres', () => {
+      expect(fieldErrors({ ...VALID, name: 'Jo' }).name).toBeUndefined()
     })
   })
 
@@ -80,77 +80,77 @@ describe('registerSchema', () => {
     })
   })
 
-  // ── senha ─────────────────────────────────────────────────────────────────
+  // ── password ──────────────────────────────────────────────────────────────
 
-  describe('senha', () => {
-    it('rejeita senha ausente', () => {
-      const { senha, ...rest } = VALID
-      expect(fieldErrors(rest).senha).toBeDefined()
+  describe('password', () => {
+    it('rejeita password ausente', () => {
+      const { password, ...rest } = VALID
+      expect(fieldErrors(rest).password).toBeDefined()
     })
 
-    it('rejeita senha com menos de 8 caracteres', () => {
-      expect(fieldErrors({ ...VALID, senha: 'Ab1' }).senha).toBeDefined()
+    it('rejeita password com menos de 8 caracteres', () => {
+      expect(fieldErrors({ ...VALID, password: 'Ab1' }).password).toBeDefined()
     })
 
-    it('rejeita senha sem letra maiúscula', () => {
-      expect(fieldErrors({ ...VALID, senha: 'senha123' }).senha).toBeDefined()
+    it('rejeita password sem letra maiúscula', () => {
+      expect(fieldErrors({ ...VALID, password: 'senha123' }).password).toBeDefined()
     })
 
-    it('rejeita senha sem letra minúscula', () => {
-      expect(fieldErrors({ ...VALID, senha: 'SENHA123' }).senha).toBeDefined()
+    it('rejeita password sem letra minúscula', () => {
+      expect(fieldErrors({ ...VALID, password: 'SENHA123' }).password).toBeDefined()
     })
 
-    it('rejeita senha sem número', () => {
-      expect(fieldErrors({ ...VALID, senha: 'SenhaForte' }).senha).toBeDefined()
+    it('rejeita password sem número', () => {
+      expect(fieldErrors({ ...VALID, password: 'SenhaForte' }).password).toBeDefined()
     })
 
-    it('aceita senha com exatamente 8 chars, maiúscula, minúscula e número', () => {
-      expect(fieldErrors({ ...VALID, senha: 'Abcdef1!' }).senha).toBeUndefined()
-    })
-  })
-
-  // ── confirmarSenha ────────────────────────────────────────────────────────
-
-  describe('confirmarSenha', () => {
-    it('rejeita confirmarSenha ausente', () => {
-      const { confirmarSenha, ...rest } = VALID
-      expect(fieldErrors(rest).confirmarSenha).toBeDefined()
+    it('aceita password com exatamente 8 chars, maiúscula, minúscula e número', () => {
+      expect(fieldErrors({ ...VALID, password: 'Abcdef1!' }).password).toBeUndefined()
     })
   })
 
-  // ── nomeRestaurante ───────────────────────────────────────────────────────
+  // ── confirmPassword ───────────────────────────────────────────────────────
 
-  describe('nomeRestaurante', () => {
-    it('rejeita nomeRestaurante ausente', () => {
-      const { nomeRestaurante, ...rest } = VALID
-      expect(fieldErrors(rest).nomeRestaurante).toBeDefined()
+  describe('confirmPassword', () => {
+    it('rejeita confirmPassword ausente', () => {
+      const { confirmPassword, ...rest } = VALID
+      expect(fieldErrors(rest).confirmPassword).toBeDefined()
+    })
+  })
+
+  // ── restaurantName ────────────────────────────────────────────────────────
+
+  describe('restaurantName', () => {
+    it('rejeita restaurantName ausente', () => {
+      const { restaurantName, ...rest } = VALID
+      expect(fieldErrors(rest).restaurantName).toBeDefined()
     })
 
-    it('rejeita nomeRestaurante com 1 caractere', () => {
-      expect(fieldErrors({ ...VALID, nomeRestaurante: 'R' }).nomeRestaurante).toBeDefined()
+    it('rejeita restaurantName com 1 caractere', () => {
+      expect(fieldErrors({ ...VALID, restaurantName: 'R' }).restaurantName).toBeDefined()
     })
 
-    it('aceita nomeRestaurante com 2 caracteres', () => {
-      expect(fieldErrors({ ...VALID, nomeRestaurante: 'RG' }).nomeRestaurante).toBeUndefined()
+    it('aceita restaurantName com 2 caracteres', () => {
+      expect(fieldErrors({ ...VALID, restaurantName: 'RG' }).restaurantName).toBeUndefined()
     })
   })
 
   // ── aceites ───────────────────────────────────────────────────────────────
 
-  describe('aceitouTermos / aceitouPrivacidade', () => {
-    it('rejeita aceitouTermos ausente', () => {
-      const { aceitouTermos, ...rest } = VALID
-      expect(fieldErrors(rest).aceitouTermos).toBeDefined()
+  describe('acceptedTerms / acceptedPrivacy', () => {
+    it('rejeita acceptedTerms ausente', () => {
+      const { acceptedTerms, ...rest } = VALID
+      expect(fieldErrors(rest).acceptedTerms).toBeDefined()
     })
 
-    it('rejeita aceitouPrivacidade ausente', () => {
-      const { aceitouPrivacidade, ...rest } = VALID
-      expect(fieldErrors(rest).aceitouPrivacidade).toBeDefined()
+    it('rejeita acceptedPrivacy ausente', () => {
+      const { acceptedPrivacy, ...rest } = VALID
+      expect(fieldErrors(rest).acceptedPrivacy).toBeDefined()
     })
 
-    it('aceita aceitouTermos = false (validação de negócio fica no use case)', () => {
+    it('aceita acceptedTerms = false (validação de negócio fica no use case)', () => {
       // o schema só verifica o tipo; a regra "deve ser true" é do use case
-      expect(fieldErrors({ ...VALID, aceitouTermos: false }).aceitouTermos).toBeUndefined()
+      expect(fieldErrors({ ...VALID, acceptedTerms: false }).acceptedTerms).toBeUndefined()
     })
   })
 })
@@ -159,22 +159,22 @@ describe('registerSchema', () => {
 
 describe('throwFieldError', () => {
   it('lança SapphireValidationError', () => {
-    expect(() => throwFieldError('confirmarSenha', 'As senhas não conferem.')).toThrow(SapphireValidationError)
+    expect(() => throwFieldError('confirmPassword', 'As senhas não conferem.')).toThrow(SapphireValidationError)
   })
 
   it('inclui o campo correto no path do erro', () => {
     try {
-      throwFieldError('confirmarSenha', 'As senhas não conferem.')
+      throwFieldError('confirmPassword', 'As senhas não conferem.')
     } catch (e) {
       expect(e).toBeInstanceOf(SapphireValidationError)
       const err = e as SapphireValidationError
-      expect(err.issues[0].path).toEqual(['confirmarSenha'])
+      expect(err.issues[0].path).toEqual(['confirmPassword'])
     }
   })
 
   it('inclui a mensagem correta', () => {
     try {
-      throwFieldError('aceitouTermos', 'Deve aceitar os termos.')
+      throwFieldError('acceptedTerms', 'Deve aceitar os termos.')
     } catch (e) {
       const err = e as SapphireValidationError
       expect(err.issues[0].message).toBe('Deve aceitar os termos.')

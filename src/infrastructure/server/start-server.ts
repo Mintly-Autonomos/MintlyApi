@@ -2,6 +2,7 @@ import * as dotenv from 'dotenv'
 import { FastifyInstance } from 'fastify'
 import { mongoConnection } from '../db/mongodb'
 import { buildServer } from './build-server'
+import { ensureIndexes } from '../db/mongodb/ensure-indexes'
 
 dotenv.config()
 
@@ -10,6 +11,7 @@ export async function startServer (server?: FastifyInstance) {
 
   try {
     await mongoConnection.connect()
+    await ensureIndexes()
     mongoConnection.setupGracefulShutdown()
     console.log('MongoDB conectado')
 

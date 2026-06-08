@@ -1,13 +1,15 @@
 import { Collection } from 'mongodb'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { PasswordResetToken } from './password-reset-token'
+import { authDbName } from './auth-db'
 
 export class PasswordResetRepository {
+  constructor (private readonly env = 'default') {}
+
   private getCollection (): Collection<PasswordResetToken> {
-    const db = MongoDBConnection.getInstance().getDatabase(
-      process.env.MONGODB_AUTH_DB ?? process.env.MONGODB_DB ?? 'mintly',
-    )
-    return db.collection<PasswordResetToken>('password_reset_tokens')
+    return MongoDBConnection.getInstance()
+      .getDatabase(authDbName(this.env))
+      .collection<PasswordResetToken>('password_reset_tokens')
   }
 
   async create (record: Omit<PasswordResetToken, '_id'>): Promise<void> {

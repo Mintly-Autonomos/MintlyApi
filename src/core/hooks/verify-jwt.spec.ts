@@ -38,7 +38,7 @@ describe('verifyJwt', () => {
 
       expect(reply.status).toHaveBeenCalledWith(401)
       expect(reply.send).toHaveBeenCalledWith(
-        expect.objectContaining({ code: 'UNAUTHORIZED' }),
+        expect.objectContaining({ code: 'AUTH-0001' }),
       )
     })
 

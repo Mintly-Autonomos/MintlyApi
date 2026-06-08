@@ -1,13 +1,10 @@
 import { Sapphire, SapphireValidationError } from '@ascendance-hub/sapphire-core'
+import { PASSWORD_MIN_LENGTH, PASSWORD_REGEX, PASSWORD_REGEX_MESSAGE } from '../../shared/password-policy'
 
 const s = new Sapphire()
 
-/**
- * Valida os campos individuais do cadastro.
- * Validação cross-field (confirmarSenha, aceites) é feita no use case.
- */
 export const registerSchema = s.object({
-  nome: s.string()
+  name: s.string()
     .min(2, { message: 'O nome deve ter pelo menos 2 caracteres.' })
     .message({ required: 'O nome é obrigatório.' }),
 
@@ -15,34 +12,27 @@ export const registerSchema = s.object({
     .email({ message: 'Informe um e-mail válido.' })
     .message({ required: 'O e-mail é obrigatório.' }),
 
-  senha: s.string()
-    .min(8, { message: 'A senha deve ter pelo menos 8 caracteres.' })
-    .regex(
-      /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)/,
-      { message: 'A senha deve conter ao menos uma letra maiúscula, uma minúscula e um número.' },
-    )
+  password: s.string()
+    .min(PASSWORD_MIN_LENGTH, { message: `A senha deve ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres.` })
+    .regex(PASSWORD_REGEX, { message: PASSWORD_REGEX_MESSAGE })
     .message({ required: 'A senha é obrigatória.' }),
 
-  confirmarSenha: s.string()
+  confirmPassword: s.string()
     .message({ required: 'A confirmação de senha é obrigatória.' }),
 
-  nomeRestaurante: s.string()
+  restaurantName: s.string()
     .min(2, { message: 'O nome do restaurante deve ter pelo menos 2 caracteres.' })
     .message({ required: 'O nome do restaurante é obrigatório.' }),
 
-  aceitouTermos: s.boolean()
+  acceptedTerms: s.boolean()
     .message({ required: 'É necessário aceitar os termos de uso.' }),
 
-  aceitouPrivacidade: s.boolean()
+  acceptedPrivacy: s.boolean()
     .message({ required: 'É necessário aceitar a política de privacidade.' }),
 })
 
 export type RegisterInput = typeof registerSchema['_output']
 
-/**
- * Lança SapphireValidationError com erro no campo especificado.
- * Mantém o mesmo contrato de erro do handler global.
- */
 export function throwFieldError (field: string, message: string): never {
   throw new SapphireValidationError([{ path: [field], code: 'custom' as any, message }])
 }

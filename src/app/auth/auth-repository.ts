@@ -1,13 +1,15 @@
 import { Collection, ObjectId } from 'mongodb'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { User } from '../user/user'
+import { authDbName } from './auth-db'
 
 export class AuthRepository {
+  constructor (private readonly env = 'default') {}
+
   private getCollection (): Collection<User> {
-    const db = MongoDBConnection.getInstance().getDatabase(
-      process.env.MONGODB_AUTH_DB ?? process.env.MONGODB_DB ?? 'mintly',
-    )
-    return db.collection<User>('users')
+    return MongoDBConnection.getInstance()
+      .getDatabase(authDbName(this.env))
+      .collection<User>('users')
   }
 
   async findByEmail (email: string): Promise<User | null> {
@@ -26,17 +28,14 @@ export class AuthRepository {
   async updateLastAccess (userId: string): Promise<void> {
     await this.getCollection().updateOne(
       { _id: new ObjectId(userId) as any },
-      { $set: { ultimoAcesso: new Date().toISOString(), updatedAt: new Date().toISOString() } },
+      { $set: { lastAccessAt: new Date().toISOString(), updatedAt: new Date().toISOString() } },
     )
   }
 
   async incrementLoginAttempts (userId: string): Promise<number> {
     const result = await this.getCollection().findOneAndUpdate(
       { _id: new ObjectId(userId) as any },
-      {
-        $inc: { loginAttempts: 1 },
-        $set: { updatedAt: new Date().toISOString() },
-      },
+      { $inc: { loginAttempts: 1 }, $set: { updatedAt: new Date().toISOString() } },
       { returnDocument: 'after' },
     )
     return result?.loginAttempts ?? 1
@@ -45,39 +44,21 @@ export class AuthRepository {
   async resetLoginAttempts (userId: string): Promise<void> {
     await this.getCollection().updateOne(
       { _id: new ObjectId(userId) as any },
-      {
-        $set: {
-          loginAttempts: 0,
-          bloqueadoAte: null,
-          updatedAt: new Date().toISOString(),
-        },
-      },
+      { $set: { loginAttempts: 0, blockedUntil: null, updatedAt: new Date().toISOString() } },
     )
   }
 
   async setTemporaryBlock (userId: string, blockedUntil: Date): Promise<void> {
     await this.getCollection().updateOne(
       { _id: new ObjectId(userId) as any },
-      {
-        $set: {
-          bloqueadoAte: blockedUntil.toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      },
+      { $set: { blockedUntil: blockedUntil.toISOString(), updatedAt: new Date().toISOString() } },
     )
   }
 
   async updatePassword (userId: string, passwordHash: string): Promise<void> {
     await this.getCollection().updateOne(
       { _id: new ObjectId(userId) as any },
-      {
-        $set: {
-          passwordHash,
-          loginAttempts: 0,
-          bloqueadoAte: null,
-          updatedAt: new Date().toISOString(),
-        },
-      },
+      { $set: { passwordHash, loginAttempts: 0, blockedUntil: null, updatedAt: new Date().toISOString() } },
     )
   }
 }

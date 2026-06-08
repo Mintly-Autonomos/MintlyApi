@@ -11,7 +11,7 @@ const TENANT = 'mintly'
 const MAX_LOGIN_ATTEMPTS = Number(process.env.MAX_LOGIN_ATTEMPTS ?? 5)
 const BLOCK_DURATION_MINUTES = Number(process.env.BLOCK_DURATION_MINUTES ?? 15)
 
-export type AuthUser = Pick<User, 'nome' | 'email'>
+export type AuthUser = Pick<User, 'name' | 'email'>
 
 export interface LoginResult {
   accessToken: string
@@ -27,34 +27,31 @@ export interface RefreshResult {
 export interface LoginContext {
   ip?: string
   userAgent?: string
+  env?: string
 }
 
 export class AuthUseCase {
-  private readonly repo = new AuthRepository()
+  private repo (env = 'default') { return new AuthRepository(env) }
 
   async login (email: string, password: string, ctx: LoginContext = {}): Promise<LoginResult> {
-    const person = await this.repo.findByEmail(email)
+    const env = ctx.env ?? 'default'
+    const person = await this.repo(env).findByEmail(email)
 
-    // Resposta genérica — não revela se email existe ou senha está errada
     if (!person) {
       throw new UnauthorizedError('Credenciais inválidas')
     }
 
-    // Conta inativa ou permanentemente bloqueada
-    if (person.status === 'inativo') {
+    if (person.status === 'inactive') {
       throw new ForbiddenError('Conta inativa. Entre em contato com o suporte.')
     }
-    if (person.status === 'bloqueado') {
+    if (person.status === 'blocked') {
       throw new ForbiddenError('Conta bloqueada. Entre em contato com o suporte.')
     }
 
-    // Bloqueio temporário por tentativas excessivas
-    if (person.bloqueadoAte && new Date(person.bloqueadoAte) > new Date()) {
-      const minutosRestantes = Math.ceil(
-        (new Date(person.bloqueadoAte).getTime() - Date.now()) / 60_000,
-      )
+    if (person.blockedUntil && new Date(person.blockedUntil) > new Date()) {
+      const minutesLeft = Math.ceil((new Date(person.blockedUntil).getTime() - Date.now()) / 60_000)
       throw new TooManyRequestsError(
-        `Conta temporariamente bloqueada. Tente novamente em ${minutosRestantes} minuto(s).`,
+        `Conta temporariamente bloqueada. Tente novamente em ${minutesLeft} minuto(s).`,
       )
     }
 
@@ -63,30 +60,26 @@ export class AuthUseCase {
       throw new UnauthorizedError('Credenciais inválidas')
     }
 
-    // Login bem-sucedido — reset tentativas + registra acesso
-    await this.repo.resetLoginAttempts(String(person._id))
-    await this.repo.updateLastAccess(String(person._id)).catch(() => null)
+    await this.repo(env).resetLoginAttempts(String(person._id))
+    await this.repo(env).updateLastAccess(String(person._id)).catch(() => null)
 
     const jwt = getJwtService()
     const tokens = await jwt.generate({
       tenantId: TENANT,
       subject: String(person._id),
       claims: {
-        nome: person.nome,
+        name: person.name,
         email: person.email,
         ...(person.cpf ? { cpf: person.cpf } : {}),
       },
     })
 
-    logAudit('login', String(person._id), {
-      ip: ctx.ip ?? null,
-      userAgent: ctx.userAgent ?? null,
-    }).catch(() => null)
+    logAudit('login', String(person._id), { ip: ctx.ip ?? null, userAgent: ctx.userAgent ?? null }, undefined, env).catch(() => null)
 
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
-      user: { nome: person.nome, email: person.email },
+      user: { name: person.name, email: person.email },
     }
   }
 
@@ -102,31 +95,25 @@ export class AuthUseCase {
     }
   }
 
-  async logout (refreshToken: string, userId?: string): Promise<void> {
+  async logout (refreshToken: string, userId?: string, env = 'default'): Promise<void> {
     const jwt = getJwtService()
     await jwt.revokeRefreshToken(refreshToken)
     if (userId) {
-      logAudit('logout', userId, {}).catch(() => null)
+      logAudit('logout', userId, {}, undefined, env).catch(() => null)
     }
   }
 
   private async handleFailedAttempt (person: User, ctx: LoginContext): Promise<void> {
     const userId = String(person._id)
-    const attempts = await this.repo.incrementLoginAttempts(userId)
+    const env = ctx.env ?? 'default'
+    const attempts = await this.repo(env).incrementLoginAttempts(userId)
 
-    logAudit('login_falhou', userId, {
-      ip: ctx.ip ?? null,
-      userAgent: ctx.userAgent ?? null,
-      tentativa: attempts,
-    }).catch(() => null)
+    logAudit('login_failed', userId, { ip: ctx.ip ?? null, userAgent: ctx.userAgent ?? null, attempt: attempts }, undefined, env).catch(() => null)
 
     if (attempts >= MAX_LOGIN_ATTEMPTS) {
       const blockedUntil = new Date(Date.now() + BLOCK_DURATION_MINUTES * 60_000)
-      await this.repo.setTemporaryBlock(userId, blockedUntil)
-      logAudit('conta_bloqueada_temporariamente', userId, {
-        bloqueadoAte: blockedUntil.toISOString(),
-        tentativas: attempts,
-      }).catch(() => null)
+      await this.repo(env).setTemporaryBlock(userId, blockedUntil)
+      logAudit('account_temporarily_blocked', userId, { blockedUntil: blockedUntil.toISOString(), attempts }, undefined, env).catch(() => null)
     }
   }
 

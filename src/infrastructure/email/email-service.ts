@@ -18,7 +18,7 @@ class ResendEmailService implements IEmailService {
   async sendPasswordRecovery (to: string, token: string): Promise<void> {
     const resetUrl = `${process.env.FRONTEND_URL ?? 'http://localhost:4200'}/auth/redefinir-senha?token=${token}`
 
-    await this.client.emails.send({
+    const { data, error } = await this.client.emails.send({
       from: this.from,
       to,
       subject: 'Recuperação de senha — Mintly',
@@ -37,6 +37,13 @@ class ResendEmailService implements IEmailService {
         </div>
       `,
     })
+
+    if (error) {
+      console.error('[RESEND] Falha ao enviar e-mail:', JSON.stringify(error))
+      throw new Error(`Falha ao enviar e-mail: ${error.message}`)
+    }
+
+    console.log('[RESEND] E-mail enviado com sucesso. ID:', data?.id)
   }
 }
 

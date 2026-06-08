@@ -40,26 +40,26 @@ import { buildServer } from '../../infrastructure/server/build-server'
 // ─── dados de apoio ───────────────────────────────────────────────────────────
 
 const REGISTER_BODY = {
-  nome: 'João Silva',
+  name: 'João Silva',
   email: 'joao@restaurante.com',
-  senha: 'Senha123',
-  confirmarSenha: 'Senha123',
-  nomeRestaurante: 'Restaurante do João',
-  aceitouTermos: true,
-  aceitouPrivacidade: true,
+  password: 'Senha123',
+  confirmPassword: 'Senha123',
+  restaurantName: 'Restaurante do João',
+  acceptedTerms: true,
+  acceptedPrivacy: true,
 }
 
 const REGISTER_RESULT = {
   accessToken: 'mock-access',
   refreshToken: 'mock-refresh',
-  user: { nome: 'João Silva', email: 'joao@restaurante.com' },
-  organization: { id: 'org-id', nome: 'Restaurante do João' },
+  user: { name: 'João Silva', email: 'joao@restaurante.com' },
+  restaurant: { id: 'rest-id', name: 'Restaurante do João' },
 }
 
 const LOGIN_RESULT = {
   accessToken: 'mock-access',
   refreshToken: 'mock-refresh',
-  user: { nome: 'João Silva', email: 'joao@restaurante.com' },
+  user: { name: 'João Silva', email: 'joao@restaurante.com' },
 }
 
 // ─── suite ───────────────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ describe('Auth Routes', () => {
       const body = response.json()
       expect(body.accessToken).toBe('mock-access')
       expect(body.user.email).toBe('joao@restaurante.com')
-      expect(body.organization.nome).toBe('Restaurante do João')
+      expect(body.restaurant.name).toBe('Restaurante do João')
     })
 
     it('retorna 400 com code VALIDATION_ERROR para SapphireValidationError', async () => {
@@ -119,7 +119,7 @@ describe('Auth Routes', () => {
     it('retorna fieldErrors na resposta de erro de validação', async () => {
       mockExecute.mockRejectedValue(
         new SapphireValidationError([
-          { path: ['confirmarSenha'], code: 'custom' as any, message: 'As senhas não conferem.' },
+          { path: ['confirmPassword'], code: 'custom' as any, message: 'As senhas não conferem.' },
         ]),
       )
 
@@ -265,7 +265,7 @@ describe('Auth Routes', () => {
       const response = await server.inject({
         method: 'POST',
         url: '/auth/redefinir-senha',
-        payload: { token: 'valid-token', novaSenha: 'NovaSenha1', confirmarNovaSenha: 'NovaSenha1' },
+        payload: { token: 'valid-token', newPassword: 'NovaSenha1', confirmNewPassword: 'NovaSenha1' },
       })
 
       expect(response.statusCode).toBe(200)
@@ -278,7 +278,7 @@ describe('Auth Routes', () => {
       const response = await server.inject({
         method: 'POST',
         url: '/auth/redefinir-senha',
-        payload: { token: 'expirado', novaSenha: 'NovaSenha1', confirmarNovaSenha: 'NovaSenha1' },
+        payload: { token: 'expirado', newPassword: 'NovaSenha1', confirmNewPassword: 'NovaSenha1' },
       })
 
       expect(response.statusCode).toBe(401)
@@ -287,14 +287,14 @@ describe('Auth Routes', () => {
     it('retorna 400 quando as senhas não conferem (SapphireValidationError)', async () => {
       mockResetPassword.mockRejectedValue(
         new SapphireValidationError([
-          { path: ['confirmarNovaSenha'], code: 'custom' as any, message: 'As senhas não conferem.' },
+          { path: ['confirmNewPassword'], code: 'custom' as any, message: 'As senhas não conferem.' },
         ]),
       )
 
       const response = await server.inject({
         method: 'POST',
         url: '/auth/redefinir-senha',
-        payload: { token: 'tok', novaSenha: 'NovaSenha1', confirmarNovaSenha: 'Diferente1' },
+        payload: { token: 'tok', newPassword: 'NovaSenha1', confirmNewPassword: 'Diferente1' },
       })
 
       expect(response.statusCode).toBe(400)

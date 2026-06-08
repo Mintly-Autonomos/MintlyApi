@@ -1,4 +1,5 @@
 import { Sapphire, SapphireValidationError } from '@ascendance-hub/sapphire-core'
+import { PASSWORD_MIN_LENGTH, PASSWORD_REGEX, PASSWORD_REGEX_MESSAGE } from '../../shared/password-policy'
 
 const s = new Sapphire()
 
@@ -11,14 +12,11 @@ export const requestRecoverySchema = s.object({
 export const resetPasswordSchema = s.object({
   token: s.string()
     .message({ required: 'Token é obrigatório.' }),
-  novaSenha: s.string()
-    .min(8, { message: 'A senha deve ter no mínimo 8 caracteres.' })
-    .regex(
-      /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)/,
-      { message: 'A senha deve conter ao menos uma letra maiúscula, uma minúscula e um número.' },
-    )
+  newPassword: s.string()
+    .min(PASSWORD_MIN_LENGTH, { message: `A senha deve ter no mínimo ${PASSWORD_MIN_LENGTH} caracteres.` })
+    .regex(PASSWORD_REGEX, { message: PASSWORD_REGEX_MESSAGE })
     .message({ required: 'A nova senha é obrigatória.' }),
-  confirmarNovaSenha: s.string()
+  confirmNewPassword: s.string()
     .message({ required: 'A confirmação da nova senha é obrigatória.' }),
 })
 

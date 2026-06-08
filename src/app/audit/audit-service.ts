@@ -1,26 +1,27 @@
 import { Collection } from 'mongodb'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { AuditEvent, AuditLog } from './audit-log'
+import { authDbName } from '../auth/auth-db'
 
-function getCollection (): Collection<AuditLog> {
-  const db = MongoDBConnection.getInstance().getDatabase(
-    process.env.MONGODB_AUTH_DB ?? process.env.MONGODB_DB ?? 'mintly',
-  )
-  return db.collection<AuditLog>('audit_logs')
+function getCollection (env = 'default'): Collection<AuditLog> {
+  return MongoDBConnection.getInstance()
+    .getDatabase(authDbName(env))
+    .collection<AuditLog>('audit_logs')
 }
 
 export async function logAudit (
-  evento: AuditEvent,
+  event: AuditEvent,
   userId: string,
-  dados: Record<string, unknown> = {},
-  organizationId?: string,
+  data: Record<string, unknown> = {},
+  restaurantId?: string,
+  env = 'default',
 ): Promise<void> {
   const entry: AuditLog = {
-    evento,
+    event,
     userId,
-    organizationId,
-    dados,
-    criadoEm: new Date().toISOString(),
+    restaurantId,
+    data,
+    createdAt: new Date().toISOString(),
   }
-  await getCollection().insertOne(entry).catch(() => null)
+  await getCollection(env).insertOne(entry).catch(() => null)
 }

@@ -1,55 +1,50 @@
 import { randomBytes, scryptSync } from 'crypto'
-import { ClientSession, ObjectId } from 'mongodb'
+import { ObjectId } from 'mongodb'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import { getJwtService } from '../../../infrastructure/jwt/jwt-service'
 import { registerSchema, throwFieldError } from '../register-schema'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { User } from '../../user/user'
-import { Organization } from '../../organization/organization'
-import { OrganizationMember } from '../../organization/organization-member'
+import { Restaurant } from '../../restaurant/restaurant'
 import { FinancialAccount } from '../../financial/financial-account'
 import { FinancialCategory } from '../../financial/financial-category'
 import { AuditLog } from '../../audit/audit-log'
+import { authDbName } from '../auth-db'
 
 const TENANT = 'mintly'
-
-const DB_NAME = () => process.env.MONGODB_AUTH_DB ?? process.env.MONGODB_DB ?? 'mintly'
 
 export interface RegisterResult {
   accessToken: string
   refreshToken: string | null
-  user: Pick<User, 'nome' | 'email'>
-  organization: Pick<Organization, 'nome'> & { id: string }
+  user: Pick<User, 'name' | 'email'>
+  restaurant: { id: string; name: string }
 }
 
-const DEFAULT_CATEGORIES: Omit<FinancialCategory, '_id' | 'organizationId' | 'createdAt' | 'updatedAt'>[] = [
-  { nome: 'Venda Balcão',   tipo: 'Receita',  comportamentoFinanceiro: 'Variável', naturezaOperacional: 'Operacional'     },
-  { nome: 'Venda Delivery', tipo: 'Receita',  comportamentoFinanceiro: 'Variável', naturezaOperacional: 'Operacional'     },
-  { nome: 'CMV / Insumos',  tipo: 'Despesa',  comportamentoFinanceiro: 'Variável', naturezaOperacional: 'Operacional'     },
-  { nome: 'Salários',       tipo: 'Despesa',  comportamentoFinanceiro: 'Fixa',     naturezaOperacional: 'Operacional'     },
-  { nome: 'Aluguel',        tipo: 'Despesa',  comportamentoFinanceiro: 'Fixa',     naturezaOperacional: 'Operacional'     },
-  { nome: 'Impostos',       tipo: 'Despesa',  comportamentoFinanceiro: 'Fixa',     naturezaOperacional: 'Não Operacional' },
+const DEFAULT_CATEGORIES: Omit<FinancialCategory, '_id' | 'restaurantId' | 'createdAt' | 'updatedAt'>[] = [
+  { name: 'Venda Balcão',   type: 'income',  behavior: 'variable', operationalNature: 'operational',     isSystem: true },
+  { name: 'Venda Delivery', type: 'income',  behavior: 'variable', operationalNature: 'operational',     isSystem: true },
+  { name: 'CMV / Insumos',  type: 'expense', behavior: 'variable', operationalNature: 'operational',     isSystem: true },
+  { name: 'Salários',       type: 'expense', behavior: 'fixed',    operationalNature: 'operational',     isSystem: true },
+  { name: 'Aluguel',        type: 'expense', behavior: 'fixed',    operationalNature: 'operational',     isSystem: true },
+  { name: 'Impostos',       type: 'expense', behavior: 'fixed',    operationalNature: 'non_operational', isSystem: true },
 ]
 
 export class RegisterUseCase {
-  async execute (rawInput: unknown): Promise<RegisterResult> {
-    // 1. Validate shape + field rules via Sapphire (throws SapphireValidationError)
+  async execute (rawInput: unknown, env = 'default'): Promise<RegisterResult> {
     const data = registerSchema.parse(rawInput)
 
-    // 2. Cross-field validations
-    if (data.senha !== data.confirmarSenha) {
-      throwFieldError('confirmarSenha', 'As senhas não conferem.')
+    if (data.password !== data.confirmPassword) {
+      throwFieldError('confirmPassword', 'As senhas não conferem.')
     }
-    if (!data.aceitouTermos) {
-      throwFieldError('aceitouTermos', 'É necessário aceitar os termos de uso para prosseguir.')
+    if (!data.acceptedTerms) {
+      throwFieldError('acceptedTerms', 'É necessário aceitar os termos de uso para prosseguir.')
     }
-    if (!data.aceitouPrivacidade) {
-      throwFieldError('aceitouPrivacidade', 'É necessário aceitar a política de privacidade para prosseguir.')
+    if (!data.acceptedPrivacy) {
+      throwFieldError('acceptedPrivacy', 'É necessário aceitar a política de privacidade para prosseguir.')
     }
 
-    // 3. Transactional registration + onboarding
     const mongoClient = MongoDBConnection.getInstance().getClient()
-    const db = MongoDBConnection.getInstance().getDatabase(DB_NAME())
+    const db = MongoDBConnection.getInstance().getDatabase(authDbName(env))
     const session = mongoClient.startSession()
 
     let result!: RegisterResult
@@ -58,62 +53,63 @@ export class RegisterUseCase {
       await session.withTransaction(async () => {
         const now = new Date().toISOString()
 
-        // ── Check email uniqueness ────────────────────────────────────────────
+        // ── Email uniqueness (índice único garante atomicidade em concurrent writes) ──
         const existing = await db.collection('users').findOne({ email: data.email }, { session })
         if (existing) throw new ConflictError('Este e-mail já está cadastrado.')
 
+        // ── Pre-allocate restaurant ID ────────────────────────────────────────
+        const restaurantId = new ObjectId()
+
         // ── Create user ───────────────────────────────────────────────────────
-        const passwordHash = this.hashPassword(data.senha)
         const userDoc: Omit<User, '_id'> = {
-          nome: data.nome,
+          name: data.name,
           email: data.email,
-          passwordHash,
-          status: 'ativo',
+          passwordHash: this.hashPassword(data.password),
+          status: 'active',
+          role: 'admin',
+          restaurantId: restaurantId.toString(),
           loginAttempts: 0,
-          bloqueadoAte: null,
-          termosAceitos: true,
-          aceitouTermosEm: now,
-          ultimoAcesso: now,
+          blockedUntil: null,
+          termsAccepted: true,
+          termsAcceptedAt: now,
+          lastAccessAt: now,
           createdAt: now,
           updatedAt: now,
         }
         const userInsert = await db.collection<User>('users').insertOne(userDoc as User, { session })
         const userId = userInsert.insertedId.toString()
 
-        // ── Create organization ───────────────────────────────────────────────
-        const orgDoc: Omit<Organization, '_id'> = {
-          nome: data.nomeRestaurante,
+        // ── Create restaurant ─────────────────────────────────────────────────
+        const restaurantDoc: Restaurant = {
+          _id: restaurantId.toString() as any,
+          name: data.restaurantName,
           createdAt: now,
           updatedAt: now,
         }
-        const orgInsert = await db.collection<Organization>('organizations').insertOne(orgDoc as Organization, { session })
-        const orgId = orgInsert.insertedId.toString()
-
-        // ── Create org member (admin) ─────────────────────────────────────────
-        const memberDoc: Omit<OrganizationMember, '_id'> = {
-          organizationId: orgId,
-          userId,
-          papel: 'administrador',
-          createdAt: now,
-        }
-        await db.collection<OrganizationMember>('organization_members').insertOne(memberDoc as OrganizationMember, { session })
+        await db.collection<Restaurant>('restaurants').insertOne(
+          { ...restaurantDoc, _id: restaurantId } as any,
+          { session },
+        )
 
         // ── Onboarding: default account ───────────────────────────────────────
         const accountDoc: Omit<FinancialAccount, '_id'> = {
-          organizationId: orgId,
-          nome: 'Caixa',
-          tipo: 'Caixa',
-          ativa: true,
-          padrao: true,
+          restaurantId: restaurantId.toString(),
+          name: 'Caixa',
+          type: 'cash',
+          isActive: true,
+          isDefault: true,
           createdAt: now,
           updatedAt: now,
         }
-        await db.collection<FinancialAccount>('financial_accounts').insertOne(accountDoc as FinancialAccount, { session })
+        await db.collection<FinancialAccount>('financial_accounts').insertOne(
+          accountDoc as FinancialAccount,
+          { session },
+        )
 
         // ── Onboarding: default categories ───────────────────────────────────
         const categoryDocs: Omit<FinancialCategory, '_id'>[] = DEFAULT_CATEGORIES.map(cat => ({
           ...cat,
-          organizationId: orgId,
+          restaurantId: restaurantId.toString(),
           createdAt: now,
           updatedAt: now,
         }))
@@ -125,32 +121,32 @@ export class RegisterUseCase {
         // ── Audit trail ───────────────────────────────────────────────────────
         const auditLogs: Omit<AuditLog, '_id'>[] = [
           {
-            evento: 'conta_criada',
+            event: 'account_created',
             userId,
-            organizationId: orgId,
-            dados: { email: data.email, nome: data.nome },
-            criadoEm: now,
+            restaurantId: restaurantId.toString(),
+            data: { email: data.email, name: data.name },
+            createdAt: now,
           },
           {
-            evento: 'organizacao_criada',
+            event: 'restaurant_created',
             userId,
-            organizationId: orgId,
-            dados: { nomeRestaurante: data.nomeRestaurante },
-            criadoEm: now,
+            restaurantId: restaurantId.toString(),
+            data: { restaurantName: data.restaurantName },
+            createdAt: now,
           },
           {
-            evento: 'termos_aceitos',
+            event: 'terms_accepted',
             userId,
-            organizationId: orgId,
-            dados: { aceitouTermos: true, aceitouPrivacidade: true, ip: 'N/A' },
-            criadoEm: now,
+            restaurantId: restaurantId.toString(),
+            data: { acceptedTerms: true, acceptedPrivacy: true },
+            createdAt: now,
           },
           {
-            evento: 'onboarding_concluido',
+            event: 'onboarding_completed',
             userId,
-            organizationId: orgId,
-            dados: { contasPadrao: 1, categoriasPadrao: DEFAULT_CATEGORIES.length },
-            criadoEm: now,
+            restaurantId: restaurantId.toString(),
+            data: { defaultAccounts: 1, defaultCategories: DEFAULT_CATEGORIES.length },
+            createdAt: now,
           },
         ]
         await db.collection<AuditLog>('audit_logs').insertMany(auditLogs as AuditLog[], { session })
@@ -161,18 +157,18 @@ export class RegisterUseCase {
           tenantId: TENANT,
           subject: userId,
           claims: {
-            nome: data.nome,
+            name: data.name,
             email: data.email,
-            organizationId: orgId,
-            papel: 'administrador',
+            restaurantId: restaurantId.toString(),
+            role: 'admin',
           },
         })
 
         result = {
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken,
-          user: { nome: data.nome, email: data.email },
-          organization: { id: orgId, nome: data.nomeRestaurante },
+          user: { name: data.name, email: data.email },
+          restaurant: { id: restaurantId.toString(), name: data.restaurantName },
         }
       })
     } finally {

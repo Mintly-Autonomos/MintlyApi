@@ -1,20 +1,20 @@
 export type AuditEvent =
-  | 'conta_criada'
-  | 'organizacao_criada'
-  | 'termos_aceitos'
-  | 'onboarding_concluido'
+  | 'account_created'
+  | 'restaurant_created'
+  | 'terms_accepted'
+  | 'onboarding_completed'
   | 'login'
-  | 'login_falhou'
+  | 'login_failed'
   | 'logout'
-  | 'conta_bloqueada_temporariamente'
-  | 'senha_recuperacao_solicitada'
-  | 'senha_redefinida'
+  | 'account_temporarily_blocked'
+  | 'password_recovery_requested'
+  | 'password_reset'
 
 export interface AuditLog {
   _id?: string
-  evento: AuditEvent
+  event: AuditEvent
   userId: string
-  organizationId?: string
-  dados: Record<string, unknown>
-  criadoEm: string
+  restaurantId?: string
+  data: Record<string, unknown>
+  createdAt: string
 }
