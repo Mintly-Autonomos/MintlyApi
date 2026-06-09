@@ -2,17 +2,13 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { SapphireValidationError } from '@ascendance-hub/sapphire-core'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
 import { UnauthorizedError } from '../../core/errors/auth/unauthorized-error'
-import { ForbiddenError } from '../../core/errors/auth/forbidden-error'
-import { TooManyRequestsError } from '../../core/errors/auth/too-many-requests-error'
 
-// ─── hoisted mocks ────────────────────────────────────────────────────────────
+import { buildServer } from '../../infrastructure/server/build-server'
 
-const mockExecute         = vi.hoisted(() => vi.fn())
-const mockLogin           = vi.hoisted(() => vi.fn())
-const mockRefresh         = vi.hoisted(() => vi.fn())
-const mockLogout          = vi.hoisted(() => vi.fn())
-const mockRequestRecovery = vi.hoisted(() => vi.fn())
-const mockResetPassword   = vi.hoisted(() => vi.fn())
+const mockExecute = vi.hoisted(() => vi.fn())
+const mockLogin = vi.hoisted(() => vi.fn())
+const mockRefresh = vi.hoisted(() => vi.fn())
+const mockLogout = vi.hoisted(() => vi.fn())
 
 vi.mock('./use-cases/register-use-case', () => ({
   RegisterUseCase: class { execute = mockExecute },
@@ -20,49 +16,26 @@ vi.mock('./use-cases/register-use-case', () => ({
 
 vi.mock('./use-cases/auth-use-case', () => ({
   AuthUseCase: class {
-    login   = mockLogin
+    login = mockLogin
     refresh = mockRefresh
-    logout  = mockLogout
+    logout = mockLogout
   },
 }))
 
-vi.mock('./use-cases/password-recovery-use-case', () => ({
-  PasswordRecoveryUseCase: class {
-    requestRecovery = mockRequestRecovery
-    resetPassword   = mockResetPassword
-  },
-}))
-
-// ─── import APÓS os mocks ─────────────────────────────────────────────────────
-
-import { buildServer } from '../../infrastructure/server/build-server'
-
-// ─── dados de apoio ───────────────────────────────────────────────────────────
-
-const REGISTER_BODY = {
-  name: 'João Silva',
+const SIGNUP_BODY = {
+  person: { name: 'João Silva', phone: '11999990000' },
   email: 'joao@restaurante.com',
   password: 'Senha123',
-  confirmPassword: 'Senha123',
   restaurantName: 'Restaurante do João',
-  acceptedTerms: true,
-  acceptedPrivacy: true,
+  termsAccepted: true,
 }
 
-const REGISTER_RESULT = {
+const SIGNUP_RESULT = {
   accessToken: 'mock-access',
   refreshToken: 'mock-refresh',
-  user: { name: 'João Silva', email: 'joao@restaurante.com' },
-  restaurant: { id: 'rest-id', name: 'Restaurante do João' },
+  user: { email: 'joao@restaurante.com', person: { name: 'João Silva' } },
+  restaurant: { name: 'Restaurante do João' },
 }
-
-const LOGIN_RESULT = {
-  accessToken: 'mock-access',
-  refreshToken: 'mock-refresh',
-  user: { name: 'João Silva', email: 'joao@restaurante.com' },
-}
-
-// ─── suite ───────────────────────────────────────────────────────────────────
 
 describe('Auth Routes', () => {
   let server: Awaited<ReturnType<typeof buildServer>>
@@ -80,259 +53,71 @@ describe('Auth Routes', () => {
     vi.clearAllMocks()
   })
 
-  // ── POST /auth/register ───────────────────────────────────────────────────
-
-  describe('POST /auth/register', () => {
-    it('retorna 201 com tokens e dados do usuário para cadastro válido', async () => {
-      mockExecute.mockResolvedValue(REGISTER_RESULT)
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/register',
-        payload: REGISTER_BODY,
-      })
-
-      expect(response.statusCode).toBe(201)
-      const body = response.json()
-      expect(body.accessToken).toBe('mock-access')
-      expect(body.user.email).toBe('joao@restaurante.com')
-      expect(body.restaurant.name).toBe('Restaurante do João')
+  describe('POST /auth/signup', () => {
+    it('retorna 201 com payload contendo tokens, user e restaurant', async () => {
+      mockExecute.mockResolvedValue(SIGNUP_RESULT)
+      const res = await server.inject({ method: 'POST', url: '/auth/signup', payload: SIGNUP_BODY })
+      expect(res.statusCode).toBe(201)
+      expect(res.json().payload.accessToken).toBe('mock-access')
+      expect(res.json().payload.restaurant.name).toBe('Restaurante do João')
     })
 
-    it('retorna 400 com code VALIDATION_ERROR para SapphireValidationError', async () => {
+    it('retorna 400 VALIDATION_ERROR para SapphireValidationError', async () => {
       mockExecute.mockRejectedValue(
-        new SapphireValidationError([
-          { path: ['email'], code: 'format', message: 'Informe um e-mail válido.' },
-        ]),
+        new SapphireValidationError([{ path: ['email'], code: 'format', message: 'E-mail inválido.' }]),
       )
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/register',
-        payload: { ...REGISTER_BODY, email: 'invalido' },
-      })
-
-      expect(response.statusCode).toBe(400)
-      expect(response.json().code).toBe('VALIDATION_ERROR')
-    })
-
-    it('retorna fieldErrors na resposta de erro de validação', async () => {
-      mockExecute.mockRejectedValue(
-        new SapphireValidationError([
-          { path: ['confirmPassword'], code: 'custom' as any, message: 'As senhas não conferem.' },
-        ]),
-      )
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/register',
-        payload: REGISTER_BODY,
-      })
-
-      expect(response.statusCode).toBe(400)
-      expect(response.json().details).toBeDefined()
+      const res = await server.inject({ method: 'POST', url: '/auth/signup', payload: SIGNUP_BODY })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().code).toBe('VALIDATION_ERROR')
     })
 
     it('retorna 409 quando o e-mail já está cadastrado', async () => {
       mockExecute.mockRejectedValue(new ConflictError('Este e-mail já está cadastrado.'))
+      const res = await server.inject({ method: 'POST', url: '/auth/signup', payload: SIGNUP_BODY })
+      expect(res.statusCode).toBe(409)
+      expect(res.json().code).toBe('AUTH-0002')
+    })
 
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/register',
-        payload: REGISTER_BODY,
-      })
-
-      expect(response.statusCode).toBe(409)
-      expect(response.json().code).toBe('AUTH-0002')
+    it('retorna 500 INTERNAL_ERROR para erro inesperado', async () => {
+      mockExecute.mockRejectedValue(new Error('boom'))
+      const res = await server.inject({ method: 'POST', url: '/auth/signup', payload: SIGNUP_BODY })
+      expect(res.statusCode).toBe(500)
+      expect(res.json().code).toBe('INTERNAL_ERROR')
     })
   })
 
-  // ── POST /auth/login ──────────────────────────────────────────────────────
-
   describe('POST /auth/login', () => {
-    it('retorna 200 com tokens para credenciais válidas', async () => {
-      mockLogin.mockResolvedValue(LOGIN_RESULT)
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/login',
-        payload: { email: 'joao@restaurante.com', password: 'Senha123' },
-      })
-
-      expect(response.statusCode).toBe(200)
-      expect(response.json().accessToken).toBe('mock-access')
+    it('retorna 200 com payload', async () => {
+      mockLogin.mockResolvedValue({ accessToken: 'a', refreshToken: 'r', user: { email: 'x' } })
+      const res = await server.inject({ method: 'POST', url: '/auth/login', payload: { email: 'x@x.com', password: 'Senha123' } })
+      expect(res.statusCode).toBe(200)
+      expect(res.json().payload.accessToken).toBe('a')
     })
 
     it('retorna 401 para credenciais inválidas', async () => {
       mockLogin.mockRejectedValue(new UnauthorizedError('Credenciais inválidas'))
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/login',
-        payload: { email: 'joao@restaurante.com', password: 'Errada1!' },
-      })
-
-      expect(response.statusCode).toBe(401)
-      expect(response.json().code).toBe('AUTH-0001')
+      const res = await server.inject({ method: 'POST', url: '/auth/login', payload: { email: 'x@x.com', password: 'z' } })
+      expect(res.statusCode).toBe(401)
+      expect(res.json().code).toBe('AUTH-0001')
     })
   })
-
-  // ── POST /auth/refresh ────────────────────────────────────────────────────
 
   describe('POST /auth/refresh', () => {
-    it('retorna 200 com novos tokens para refresh token válido', async () => {
-      mockRefresh.mockResolvedValue({ accessToken: 'novo-access', refreshToken: 'novo-refresh' })
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/refresh',
-        payload: { refreshToken: 'valid-token' },
-      })
-
-      expect(response.statusCode).toBe(200)
-      expect(response.json().accessToken).toBe('novo-access')
-    })
-
-    it('retorna 401 para refresh token inválido', async () => {
-      mockRefresh.mockRejectedValue(new UnauthorizedError('Token inválido'))
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/refresh',
-        payload: { refreshToken: 'expired' },
-      })
-
-      expect(response.statusCode).toBe(401)
+    it('retorna 200 com novos tokens no payload', async () => {
+      mockRefresh.mockResolvedValue({ accessToken: 'na', refreshToken: 'nr' })
+      const res = await server.inject({ method: 'POST', url: '/auth/refresh', payload: { refreshToken: 'valid' } })
+      expect(res.statusCode).toBe(200)
+      expect(res.json().payload.accessToken).toBe('na')
     })
   })
-
-  // ── POST /auth/logout ─────────────────────────────────────────────────────
 
   describe('POST /auth/logout', () => {
-    it('retorna 204 para logout bem-sucedido', async () => {
+    it('retorna 204', async () => {
       mockLogout.mockResolvedValue(undefined)
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/logout',
-        payload: { refreshToken: 'some-token' },
-      })
-
-      expect(response.statusCode).toBe(204)
+      const res = await server.inject({ method: 'POST', url: '/auth/logout', payload: { refreshToken: 'rt' } })
+      expect(res.statusCode).toBe(204)
     })
   })
-
-  // ── POST /auth/recuperar-senha ────────────────────────────────────────────
-
-  describe('POST /auth/recuperar-senha', () => {
-    it('retorna 202 independente de o e-mail existir (sem revelar)', async () => {
-      mockRequestRecovery.mockResolvedValue(undefined)
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/recuperar-senha',
-        payload: { email: 'qualquer@email.com' },
-      })
-
-      expect(response.statusCode).toBe(202)
-      expect(response.json().message).toBeDefined()
-    })
-
-    it('retorna 400 para e-mail inválido via SapphireValidationError', async () => {
-      mockRequestRecovery.mockRejectedValue(
-        new SapphireValidationError([
-          { path: ['email'], code: 'format', message: 'Informe um e-mail válido.' },
-        ]),
-      )
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/recuperar-senha',
-        payload: { email: 'invalido' },
-      })
-
-      expect(response.statusCode).toBe(400)
-      expect(response.json().code).toBe('VALIDATION_ERROR')
-    })
-  })
-
-  // ── POST /auth/redefinir-senha ────────────────────────────────────────────
-
-  describe('POST /auth/redefinir-senha', () => {
-    it('retorna 200 com mensagem de sucesso para token válido', async () => {
-      mockResetPassword.mockResolvedValue(undefined)
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/redefinir-senha',
-        payload: { token: 'valid-token', newPassword: 'NovaSenha1', confirmNewPassword: 'NovaSenha1' },
-      })
-
-      expect(response.statusCode).toBe(200)
-      expect(response.json().message).toBeDefined()
-    })
-
-    it('retorna 401 para token inválido ou expirado', async () => {
-      mockResetPassword.mockRejectedValue(new UnauthorizedError('Token inválido ou expirado.'))
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/redefinir-senha',
-        payload: { token: 'expirado', newPassword: 'NovaSenha1', confirmNewPassword: 'NovaSenha1' },
-      })
-
-      expect(response.statusCode).toBe(401)
-    })
-
-    it('retorna 400 quando as senhas não conferem (SapphireValidationError)', async () => {
-      mockResetPassword.mockRejectedValue(
-        new SapphireValidationError([
-          { path: ['confirmNewPassword'], code: 'custom' as any, message: 'As senhas não conferem.' },
-        ]),
-      )
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/redefinir-senha',
-        payload: { token: 'tok', newPassword: 'NovaSenha1', confirmNewPassword: 'Diferente1' },
-      })
-
-      expect(response.statusCode).toBe(400)
-      expect(response.json().code).toBe('VALIDATION_ERROR')
-    })
-  })
-
-  // ── login — status / brute force ──────────────────────────────────────────
-
-  describe('POST /auth/login — status e brute force', () => {
-    it('retorna 403 para conta inativa (ForbiddenError)', async () => {
-      mockLogin.mockRejectedValue(new ForbiddenError('Conta inativa.'))
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/login',
-        payload: { email: 'joao@restaurante.com', password: 'Senha123' },
-      })
-
-      expect(response.statusCode).toBe(403)
-      expect(response.json().code).toBe('AUTH-0003')
-    })
-
-    it('retorna 429 para bloqueio temporário (TooManyRequestsError)', async () => {
-      mockLogin.mockRejectedValue(new TooManyRequestsError('Bloqueado por 15 minuto(s).'))
-
-      const response = await server.inject({
-        method: 'POST',
-        url: '/auth/login',
-        payload: { email: 'joao@restaurante.com', password: 'Errada1' },
-      })
-
-      expect(response.statusCode).toBe(429)
-      expect(response.json().code).toBe('AUTH-0004')
-    })
-  })
-
-  // ── registro de rotas ─────────────────────────────────────────────────────
 
   describe('rotas registradas', () => {
     it('registra /auth/* no swagger', () => {

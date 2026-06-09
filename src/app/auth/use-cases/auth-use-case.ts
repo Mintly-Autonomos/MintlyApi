@@ -1,91 +1,74 @@
 import { scryptSync, timingSafeEqual } from 'crypto'
+import type { User, LoginResult, RefreshResult, AuthUser } from 'mintly-lib'
 import { getJwtService } from '../../../infrastructure/jwt/jwt-service'
-import { AuthRepository } from '../auth-repository'
+import { AuthRepository, UserRecord } from '../auth-repository'
 import { UnauthorizedError } from '../../../core/errors/auth/unauthorized-error'
 import { ForbiddenError } from '../../../core/errors/auth/forbidden-error'
 import { TooManyRequestsError } from '../../../core/errors/auth/too-many-requests-error'
+import { RequestContext } from '../../../core/context/request-context'
 import { logAudit } from '../../audit/audit-service'
-import { User } from '../../user/user'
 import type { MintlyClaims } from '../jwt-claims'
 
 const TENANT = 'mintly'
 const MAX_LOGIN_ATTEMPTS = Number(process.env.MAX_LOGIN_ATTEMPTS ?? 5)
 const BLOCK_DURATION_MINUTES = Number(process.env.BLOCK_DURATION_MINUTES ?? 15)
 
-export type AuthUser = Pick<User, 'name' | 'email'>
-
-export interface LoginResult {
-  accessToken: string
-  refreshToken: string | null
-  user: AuthUser
-}
-
-export interface RefreshResult {
-  accessToken: string
-  refreshToken: string | null
-}
-
-export interface LoginContext {
+export interface LoginMeta {
   ip?: string
   userAgent?: string
-  env?: string
 }
 
 export class AuthUseCase {
-  private repo (env = 'default') { return new AuthRepository(env) }
+  private readonly repo = new AuthRepository()
 
-  async login (email: string, password: string, ctx: LoginContext = {}): Promise<LoginResult> {
-    const env = ctx.env ?? 'default'
-    const person = await this.repo(env).findByEmail(email)
-
-    if (!person) {
+  async login (email: string, password: string, ctx: RequestContext, meta: LoginMeta = {}): Promise<LoginResult> {
+    const user = await this.repo.findByEmail(email, ctx)
+    if (!user) {
       throw new UnauthorizedError('Credenciais inválidas')
     }
 
-    if (person.status === 'inactive') {
+    if (user.status === 'inactive') {
       throw new ForbiddenError('Conta inativa. Entre em contato com o suporte.')
     }
-    if (person.status === 'blocked') {
+    if (user.status === 'blocked') {
       throw new ForbiddenError('Conta bloqueada. Entre em contato com o suporte.')
     }
 
-    if (person.blockedUntil && new Date(person.blockedUntil) > new Date()) {
-      const minutesLeft = Math.ceil((new Date(person.blockedUntil).getTime() - Date.now()) / 60_000)
-      throw new TooManyRequestsError(
-        `Conta temporariamente bloqueada. Tente novamente em ${minutesLeft} minuto(s).`,
-      )
+    if (user.blockedUntil && new Date(user.blockedUntil) > new Date()) {
+      const minutesLeft = Math.ceil((new Date(user.blockedUntil).getTime() - Date.now()) / 60_000)
+      throw new TooManyRequestsError(`Conta temporariamente bloqueada. Tente novamente em ${minutesLeft} minuto(s).`)
     }
 
-    if (!this.verifyPassword(password, person.passwordHash)) {
-      await this.handleFailedAttempt(person, ctx)
+    if (!this.verifyPassword(password, user.passwordHash)) {
+      await this.handleFailedAttempt(user, ctx, meta)
       throw new UnauthorizedError('Credenciais inválidas')
     }
 
-    await this.repo(env).resetLoginAttempts(String(person._id))
-    await this.repo(env).updateLastAccess(String(person._id)).catch(() => null)
+    const userId = String(user._id)
+    await this.repo.resetLoginAttempts(userId, ctx)
+    await this.repo.updateLastAccess(userId, ctx).catch(() => null)
 
-    const jwt = getJwtService()
+    const jwt = getJwtService(ctx.env)
     const claims: MintlyClaims = {
-      name: person.name,
-      email: person.email,
-      restaurantId: person.restaurantId ?? '',
-      role: person.role,
-      status: person.status,
-      ...(person.cpf ? { cpf: person.cpf } : {}),
+      name: user.person.name,
+      email: user.email,
+      restaurantId: user.restaurantId,
+      role: user.role,
+      status: user.status,
     }
-    const tokens = await jwt.generate({ tenantId: TENANT, subject: String(person._id), claims })
+    const tokens = await jwt.generate({ tenantId: TENANT, subject: userId, claims })
 
-    logAudit('login', String(person._id), { ip: ctx.ip ?? null, userAgent: ctx.userAgent ?? null }, undefined, env).catch(() => null)
+    logAudit('login', userId, { ip: meta.ip ?? null, userAgent: meta.userAgent ?? null }, undefined, ctx.env).catch(() => null)
 
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
-      user: { name: person.name, email: person.email },
+      user: this.toPublic(user),
     }
   }
 
-  async refresh (refreshToken: string): Promise<RefreshResult> {
-    const jwt = getJwtService()
+  async refresh (refreshToken: string, ctx: RequestContext): Promise<RefreshResult> {
+    const jwt = getJwtService(ctx.env)
     const result = await jwt.refresh(refreshToken)
     if (!result.succeeded || !result.tokens) {
       throw new UnauthorizedError(result.failureReason ?? 'Token inválido')
@@ -96,26 +79,31 @@ export class AuthUseCase {
     }
   }
 
-  async logout (refreshToken: string, userId?: string, env = 'default'): Promise<void> {
-    const jwt = getJwtService()
+  async logout (refreshToken: string, ctx: RequestContext, userId?: string): Promise<void> {
+    const jwt = getJwtService(ctx.env)
     await jwt.revokeRefreshToken(refreshToken)
     if (userId) {
-      logAudit('logout', userId, {}, undefined, env).catch(() => null)
+      logAudit('logout', userId, {}, undefined, ctx.env).catch(() => null)
     }
   }
 
-  private async handleFailedAttempt (person: User, ctx: LoginContext): Promise<void> {
-    const userId = String(person._id)
-    const env = ctx.env ?? 'default'
-    const attempts = await this.repo(env).incrementLoginAttempts(userId)
-
-    logAudit('login_failed', userId, { ip: ctx.ip ?? null, userAgent: ctx.userAgent ?? null, attempt: attempts }, undefined, env).catch(() => null)
+  private async handleFailedAttempt (user: UserRecord, ctx: RequestContext, meta: LoginMeta): Promise<void> {
+    const userId = String(user._id)
+    const attempts = await this.repo.incrementLoginAttempts(userId, ctx)
+    logAudit('login_failed', userId, { ip: meta.ip ?? null, userAgent: meta.userAgent ?? null, attempt: attempts }, undefined, ctx.env).catch(() => null)
 
     if (attempts >= MAX_LOGIN_ATTEMPTS) {
       const blockedUntil = new Date(Date.now() + BLOCK_DURATION_MINUTES * 60_000)
-      await this.repo(env).setTemporaryBlock(userId, blockedUntil)
-      logAudit('account_temporarily_blocked', userId, { blockedUntil: blockedUntil.toISOString(), attempts }, undefined, env).catch(() => null)
+      await this.repo.setTemporaryBlock(userId, blockedUntil, ctx)
+      logAudit('account_temporarily_blocked', userId, { blockedUntil: blockedUntil.toISOString(), attempts }, undefined, ctx.env).catch(() => null)
     }
+  }
+
+  /** Remove o passwordHash antes de devolver o usuário ao cliente. */
+  private toPublic (user: User): AuthUser {
+    const copy: Partial<User> = { ...user }
+    delete copy.passwordHash
+    return copy as AuthUser
   }
 
   private verifyPassword (password: string, stored: string): boolean {

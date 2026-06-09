@@ -1,5 +1,5 @@
 import { Sapphire, SapphireValidationError } from '@ascendance-hub/sapphire-core'
-import { PASSWORD_MIN_LENGTH, PASSWORD_REGEX, PASSWORD_REGEX_MESSAGE } from '../../shared/password-policy'
+import { passwordSchema } from 'mintly-lib'
 
 const s = new Sapphire()
 
@@ -12,10 +12,7 @@ export const requestRecoverySchema = s.object({
 export const resetPasswordSchema = s.object({
   token: s.string()
     .message({ required: 'Token é obrigatório.' }),
-  newPassword: s.string()
-    .min(PASSWORD_MIN_LENGTH, { message: `A senha deve ter no mínimo ${PASSWORD_MIN_LENGTH} caracteres.` })
-    .regex(PASSWORD_REGEX, { message: PASSWORD_REGEX_MESSAGE })
-    .message({ required: 'A nova senha é obrigatória.' }),
+  newPassword: passwordSchema,
   confirmNewPassword: s.string()
     .message({ required: 'A confirmação da nova senha é obrigatória.' }),
 })

@@ -50,7 +50,10 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     const collection = this.getCollection(ctx)
     const { page = 1, size = 10, orderBy, orderDirection = 'asc', createdAtDirection, ...queryFilter } = filter
 
-    const skip = (page - 1) * size
+    // query params chegam como string — coerciona para number antes de skip/limit
+    const pageNum = Number(page) || 1
+    const sizeNum = Number(size) || 10
+    const skip = (pageNum - 1) * sizeNum
     const sort: any = {}
 
     if (orderBy) {
@@ -65,7 +68,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
       .find(queryFilter as Filter<T>)
       .sort(sort)
       .skip(skip)
-      .limit(size)
+      .limit(sizeNum)
       .toArray()
 
     return result as T[]

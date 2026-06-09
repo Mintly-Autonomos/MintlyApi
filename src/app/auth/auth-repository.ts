@@ -1,64 +1,63 @@
-import { Collection, ObjectId } from 'mongodb'
+import { Collection, ObjectId, Document } from 'mongodb'
+import { User } from 'mintly-lib'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
-import { User } from '../user/user'
-import { authDbName } from './auth-db'
+import { RequestContext } from '../../core/context/request-context'
+
+/**
+ * Documento de usuário com os campos internos de auth (lockout). Não fazem parte
+ * do contrato compartilhado da lib (User) — são estado server-side.
+ */
+export type UserRecord = User & {
+  loginAttempts?: number
+  blockedUntil?: string | null
+}
 
 export class AuthRepository {
-  constructor (private readonly env = 'default') {}
-
-  private getCollection (): Collection<User> {
-    return MongoDBConnection.getInstance()
-      .getDatabase(authDbName(this.env))
-      .collection<User>('users')
+  private getCollection (ctx: RequestContext): Collection<Document> {
+    const db = MongoDBConnection.getInstance().getDatabase(ctx.env)
+    return db.collection('users')
   }
 
-  async findByEmail (email: string): Promise<User | null> {
-    return this.getCollection().findOne({ email })
+  async findByEmail (email: string, ctx: RequestContext): Promise<UserRecord | null> {
+    const user = await this.getCollection(ctx).findOne({ email })
+    return user as UserRecord | null
   }
 
-  async findById (userId: string): Promise<User | null> {
-    return this.getCollection().findOne({ _id: new ObjectId(userId) as any })
-  }
-
-  async create (user: Omit<User, '_id'>): Promise<User> {
-    const result = await this.getCollection().insertOne(user as User)
-    return { ...user, _id: result.insertedId.toString() }
-  }
-
-  async updateLastAccess (userId: string): Promise<void> {
-    await this.getCollection().updateOne(
-      { _id: new ObjectId(userId) as any },
-      { $set: { lastAccessAt: new Date().toISOString(), updatedAt: new Date().toISOString() } },
+  async updateLastAccess (userId: string, ctx: RequestContext): Promise<void> {
+    const now = new Date().toISOString()
+    await this.getCollection(ctx).updateOne(
+      { _id: new ObjectId(userId) },
+      { $set: { lastAccessAt: now, 'audit.updatedAt': now } },
     )
   }
 
-  async incrementLoginAttempts (userId: string): Promise<number> {
-    const result = await this.getCollection().findOneAndUpdate(
-      { _id: new ObjectId(userId) as any },
-      { $inc: { loginAttempts: 1 }, $set: { updatedAt: new Date().toISOString() } },
+  async incrementLoginAttempts (userId: string, ctx: RequestContext): Promise<number> {
+    const result = await this.getCollection(ctx).findOneAndUpdate(
+      { _id: new ObjectId(userId) },
+      { $inc: { loginAttempts: 1 }, $set: { 'audit.updatedAt': new Date().toISOString() } },
       { returnDocument: 'after' },
     )
-    return result?.loginAttempts ?? 1
+    return (result as UserRecord | null)?.loginAttempts ?? 1
   }
 
-  async resetLoginAttempts (userId: string): Promise<void> {
-    await this.getCollection().updateOne(
-      { _id: new ObjectId(userId) as any },
-      { $set: { loginAttempts: 0, blockedUntil: null, updatedAt: new Date().toISOString() } },
+  async resetLoginAttempts (userId: string, ctx: RequestContext): Promise<void> {
+    await this.getCollection(ctx).updateOne(
+      { _id: new ObjectId(userId) },
+      { $set: { loginAttempts: 0, blockedUntil: null, 'audit.updatedAt': new Date().toISOString() } },
     )
   }
 
-  async setTemporaryBlock (userId: string, blockedUntil: Date): Promise<void> {
-    await this.getCollection().updateOne(
-      { _id: new ObjectId(userId) as any },
-      { $set: { blockedUntil: blockedUntil.toISOString(), updatedAt: new Date().toISOString() } },
+  async setTemporaryBlock (userId: string, blockedUntil: Date, ctx: RequestContext): Promise<void> {
+    await this.getCollection(ctx).updateOne(
+      { _id: new ObjectId(userId) },
+      { $set: { blockedUntil: blockedUntil.toISOString(), 'audit.updatedAt': new Date().toISOString() } },
     )
   }
 
-  async updatePassword (userId: string, passwordHash: string): Promise<void> {
-    await this.getCollection().updateOne(
-      { _id: new ObjectId(userId) as any },
-      { $set: { passwordHash, loginAttempts: 0, blockedUntil: null, updatedAt: new Date().toISOString() } },
+  async updatePassword (userId: string, passwordHash: string, ctx: RequestContext): Promise<void> {
+    await this.getCollection(ctx).updateOne(
+      { _id: new ObjectId(userId) },
+      { $set: { passwordHash, loginAttempts: 0, blockedUntil: null, 'audit.updatedAt': new Date().toISOString() } },
     )
   }
 }

@@ -1,19 +1,24 @@
-import { FastifyRequest, FastifyReply } from 'fastify'
+import { FastifyRequest } from 'fastify'
 import { getJwtService } from '../../infrastructure/jwt/jwt-service'
+import { buildRequestContext } from '../context/build-request-context'
+import { UnauthorizedError } from '../errors/auth/unauthorized-error'
 
-// M1: formato alinhado com BaseError (AUTH-0001) em vez de código genérico UNAUTHORIZED
-export async function verifyJwt (request: FastifyRequest, reply: FastifyReply): Promise<void> {
+/**
+ * preHandler que exige um Bearer token válido. Lança UnauthorizedError, que o
+ * error handler global converte no mesmo envelope dos demais erros (AUTH-0001).
+ */
+export async function verifyJwt (request: FastifyRequest): Promise<void> {
   const authorization = request.headers.authorization
   if (!authorization?.startsWith('Bearer ')) {
-    return reply.status(401).send({ code: 'AUTH-0001', message: 'Token não fornecido' })
+    throw new UnauthorizedError('Token não fornecido')
   }
 
   const token = authorization.slice(7)
-  const jwt = getJwtService()
-  const result = await jwt.validate(token)
+  const ctx = buildRequestContext(request.headers)
+  const result = await getJwtService(ctx.env).validate(token)
 
   if (!result.succeeded) {
-    return reply.status(401).send({ code: 'AUTH-0001', message: result.failureReason ?? 'Token inválido' })
+    throw new UnauthorizedError(result.failureReason ?? 'Token inválido')
   }
 
   ;(request as any).jwtClaims = result

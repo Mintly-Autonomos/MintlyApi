@@ -1,14 +1,13 @@
 import { Collection } from 'mongodb'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { PasswordResetToken } from './password-reset-token'
-import { authDbName } from './auth-db'
 
 export class PasswordResetRepository {
   constructor (private readonly env = 'default') {}
 
   private getCollection (): Collection<PasswordResetToken> {
     return MongoDBConnection.getInstance()
-      .getDatabase(authDbName(this.env))
+      .getDatabase(this.env)
       .collection<PasswordResetToken>('password_reset_tokens')
   }
 

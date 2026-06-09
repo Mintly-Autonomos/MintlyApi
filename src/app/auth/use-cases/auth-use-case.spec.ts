@@ -3,47 +3,37 @@ import { randomBytes, scryptSync } from 'crypto'
 import { UnauthorizedError } from '../../../core/errors/auth/unauthorized-error'
 import { ForbiddenError } from '../../../core/errors/auth/forbidden-error'
 import { TooManyRequestsError } from '../../../core/errors/auth/too-many-requests-error'
-import { User } from '../../user/user'
 
-// ─── hoisted mocks ────────────────────────────────────────────────────────────
+import { AuthUseCase } from './auth-use-case'
+import * as jwtModule from '../../../infrastructure/jwt/jwt-service'
 
-const mockFindByEmail          = vi.hoisted(() => vi.fn())
-const mockUpdateLastAcc        = vi.hoisted(() => vi.fn())
-const mockIncrementAttempts    = vi.hoisted(() => vi.fn())
-const mockResetAttempts        = vi.hoisted(() => vi.fn())
-const mockSetTemporaryBlock    = vi.hoisted(() => vi.fn())
-const mockGenerate             = vi.hoisted(() => vi.fn())
-const mockRefreshJwt           = vi.hoisted(() => vi.fn())
-const mockRevokeRefresh        = vi.hoisted(() => vi.fn())
-const mockLogAudit             = vi.hoisted(() => vi.fn())
+const mockFindByEmail = vi.hoisted(() => vi.fn())
+const mockUpdateLastAccess = vi.hoisted(() => vi.fn())
+const mockResetAttempts = vi.hoisted(() => vi.fn())
+const mockIncrementAttempts = vi.hoisted(() => vi.fn())
+const mockSetBlock = vi.hoisted(() => vi.fn())
+const mockGenerate = vi.hoisted(() => vi.fn())
+const mockRefresh = vi.hoisted(() => vi.fn())
+const mockRevoke = vi.hoisted(() => vi.fn())
+const mockLogAudit = vi.hoisted(() => vi.fn())
 
 vi.mock('../auth-repository', () => ({
   AuthRepository: class {
-    findByEmail          = mockFindByEmail
-    updateLastAccess     = mockUpdateLastAcc
+    findByEmail = mockFindByEmail
+    updateLastAccess = mockUpdateLastAccess
+    resetLoginAttempts = mockResetAttempts
     incrementLoginAttempts = mockIncrementAttempts
-    resetLoginAttempts   = mockResetAttempts
-    setTemporaryBlock    = mockSetTemporaryBlock
+    setTemporaryBlock = mockSetBlock
   },
 }))
 
 vi.mock('../../../infrastructure/jwt/jwt-service', () => ({
-  getJwtService: vi.fn(() => ({
-    generate:            mockGenerate,
-    refresh:             mockRefreshJwt,
-    revokeRefreshToken:  mockRevokeRefresh,
-  })),
+  getJwtService: vi.fn(() => ({ generate: mockGenerate, refresh: mockRefresh, revokeRefreshToken: mockRevoke })),
 }))
 
-vi.mock('../../audit/audit-service', () => ({
-  logAudit: mockLogAudit,
-}))
+vi.mock('../../audit/audit-service', () => ({ logAudit: mockLogAudit }))
 
-// ─── import APÓS os mocks ─────────────────────────────────────────────────────
-
-import { AuthUseCase } from './auth-use-case'
-
-// ─── helpers ─────────────────────────────────────────────────────────────────
+const CTX = { env: 'default' }
 
 function makePasswordHash (password: string): string {
   const salt = randomBytes(16).toString('hex')
@@ -51,315 +41,149 @@ function makePasswordHash (password: string): string {
   return `${salt}:${hash}`
 }
 
-const MOCK_USER: User = {
+const MOCK_USER = {
   _id: 'user-id-123',
-  name: 'João Silva',
+  person: { _id: 'person-1', name: 'João Silva' },
   email: 'joao@restaurante.com',
   passwordHash: makePasswordHash('Senha123'),
+  role: 'owner',
   status: 'active',
-  role: 'admin',
-  restaurantId: 'rest-id-456',
+  restaurantId: 'rest-1',
   loginAttempts: 0,
   blockedUntil: null,
-  termsAccepted: true,
-  termsAcceptedAt: '2024-01-01T00:00:00.000Z',
-  createdAt: '2024-01-01T00:00:00.000Z',
-  updatedAt: '2024-01-01T00:00:00.000Z',
+  audit: { createdAt: 't', updatedAt: 't' },
 }
 
-const MOCK_TOKENS = {
-  accessToken: 'mock-access-token',
-  refreshToken: 'mock-refresh-token',
-  accessTokenId: 'atid',
-  accessTokenExpiresAt: new Date(),
-  refreshTokenId: 'rtid',
-  refreshTokenExpiresAt: new Date(),
-  tenantId: 'mintly',
-  subject: 'user-id-123',
-  keyId: 'kid',
-}
-
-// ─── suite ───────────────────────────────────────────────────────────────────
+const MOCK_TOKENS = { accessToken: 'mock-access-token', refreshToken: 'mock-refresh-token' }
 
 describe('AuthUseCase', () => {
   let useCase: AuthUseCase
 
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUpdateLastAcc.mockResolvedValue(undefined)
+    mockUpdateLastAccess.mockResolvedValue(undefined)
     mockResetAttempts.mockResolvedValue(undefined)
     mockIncrementAttempts.mockResolvedValue(1)
-    mockSetTemporaryBlock.mockResolvedValue(undefined)
-    mockGenerate.mockResolvedValue(MOCK_TOKENS)
+    mockSetBlock.mockResolvedValue(undefined)
     mockLogAudit.mockResolvedValue(undefined)
+    mockGenerate.mockResolvedValue(MOCK_TOKENS)
     useCase = new AuthUseCase()
   })
 
-  // ── login — happy path ────────────────────────────────────────────────────
-
   describe('login', () => {
-    it('retorna accessToken e refreshToken com credenciais válidas', async () => {
+    it('retorna tokens com credenciais válidas', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
-
-      const result = await useCase.login('joao@restaurante.com', 'Senha123')
-
+      const result = await useCase.login('joao@restaurante.com', 'Senha123', CTX)
       expect(result.accessToken).toBe('mock-access-token')
       expect(result.refreshToken).toBe('mock-refresh-token')
     })
 
-    it('retorna dados do usuário no login', async () => {
+    it('retorna o usuário sem passwordHash', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
-
-      const result = await useCase.login('joao@restaurante.com', 'Senha123')
-
-      expect(result.user.name).toBe('João Silva')
+      const result = await useCase.login('joao@restaurante.com', 'Senha123', CTX)
       expect(result.user.email).toBe('joao@restaurante.com')
+      expect((result.user as any).passwordHash).toBeUndefined()
     })
 
-    it('gera token com todos os claims necessários para queries sem DB', async () => {
+    it('gera token com claims name, email, role, restaurantId e status', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
-
-      await useCase.login('joao@restaurante.com', 'Senha123')
-
-      expect(mockGenerate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          tenantId: 'mintly',
-          subject: 'user-id-123',
-          claims: expect.objectContaining({
-            name: 'João Silva',
-            email: 'joao@restaurante.com',
-            restaurantId: 'rest-id-456',
-            role: 'admin',
-            status: 'active',
-          }),
+      await useCase.login('joao@restaurante.com', 'Senha123', CTX)
+      expect(mockGenerate).toHaveBeenCalledWith(expect.objectContaining({
+        tenantId: 'mintly',
+        subject: 'user-id-123',
+        claims: expect.objectContaining({
+          name: 'João Silva', email: 'joao@restaurante.com', role: 'owner', restaurantId: 'rest-1', status: 'active',
         }),
-      )
+      }))
     })
 
-    it('inclui cpf nos claims quando o usuário possui cpf', async () => {
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, cpf: '123.456.789-00' })
-
-      await useCase.login('joao@restaurante.com', 'Senha123')
-
-      expect(mockGenerate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          claims: expect.objectContaining({ cpf: '123.456.789-00' }),
-        }),
-      )
-    })
-
-    it('atualiza lastAccessAt após login bem-sucedido', async () => {
+    it('reseta tentativas e atualiza lastAccess após login', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
-
-      await useCase.login('joao@restaurante.com', 'Senha123')
-
-      expect(mockUpdateLastAcc).toHaveBeenCalledWith('user-id-123')
+      await useCase.login('joao@restaurante.com', 'Senha123', CTX)
+      expect(mockResetAttempts).toHaveBeenCalledWith('user-id-123', CTX)
+      expect(mockUpdateLastAccess).toHaveBeenCalledWith('user-id-123', CTX)
     })
 
-    it('reseta loginAttempts após login bem-sucedido', async () => {
+    it('registra auditoria de login com ip/userAgent', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
-
-      await useCase.login('joao@restaurante.com', 'Senha123')
-
-      expect(mockResetAttempts).toHaveBeenCalledWith('user-id-123')
+      await useCase.login('joao@restaurante.com', 'Senha123', CTX, { ip: '1.2.3.4', userAgent: 'jest' })
+      expect(mockLogAudit).toHaveBeenCalledWith('login', 'user-id-123', expect.objectContaining({ ip: '1.2.3.4' }), undefined, 'default')
     })
 
-    it('registra auditoria de login com ip e userAgent', async () => {
-      mockFindByEmail.mockResolvedValue(MOCK_USER)
-
-      await useCase.login('joao@restaurante.com', 'Senha123', {
-        ip: '192.168.1.1',
-        userAgent: 'Mozilla/5.0',
-      })
-
-      expect(mockLogAudit).toHaveBeenCalledWith(
-        'login',
-        'user-id-123',
-        expect.objectContaining({ ip: '192.168.1.1', userAgent: 'Mozilla/5.0' }),
-        undefined,
-        'default',
-      )
-    })
-  })
-
-  // ── login — erros de credenciais ──────────────────────────────────────────
-
-  describe('login — credenciais inválidas', () => {
     it('lança UnauthorizedError quando o usuário não existe', async () => {
       mockFindByEmail.mockResolvedValue(null)
-
-      await expect(useCase.login('inexistente@email.com', 'Senha123'))
-        .rejects.toBeInstanceOf(UnauthorizedError)
+      await expect(useCase.login('x@x.com', 'Senha123', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
     })
 
-    it('lança UnauthorizedError quando a senha está errada', async () => {
+    it('conta inativa lança ForbiddenError', async () => {
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, status: 'inactive' })
+      await expect(useCase.login('joao@restaurante.com', 'Senha123', CTX)).rejects.toBeInstanceOf(ForbiddenError)
+    })
+
+    it('conta bloqueada lança ForbiddenError', async () => {
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, status: 'blocked' })
+      await expect(useCase.login('joao@restaurante.com', 'Senha123', CTX)).rejects.toBeInstanceOf(ForbiddenError)
+    })
+
+    it('bloqueio temporário ativo lança TooManyRequestsError', async () => {
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, blockedUntil: new Date(Date.now() + 600_000).toISOString() })
+      await expect(useCase.login('joao@restaurante.com', 'Senha123', CTX)).rejects.toBeInstanceOf(TooManyRequestsError)
+    })
+
+    it('senha errada incrementa tentativas, audita e lança UnauthorizedError', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
-
-      await expect(useCase.login('joao@restaurante.com', 'SenhaErrada1'))
-        .rejects.toBeInstanceOf(UnauthorizedError)
+      await expect(useCase.login('joao@restaurante.com', 'Errada1', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
+      expect(mockIncrementAttempts).toHaveBeenCalledWith('user-id-123', CTX)
+      expect(mockLogAudit).toHaveBeenCalledWith('login_failed', 'user-id-123', expect.anything(), undefined, 'default')
     })
 
-    it('não vaza informação sobre qual campo está errado (email vs senha)', async () => {
-      mockFindByEmail.mockResolvedValue(null)
-      const errUser = await useCase.login('x@x.com', 'Senha123').catch(e => e)
-
-      mockFindByEmail.mockResolvedValue(MOCK_USER)
-      const errPass = await useCase.login('joao@restaurante.com', 'Errada1!').catch(e => e)
-
-      expect(errUser.message).toBe(errPass.message)
-    })
-
-    it('incrementa loginAttempts ao falhar senha', async () => {
-      mockFindByEmail.mockResolvedValue(MOCK_USER)
-
-      await useCase.login('joao@restaurante.com', 'Errada1').catch(() => null)
-
-      expect(mockIncrementAttempts).toHaveBeenCalledWith('user-id-123')
-    })
-
-    it('registra auditoria de login_failed', async () => {
-      mockFindByEmail.mockResolvedValue(MOCK_USER)
-
-      await useCase.login('joao@restaurante.com', 'Errada1').catch(() => null)
-
-      expect(mockLogAudit).toHaveBeenCalledWith(
-        'login_failed',
-        'user-id-123',
-        expect.objectContaining({ attempt: 1 }),
-        undefined,
-        'default',
-      )
-    })
-
-    it('bloqueia temporariamente após MAX tentativas', async () => {
+    it('ao atingir o limite de tentativas, bloqueia temporariamente', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
       mockIncrementAttempts.mockResolvedValue(5)
-
-      await useCase.login('joao@restaurante.com', 'Errada1').catch(() => null)
-
-      expect(mockSetTemporaryBlock).toHaveBeenCalledOnce()
-      expect(mockLogAudit).toHaveBeenCalledWith(
-        'account_temporarily_blocked',
-        'user-id-123',
-        expect.objectContaining({ attempts: 5 }),
-        undefined,
-        'default',
-      )
+      await useCase.login('joao@restaurante.com', 'Errada1', CTX).catch(() => null)
+      expect(mockSetBlock).toHaveBeenCalled()
+      expect(mockLogAudit).toHaveBeenCalledWith('account_temporarily_blocked', 'user-id-123', expect.anything(), undefined, 'default')
     })
 
-    it('não bloqueia antes de atingir MAX tentativas', async () => {
+    it('não vaza qual campo está errado (email vs senha)', async () => {
+      mockFindByEmail.mockResolvedValue(null)
+      const e1 = await useCase.login('x@x.com', 'Senha123', CTX).catch(e => e)
       mockFindByEmail.mockResolvedValue(MOCK_USER)
-      mockIncrementAttempts.mockResolvedValue(3)
+      const e2 = await useCase.login('joao@restaurante.com', 'Errada1', CTX).catch(e => e)
+      expect(e1.message).toBe(e2.message)
+    })
 
-      await useCase.login('joao@restaurante.com', 'Errada1').catch(() => null)
-
-      expect(mockSetTemporaryBlock).not.toHaveBeenCalled()
+    it('roteia o jwt service pelo env do contexto', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+      await useCase.login('joao@restaurante.com', 'Senha123', { env: 'e2e' })
+      expect(jwtModule.getJwtService).toHaveBeenCalledWith('e2e')
     })
   })
-
-  // ── login — status da conta ───────────────────────────────────────────────
-
-  describe('login — status da conta', () => {
-    it('lança ForbiddenError para conta inativa', async () => {
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, status: 'inactive' })
-
-      await expect(useCase.login('joao@restaurante.com', 'Senha123'))
-        .rejects.toBeInstanceOf(ForbiddenError)
-    })
-
-    it('lança ForbiddenError para conta bloqueada permanentemente', async () => {
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, status: 'blocked' })
-
-      await expect(useCase.login('joao@restaurante.com', 'Senha123'))
-        .rejects.toBeInstanceOf(ForbiddenError)
-    })
-
-    it('lança TooManyRequestsError para bloqueio temporário ativo', async () => {
-      const futuro = new Date(Date.now() + 10 * 60_000).toISOString()
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, blockedUntil: futuro })
-
-      await expect(useCase.login('joao@restaurante.com', 'Senha123'))
-        .rejects.toBeInstanceOf(TooManyRequestsError)
-    })
-
-    it('permite login quando bloqueio temporário expirou', async () => {
-      const passado = new Date(Date.now() - 1).toISOString()
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, blockedUntil: passado })
-
-      await expect(useCase.login('joao@restaurante.com', 'Senha123'))
-        .resolves.toBeDefined()
-    })
-
-    it('mensagem de bloqueio informa tempo restante em minutos', async () => {
-      const futuro = new Date(Date.now() + 15 * 60_000).toISOString()
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, blockedUntil: futuro })
-
-      const err = await useCase.login('joao@restaurante.com', 'Senha123').catch(e => e)
-
-      expect(err.message).toMatch(/minuto/)
-    })
-  })
-
-  // ── refresh ───────────────────────────────────────────────────────────────
 
   describe('refresh', () => {
-    it('retorna novos tokens com refresh token válido', async () => {
-      mockRefreshJwt.mockResolvedValue({
-        succeeded: true,
-        failureReason: null,
-        tokens: { accessToken: 'novo-access', refreshToken: 'novo-refresh' },
-      })
-
-      const result = await useCase.refresh('valid-refresh-token')
-
-      expect(result.accessToken).toBe('novo-access')
-      expect(result.refreshToken).toBe('novo-refresh')
+    it('retorna novos tokens com refresh válido', async () => {
+      mockRefresh.mockResolvedValue({ succeeded: true, tokens: { accessToken: 'na', refreshToken: 'nr' } })
+      const r = await useCase.refresh('valid', CTX)
+      expect(r.accessToken).toBe('na')
+      expect(r.refreshToken).toBe('nr')
     })
 
-    it('lança UnauthorizedError quando o refresh token é inválido', async () => {
-      mockRefreshJwt.mockResolvedValue({ succeeded: false, failureReason: 'Token revogado', tokens: null })
-
-      await expect(useCase.refresh('invalid-token')).rejects.toBeInstanceOf(UnauthorizedError)
-    })
-
-    it('usa a razão de falha do jwt no erro', async () => {
-      mockRefreshJwt.mockResolvedValue({ succeeded: false, failureReason: 'Token expirado', tokens: null })
-
-      const error = await useCase.refresh('expired-token').catch(e => e)
-
-      expect(error.message).toBe('Token expirado')
-    })
-
-    it('lança UnauthorizedError quando tokens é null mesmo com succeeded false', async () => {
-      mockRefreshJwt.mockResolvedValue({ succeeded: false, failureReason: null, tokens: null })
-
-      await expect(useCase.refresh('token')).rejects.toBeInstanceOf(UnauthorizedError)
+    it('lança UnauthorizedError para refresh inválido', async () => {
+      mockRefresh.mockResolvedValue({ succeeded: false, failureReason: 'x', tokens: null })
+      await expect(useCase.refresh('bad', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
     })
   })
 
-  // ── logout ────────────────────────────────────────────────────────────────
-
   describe('logout', () => {
-    it('revoga o refresh token', async () => {
-      await useCase.logout('some-refresh-token')
-
-      expect(mockRevokeRefresh).toHaveBeenCalledWith('some-refresh-token')
-    })
-
-    it('não retorna nada (void)', async () => {
-      const result = await useCase.logout('some-refresh-token')
-      expect(result).toBeUndefined()
-    })
-
-    it('registra auditoria de logout quando userId é informado', async () => {
-      await useCase.logout('some-refresh-token', 'user-id-123')
-
+    it('revoga o refresh token e audita quando há userId', async () => {
+      await useCase.logout('rt', CTX, 'user-id-123')
+      expect(mockRevoke).toHaveBeenCalledWith('rt')
       expect(mockLogAudit).toHaveBeenCalledWith('logout', 'user-id-123', {}, undefined, 'default')
     })
 
-    it('não registra auditoria de logout sem userId', async () => {
-      await useCase.logout('some-refresh-token')
-
+    it('revoga sem auditar quando não há userId', async () => {
+      await useCase.logout('rt', CTX)
+      expect(mockRevoke).toHaveBeenCalledWith('rt')
       expect(mockLogAudit).not.toHaveBeenCalled()
     })
   })

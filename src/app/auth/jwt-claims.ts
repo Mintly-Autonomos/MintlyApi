@@ -1,4 +1,4 @@
-import type { UserRole, UserStatus } from '../user/user'
+import type { UserRole, UserStatus } from 'mintly-lib'
 
 /**
  * Claims armazenados no payload criptografado do JWT (AES-256-GCM via valkyrie-jwt).

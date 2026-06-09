@@ -1,6 +1,6 @@
 import type { FastifyRequest } from 'fastify'
+import type { UserRole, UserStatus } from 'mintly-lib'
 import type { MintlyClaims } from '../../app/auth/jwt-claims'
-import type { UserRole, UserStatus } from '../../app/user/user'
 import { UnauthorizedError } from '../errors/auth/unauthorized-error'
 
 export interface RequestUser {

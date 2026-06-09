@@ -1,11 +1,10 @@
 import { Collection } from 'mongodb'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { AuditEvent, AuditLog } from './audit-log'
-import { authDbName } from '../auth/auth-db'
 
 function getCollection (env = 'default'): Collection<AuditLog> {
   return MongoDBConnection.getInstance()
-    .getDatabase(authDbName(env))
+    .getDatabase(env)
     .collection<AuditLog>('audit_logs')
 }
 

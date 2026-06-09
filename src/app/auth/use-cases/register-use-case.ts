@@ -1,173 +1,161 @@
 import { randomBytes, scryptSync } from 'crypto'
-import { ObjectId } from 'mongodb'
+import { SapphireValidationError } from '@ascendance-hub/sapphire-core'
+import {
+  signupRequestSchema,
+  UserRole,
+  UserStatus,
+  RecordStatus,
+  FinancialAccountType,
+  CategoryType,
+  CategoryBehavior,
+  OperationalNature,
+} from 'mintly-lib'
+import type { SignupResult } from 'mintly-lib'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import { getJwtService } from '../../../infrastructure/jwt/jwt-service'
-import { registerSchema, throwFieldError } from '../register-schema'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
-import { User } from '../../user/user'
-import { Restaurant } from '../../restaurant/restaurant'
-import { FinancialAccount } from '../../financial/financial-account'
-import { FinancialCategory } from '../../financial/financial-category'
+import { RequestContext } from '../../../core/context/request-context'
 import { AuditLog } from '../../audit/audit-log'
-import { authDbName } from '../auth-db'
-import type { MintlyClaims } from '../jwt-claims'
 
 const TENANT = 'mintly'
 
-export interface RegisterResult {
-  accessToken: string
-  refreshToken: string | null
-  user: Pick<User, 'name' | 'email'>
-  restaurant: { id: string; name: string }
+interface DefaultCategory {
+  name: string
+  type: CategoryType
+  behavior: CategoryBehavior
+  operationalNature: OperationalNature
 }
 
-const DEFAULT_CATEGORIES: Omit<FinancialCategory, '_id' | 'restaurantId' | 'createdAt' | 'updatedAt'>[] = [
-  { name: 'Venda Balcão',   type: 'income',  behavior: 'variable', operationalNature: 'operational',     isSystem: true },
-  { name: 'Venda Delivery', type: 'income',  behavior: 'variable', operationalNature: 'operational',     isSystem: true },
-  { name: 'CMV / Insumos',  type: 'expense', behavior: 'variable', operationalNature: 'operational',     isSystem: true },
-  { name: 'Salários',       type: 'expense', behavior: 'fixed',    operationalNature: 'operational',     isSystem: true },
-  { name: 'Aluguel',        type: 'expense', behavior: 'fixed',    operationalNature: 'operational',     isSystem: true },
-  { name: 'Impostos',       type: 'expense', behavior: 'fixed',    operationalNature: 'non_operational', isSystem: true },
+const DEFAULT_CATEGORIES: DefaultCategory[] = [
+  { name: 'Venda Balcão', type: CategoryType.Revenue, behavior: CategoryBehavior.Variable, operationalNature: OperationalNature.Operational },
+  { name: 'Venda Delivery', type: CategoryType.Revenue, behavior: CategoryBehavior.Variable, operationalNature: OperationalNature.Operational },
+  { name: 'CMV/Insumos', type: CategoryType.Expense, behavior: CategoryBehavior.Variable, operationalNature: OperationalNature.Operational },
+  { name: 'Salários', type: CategoryType.Expense, behavior: CategoryBehavior.Fixed, operationalNature: OperationalNature.Operational },
+  { name: 'Aluguel', type: CategoryType.Expense, behavior: CategoryBehavior.Fixed, operationalNature: OperationalNature.Operational },
+  { name: 'Impostos', type: CategoryType.Expense, behavior: CategoryBehavior.Fixed, operationalNature: OperationalNature.NonOperational },
 ]
 
+// Garante o índice único de e-mail uma vez por env (banco).
+const indexedEnvs = new Set<string>()
+
 export class RegisterUseCase {
-  async execute (rawInput: unknown, env = 'default'): Promise<RegisterResult> {
-    const data = registerSchema.parse(rawInput)
+  async execute (rawInput: unknown, ctx: RequestContext): Promise<SignupResult> {
+    // 1. Valida o payload via contrato compartilhado da lib
+    const data = signupRequestSchema.parse(rawInput)
 
-    if (data.password !== data.confirmPassword) {
-      throwFieldError('confirmPassword', 'As senhas não conferem.')
-    }
-    if (!data.acceptedTerms) {
-      throwFieldError('acceptedTerms', 'É necessário aceitar os termos de uso para prosseguir.')
-    }
-    if (!data.acceptedPrivacy) {
-      throwFieldError('acceptedPrivacy', 'É necessário aceitar a política de privacidade para prosseguir.')
+    // 2. Aceite obrigatório (cross-field)
+    if (!data.termsAccepted) {
+      throw new SapphireValidationError([
+        { path: ['termsAccepted'], code: 'custom' as any, message: 'É necessário aceitar os termos de uso e a política de privacidade.' },
+      ])
     }
 
-    const mongoClient = MongoDBConnection.getInstance().getClient()
-    const db = MongoDBConnection.getInstance().getDatabase(authDbName(env))
-    const session = mongoClient.startSession()
+    const connection = MongoDBConnection.getInstance()
+    const db = connection.getDatabase(ctx.env)
+    await this.ensureUserIndexes(ctx.env)
 
-    let result!: RegisterResult
+    const session = connection.getClient().startSession()
+    let result!: SignupResult
 
     try {
       await session.withTransaction(async () => {
         const now = new Date().toISOString()
+        const audit = { createdAt: now, updatedAt: now }
 
-        // ── Email uniqueness (índice único garante atomicidade em concurrent writes) ──
+        // ── e-mail único ──────────────────────────────────────────────────────
         const existing = await db.collection('users').findOne({ email: data.email }, { session })
         if (existing) throw new ConflictError('Este e-mail já está cadastrado.')
 
-        // ── Pre-allocate restaurant ID ────────────────────────────────────────
-        const restaurantId = new ObjectId()
+        // ── person ────────────────────────────────────────────────────────────
+        const personInsert = await db.collection('people').insertOne(
+          { name: data.person.name, phone: data.person.phone, audit },
+          { session },
+        )
+        const personId = personInsert.insertedId.toHexString()
 
-        // ── Create user ───────────────────────────────────────────────────────
-        const userDoc: Omit<User, '_id'> = {
-          name: data.name,
-          email: data.email,
-          passwordHash: this.hashPassword(data.password),
-          status: 'active',
-          role: 'admin',
-          restaurantId: restaurantId.toString(),
-          loginAttempts: 0,
-          blockedUntil: null,
-          termsAccepted: true,
-          termsAcceptedAt: now,
-          lastAccessAt: now,
-          createdAt: now,
-          updatedAt: now,
-        }
-        const userInsert = await db.collection<User>('users').insertOne(userDoc as User, { session })
-        const userId = userInsert.insertedId.toString()
+        // ── restaurant ────────────────────────────────────────────────────────
+        const restaurantInsert = await db.collection('restaurants').insertOne(
+          { name: data.restaurantName, audit },
+          { session },
+        )
+        const restaurantId = restaurantInsert.insertedId.toHexString()
 
-        // ── Create restaurant ─────────────────────────────────────────────────
-        const restaurantDoc: Restaurant = {
-          _id: restaurantId.toString() as any,
-          name: data.restaurantName,
-          createdAt: now,
-          updatedAt: now,
-        }
-        await db.collection<Restaurant>('restaurants').insertOne(
-          { ...restaurantDoc, _id: restaurantId } as any,
+        // ── user (person como Extended Reference) ─────────────────────────────
+        const passwordHash = this.hashPassword(data.password)
+        const userInsert = await db.collection('users').insertOne(
+          {
+            person: { _id: personId, name: data.person.name },
+            email: data.email,
+            passwordHash,
+            role: UserRole.Owner,
+            status: UserStatus.Active,
+            restaurantId,
+            termsAcceptedAt: now,
+            lastAccessAt: now,
+            audit,
+          },
+          { session },
+        )
+        const userId = userInsert.insertedId.toHexString()
+
+        // ── onboarding: conta Caixa padrão ────────────────────────────────────
+        await db.collection('financial_accounts').insertOne(
+          {
+            restaurantId,
+            name: 'Caixa',
+            type: FinancialAccountType.Cash,
+            status: RecordStatus.Active,
+            isDefault: true,
+            audit,
+          },
           { session },
         )
 
-        // ── Onboarding: default account ───────────────────────────────────────
-        const accountDoc: Omit<FinancialAccount, '_id'> = {
-          restaurantId: restaurantId.toString(),
-          name: 'Caixa',
-          type: 'cash',
-          isActive: true,
-          isDefault: true,
-          createdAt: now,
-          updatedAt: now,
-        }
-        await db.collection<FinancialAccount>('financial_accounts').insertOne(
-          accountDoc as FinancialAccount,
-          { session },
-        )
-
-        // ── Onboarding: default categories ───────────────────────────────────
-        const categoryDocs: Omit<FinancialCategory, '_id'>[] = DEFAULT_CATEGORIES.map(cat => ({
-          ...cat,
-          restaurantId: restaurantId.toString(),
-          createdAt: now,
-          updatedAt: now,
+        // ── onboarding: categorias padrão (isSystem) ──────────────────────────
+        const categoryDocs = DEFAULT_CATEGORIES.map(cat => ({
+          restaurantId,
+          name: cat.name,
+          type: cat.type,
+          behavior: cat.behavior,
+          operationalNature: cat.operationalNature,
+          status: RecordStatus.Active,
+          isSystem: true,
+          audit,
         }))
-        await db.collection<FinancialCategory>('financial_categories').insertMany(
-          categoryDocs as FinancialCategory[],
-          { session },
-        )
+        await db.collection('financial_categories').insertMany(categoryDocs, { session })
 
-        // ── Audit trail ───────────────────────────────────────────────────────
-        const auditLogs: Omit<AuditLog, '_id'>[] = [
-          {
-            event: 'account_created',
-            userId,
-            restaurantId: restaurantId.toString(),
-            data: { email: data.email, name: data.name },
-            createdAt: now,
-          },
-          {
-            event: 'restaurant_created',
-            userId,
-            restaurantId: restaurantId.toString(),
-            data: { restaurantName: data.restaurantName },
-            createdAt: now,
-          },
-          {
-            event: 'terms_accepted',
-            userId,
-            restaurantId: restaurantId.toString(),
-            data: { acceptedTerms: true, acceptedPrivacy: true },
-            createdAt: now,
-          },
-          {
-            event: 'onboarding_completed',
-            userId,
-            restaurantId: restaurantId.toString(),
-            data: { defaultAccounts: 1, defaultCategories: DEFAULT_CATEGORIES.length },
-            createdAt: now,
-          },
+        // ── auditoria de eventos ──────────────────────────────────────────────
+        const auditLogs: Array<Omit<AuditLog, '_id'>> = [
+          { event: 'account_created', userId, restaurantId, data: { email: data.email, name: data.person.name }, createdAt: now },
+          { event: 'restaurant_created', userId, restaurantId, data: { restaurantName: data.restaurantName }, createdAt: now },
+          { event: 'terms_accepted', userId, restaurantId, data: { termsAccepted: true }, createdAt: now },
+          { event: 'onboarding_completed', userId, restaurantId, data: { defaultAccounts: 1, defaultCategories: DEFAULT_CATEGORIES.length }, createdAt: now },
         ]
-        await db.collection<AuditLog>('audit_logs').insertMany(auditLogs as AuditLog[], { session })
+        await db.collection('audit_logs').insertMany(auditLogs, { session })
 
-        // ── Generate JWT ──────────────────────────────────────────────────────
-        const jwt = getJwtService()
-        const claims: MintlyClaims = {
-          name: data.name,
-          email: data.email,
-          restaurantId: restaurantId.toString(),
-          role: 'admin',
-          status: 'active',
-        }
-        const tokens = await jwt.generate({ tenantId: TENANT, subject: userId, claims })
+        // ── JWT ───────────────────────────────────────────────────────────────
+        const jwt = getJwtService(ctx.env)
+        const tokens = await jwt.generate({
+          tenantId: TENANT,
+          subject: userId,
+          claims: { name: data.person.name, email: data.email, role: UserRole.Owner, restaurantId },
+        })
 
         result = {
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken,
-          user: { name: data.name, email: data.email },
-          restaurant: { id: restaurantId.toString(), name: data.restaurantName },
+          user: {
+            _id: userId,
+            person: { _id: personId, name: data.person.name },
+            email: data.email,
+            role: UserRole.Owner,
+            status: UserStatus.Active,
+            restaurantId,
+            termsAcceptedAt: now,
+            lastAccessAt: now,
+            audit,
+          },
+          restaurant: { _id: restaurantId, name: data.restaurantName, audit },
         }
       })
     } finally {
@@ -175,6 +163,13 @@ export class RegisterUseCase {
     }
 
     return result
+  }
+
+  private async ensureUserIndexes (env: string): Promise<void> {
+    if (indexedEnvs.has(env)) return
+    const db = MongoDBConnection.getInstance().getDatabase(env)
+    await db.collection('users').createIndex({ email: 1 }, { unique: true })
+    indexedEnvs.add(env)
   }
 
   private hashPassword (password: string): string {

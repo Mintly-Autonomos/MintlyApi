@@ -1,134 +1,59 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { verifyJwt } from './verify-jwt'
+import { UnauthorizedError } from '../errors/auth/unauthorized-error'
 import * as jwtModule from '../../infrastructure/jwt/jwt-service'
 
 vi.mock('../../infrastructure/jwt/jwt-service')
-
-// ─── helpers ─────────────────────────────────────────────────────────────────
-
-function makeReply () {
-  const reply: any = {}
-  reply.status = vi.fn().mockReturnValue(reply)
-  reply.send = vi.fn().mockReturnValue(reply)
-  return reply
-}
 
 function makeRequest (authorization?: string): any {
   return { headers: authorization ? { authorization } : {} }
 }
 
-// ─── testes ──────────────────────────────────────────────────────────────────
-
 describe('verifyJwt', () => {
-  let jwtMock: any
+  let validate: any
 
   beforeEach(() => {
     vi.clearAllMocks()
-
-    jwtMock = { validate: vi.fn() }
-    vi.spyOn(jwtModule, 'getJwtService').mockReturnValue(jwtMock)
+    validate = vi.fn()
+    vi.spyOn(jwtModule, 'getJwtService').mockReturnValue({ validate } as any)
   })
 
-  // ── header ausente / malformado ───────────────────────────────────────────
-
-  describe('Authorization header ausente ou malformado', () => {
-    it('retorna 401 quando o header Authorization está ausente', async () => {
-      const reply = makeReply()
-      await verifyJwt(makeRequest(), reply)
-
-      expect(reply.status).toHaveBeenCalledWith(401)
-      expect(reply.send).toHaveBeenCalledWith(
-        expect.objectContaining({ code: 'AUTH-0001' }),
-      )
+  describe('Authorization ausente ou malformado', () => {
+    it('lança UnauthorizedError quando não há header', async () => {
+      await expect(verifyJwt(makeRequest())).rejects.toBeInstanceOf(UnauthorizedError)
     })
 
-    it('retorna 401 quando o header não começa com "Bearer "', async () => {
-      const reply = makeReply()
-      await verifyJwt(makeRequest('Basic dXNlcjpwYXNz'), reply)
-
-      expect(reply.status).toHaveBeenCalledWith(401)
+    it('lança UnauthorizedError quando não começa com Bearer', async () => {
+      await expect(verifyJwt(makeRequest('Basic dХk='))).rejects.toBeInstanceOf(UnauthorizedError)
     })
 
-    it('não chama jwt.validate quando não há token', async () => {
-      const reply = makeReply()
-      await verifyJwt(makeRequest(), reply)
-
-      expect(jwtMock.validate).not.toHaveBeenCalled()
+    it('não chama validate quando não há token', async () => {
+      await verifyJwt(makeRequest()).catch(() => null)
+      expect(validate).not.toHaveBeenCalled()
     })
   })
-
-  // ── token inválido ────────────────────────────────────────────────────────
 
   describe('token inválido', () => {
-    it('retorna 401 quando o token não é válido', async () => {
-      jwtMock.validate.mockResolvedValue({ succeeded: false, failureReason: 'Token expirado' })
-      const reply = makeReply()
-
-      await verifyJwt(makeRequest('Bearer token-invalido'), reply)
-
-      expect(reply.status).toHaveBeenCalledWith(401)
-    })
-
-    it('retorna a razão da falha na resposta', async () => {
-      jwtMock.validate.mockResolvedValue({ succeeded: false, failureReason: 'Token revogado' })
-      const reply = makeReply()
-
-      await verifyJwt(makeRequest('Bearer token'), reply)
-
-      expect(reply.send).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'Token revogado' }),
-      )
-    })
-
-    it('retorna mensagem genérica quando failureReason é null', async () => {
-      jwtMock.validate.mockResolvedValue({ succeeded: false, failureReason: null })
-      const reply = makeReply()
-
-      await verifyJwt(makeRequest('Bearer token'), reply)
-
-      expect(reply.send).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'Token inválido' }),
-      )
+    it('lança UnauthorizedError', async () => {
+      validate.mockResolvedValue({ succeeded: false, failureReason: 'Token expirado' })
+      await expect(verifyJwt(makeRequest('Bearer token-invalido'))).rejects.toBeInstanceOf(UnauthorizedError)
     })
   })
 
-  // ── token válido ──────────────────────────────────────────────────────────
-
   describe('token válido', () => {
-    const validResult = {
-      succeeded: true,
-      failureReason: null,
-      subject: 'user-123',
-      tenantId: 'mintly',
-      claims: { name: 'João', email: 'joao@test.com', restaurantId: 'rest-id', role: 'admin', status: 'active' },
-    }
+    const valid = { succeeded: true, failureReason: null, subject: 'user-123', claims: { name: 'João' } }
 
-    it('não chama reply.send quando o token é válido', async () => {
-      jwtMock.validate.mockResolvedValue(validResult)
-      const reply = makeReply()
-
-      await verifyJwt(makeRequest('Bearer valid-token'), reply)
-
-      expect(reply.send).not.toHaveBeenCalled()
-    })
-
-    it('anexa jwtClaims ao request', async () => {
-      jwtMock.validate.mockResolvedValue(validResult)
-      const reply = makeReply()
+    it('não lança e anexa jwtClaims ao request', async () => {
+      validate.mockResolvedValue(valid)
       const request = makeRequest('Bearer valid-token')
-
-      await verifyJwt(request, reply)
-
-      expect((request as any).jwtClaims).toEqual(validResult)
+      await verifyJwt(request)
+      expect(request.jwtClaims).toEqual(valid)
     })
 
-    it('chama jwt.validate com o token extraído do header', async () => {
-      jwtMock.validate.mockResolvedValue(validResult)
-      const reply = makeReply()
-
-      await verifyJwt(makeRequest('Bearer meu-token-jwt'), reply)
-
-      expect(jwtMock.validate).toHaveBeenCalledWith('meu-token-jwt')
+    it('valida com o token extraído do header', async () => {
+      validate.mockResolvedValue(valid)
+      await verifyJwt(makeRequest('Bearer meu-token-jwt'))
+      expect(validate).toHaveBeenCalledWith('meu-token-jwt')
     })
   })
 })

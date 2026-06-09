@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import {
   loginController,
-  registerController,
+  signupController,
   refreshController,
   logoutController,
   requestRecoveryController,
@@ -9,8 +9,8 @@ import {
 } from './auth-controller'
 
 export async function authRoutes (fastify: FastifyInstance) {
+  fastify.post('/signup', signupController)
   fastify.post('/login', loginController)
-  fastify.post('/register', registerController)
   fastify.post('/refresh', refreshController)
   fastify.post('/logout', logoutController)
   fastify.post('/recuperar-senha', requestRecoveryController)

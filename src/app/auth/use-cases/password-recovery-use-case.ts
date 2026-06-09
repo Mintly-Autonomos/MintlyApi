@@ -4,6 +4,7 @@ import { PasswordResetRepository } from '../password-reset-repository'
 import { getEmailService } from '../../../infrastructure/email/email-service'
 import { logAudit } from '../../audit/audit-service'
 import { UnauthorizedError } from '../../../core/errors/auth/unauthorized-error'
+import { RequestContext } from '../../../core/context/request-context'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import {
   requestRecoverySchema,
@@ -12,20 +13,18 @@ import {
   type RequestRecoveryInput,
   type ResetPasswordInput,
 } from '../password-recovery-schema'
-import { authDbName } from '../auth-db'
 
 export type { RequestRecoveryInput, ResetPasswordInput }
 
 const RECOVERY_TOKEN_EXPIRY_HOURS = Number(process.env.RECOVERY_TOKEN_EXPIRY_HOURS ?? 1)
 
 export class PasswordRecoveryUseCase {
-  private authRepo (env = 'default') { return new AuthRepository(env) }
-  private tokenRepo (env = 'default') { return new PasswordResetRepository(env) }
+  private readonly authRepo = new AuthRepository()
 
-  async requestRecovery (input: RequestRecoveryInput, env = 'default'): Promise<void> {
+  async requestRecovery (input: RequestRecoveryInput, ctx: RequestContext): Promise<void> {
     requestRecoverySchema.parse(input)
 
-    const user = await this.authRepo(env).findByEmail(input.email)
+    const user = await this.authRepo.findByEmail(input.email, ctx)
 
     // Não revela se o e-mail existe
     if (!user || user.status === 'inactive') return
@@ -33,8 +32,9 @@ export class PasswordRecoveryUseCase {
     const token = randomBytes(32).toString('hex')
     const expiresAt = new Date(Date.now() + RECOVERY_TOKEN_EXPIRY_HOURS * 3_600_000).toISOString()
 
-    await this.tokenRepo(env).invalidateAllForUser(String(user._id))
-    await this.tokenRepo(env).create({
+    const tokenRepo = new PasswordResetRepository(ctx.env)
+    await tokenRepo.invalidateAllForUser(String(user._id))
+    await tokenRepo.create({
       token,
       userId: String(user._id),
       expiresAt,
@@ -44,17 +44,18 @@ export class PasswordRecoveryUseCase {
 
     await getEmailService().sendPasswordRecovery(user.email, token)
 
-    logAudit('password_recovery_requested', String(user._id), { email: user.email }, undefined, env).catch(() => null)
+    logAudit('password_recovery_requested', String(user._id), { email: user.email }, undefined, ctx.env).catch(() => null)
   }
 
-  async resetPassword (input: ResetPasswordInput, env = 'default'): Promise<void> {
+  async resetPassword (input: ResetPasswordInput, ctx: RequestContext): Promise<void> {
     resetPasswordSchema.parse(input)
 
     if (input.newPassword !== input.confirmNewPassword) {
       throwFieldError('confirmNewPassword', 'As senhas não conferem.')
     }
 
-    const record = await this.tokenRepo(env).findValid(input.token)
+    const tokenRepo = new PasswordResetRepository(ctx.env)
+    const record = await tokenRepo.findValid(input.token)
     if (!record) {
       throw new UnauthorizedError('Token inválido ou expirado.')
     }
@@ -63,18 +64,16 @@ export class PasswordRecoveryUseCase {
     const hash = scryptSync(input.newPassword, salt, 64).toString('hex')
     const passwordHash = `${salt}:${hash}`
 
-    await this.authRepo(env).updatePassword(record.userId, passwordHash)
-    await this.tokenRepo(env).markUsed(input.token)
-    await this.revokeAllSessions(record.userId)
+    await this.authRepo.updatePassword(record.userId, passwordHash, ctx)
+    await tokenRepo.markUsed(input.token)
+    await this.revokeAllSessions(record.userId, ctx)
 
-    logAudit('password_reset', record.userId, {}, undefined, env).catch(() => null)
+    logAudit('password_reset', record.userId, {}, undefined, ctx.env).catch(() => null)
   }
 
-  private async revokeAllSessions (userId: string): Promise<void> {
+  private async revokeAllSessions (userId: string, ctx: RequestContext): Promise<void> {
     try {
-      const db = MongoDBConnection.getInstance().getDatabase(
-        process.env.MONGODB_DB ?? 'mintly',
-      )
+      const db = MongoDBConnection.getInstance().getDatabase(ctx.env)
       await db.collection('valkyrie_refresh_tokens').updateMany(
         { subject: userId, revokedAt: null },
         { $set: { revokedAt: new Date(), revocationReason: 'password_reset' } },

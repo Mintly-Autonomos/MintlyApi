@@ -1,54 +1,51 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
-import { buildRequestContext } from '../../core/context/build-request-context'
+import { StatusCodes } from 'http-status-codes'
 import { AuthUseCase } from './use-cases/auth-use-case'
 import { RegisterUseCase } from './use-cases/register-use-case'
 import { PasswordRecoveryUseCase } from './use-cases/password-recovery-use-case'
+import { ResponseBuilder } from '../../core/builders/response-builder/response-builder'
+import { buildRequestContext } from '../../core/context/build-request-context'
 
 const authUseCase = new AuthUseCase()
 const registerUseCase = new RegisterUseCase()
 const recoveryUseCase = new PasswordRecoveryUseCase()
 
+export async function signupController (request: FastifyRequest, reply: FastifyReply) {
+  const ctx = buildRequestContext(request.headers)
+  const result = await registerUseCase.execute(request.body, ctx)
+  return new ResponseBuilder().response(reply).status(StatusCodes.CREATED).payload(result).build()
+}
+
 export async function loginController (
   request: FastifyRequest<{ Body: { email: string; password: string } }>,
   reply: FastifyReply,
 ) {
-  const { email, password } = request.body
   const ctx = buildRequestContext(request.headers)
-  const result = await authUseCase.login(email, password, {
+  const { email, password } = request.body
+  const result = await authUseCase.login(email, password, ctx, {
     ip: request.ip,
     userAgent: request.headers['user-agent'],
-    env: ctx.env,
   })
-  return reply.send(result)
-}
-
-export async function registerController (
-  request: FastifyRequest,
-  reply: FastifyReply,
-) {
-  const ctx = buildRequestContext(request.headers)
-  const result = await registerUseCase.execute(request.body, ctx.env)
-  return reply.status(201).send(result)
+  return new ResponseBuilder().response(reply).payload(result).build()
 }
 
 export async function refreshController (
   request: FastifyRequest<{ Body: { refreshToken: string } }>,
   reply: FastifyReply,
 ) {
-  const { refreshToken } = request.body
-  const result = await authUseCase.refresh(refreshToken)
-  return reply.send(result)
+  const ctx = buildRequestContext(request.headers)
+  const result = await authUseCase.refresh(request.body.refreshToken, ctx)
+  return new ResponseBuilder().response(reply).payload(result).build()
 }
 
 export async function logoutController (
   request: FastifyRequest<{ Body: { refreshToken: string } }>,
   reply: FastifyReply,
 ) {
-  const { refreshToken } = request.body
   const ctx = buildRequestContext(request.headers)
   const userId = (request as any).jwtClaims?.subject as string | undefined
-  await authUseCase.logout(refreshToken, userId, ctx.env)
-  return reply.status(204).send()
+  await authUseCase.logout(request.body.refreshToken, ctx, userId)
+  return reply.status(StatusCodes.NO_CONTENT).send()
 }
 
 export async function requestRecoveryController (
@@ -56,10 +53,12 @@ export async function requestRecoveryController (
   reply: FastifyReply,
 ) {
   const ctx = buildRequestContext(request.headers)
-  await recoveryUseCase.requestRecovery(request.body, ctx.env)
-  return reply.status(202).send({
-    message: 'Se o e-mail estiver cadastrado, você receberá as instruções em breve.',
-  })
+  await recoveryUseCase.requestRecovery(request.body, ctx)
+  return new ResponseBuilder()
+    .response(reply)
+    .status(StatusCodes.ACCEPTED)
+    .payload({ message: 'Se o e-mail estiver cadastrado, você receberá as instruções em breve.' })
+    .build()
 }
 
 export async function resetPasswordController (
@@ -67,6 +66,6 @@ export async function resetPasswordController (
   reply: FastifyReply,
 ) {
   const ctx = buildRequestContext(request.headers)
-  await recoveryUseCase.resetPassword(request.body, ctx.env)
-  return reply.send({ message: 'Senha redefinida com sucesso.' })
+  await recoveryUseCase.resetPassword(request.body, ctx)
+  return new ResponseBuilder().response(reply).payload({ message: 'Senha redefinida com sucesso.' }).build()
 }
