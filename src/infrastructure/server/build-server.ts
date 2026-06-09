@@ -6,6 +6,7 @@ import { SapphireValidationError } from '@ascendance-hub/sapphire-core'
 import { personRoutes } from '../../app/person/person-routes'
 import { healthRoutes } from '../../app/health/health-routes'
 import { authRoutes } from '../../app/auth/auth-routes'
+import { verifyJwt } from '../../core/hooks/verify-jwt'
 import { BaseError } from '../../core/errors/core/base-error'
 
 export async function buildServer (server: FastifyInstance = Fastify()): Promise<FastifyInstance> {
@@ -72,7 +73,13 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
 
   await server.register(healthRoutes)
   await server.register(authRoutes, { prefix: '/auth' })
-  await server.register(personRoutes, { prefix: '/people' })
+
+  // Rotas protegidas — exigem Bearer token válido. verifyJwt lança
+  // UnauthorizedError, convertido pelo error handler no mesmo envelope (AUTH-0001).
+  await server.register(async (protectedScope: FastifyInstance) => {
+    protectedScope.addHook('preHandler', verifyJwt)
+    await protectedScope.register(personRoutes, { prefix: '/people' })
+  })
 
   return server
 }
