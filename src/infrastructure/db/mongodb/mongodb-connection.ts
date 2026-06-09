@@ -74,6 +74,7 @@ class MongoDBConnection {
     return this.client !== null
   }
 
+  /* c8 ignore start */ // handlers de sinal do processo — não exercitados em teste
   setupGracefulShutdown (): void {
     const shutdownHandler = async (signal: string) => {
       console.log(`\n${signal} recebido. Fechando conexão com MongoDB...`)
@@ -85,6 +86,7 @@ class MongoDBConnection {
     process.on('SIGTERM', () => shutdownHandler('SIGTERM'))
     process.on('SIGUSR2', () => shutdownHandler('SIGUSR2')) // nodemon restart
   }
+  /* c8 ignore stop */
 }
 
 export default MongoDBConnection

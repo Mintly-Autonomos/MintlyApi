@@ -77,6 +77,13 @@ describe('Auth Routes', () => {
       expect(res.statusCode).toBe(409)
       expect(res.json().code).toBe('AUTH-0002')
     })
+
+    it('retorna 500 INTERNAL_ERROR para erro inesperado', async () => {
+      mockExecute.mockRejectedValue(new Error('boom'))
+      const res = await server.inject({ method: 'POST', url: '/auth/signup', payload: SIGNUP_BODY })
+      expect(res.statusCode).toBe(500)
+      expect(res.json().code).toBe('INTERNAL_ERROR')
+    })
   })
 
   describe('POST /auth/login', () => {
