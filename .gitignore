@@ -1,9 +1,11 @@
 .env
-.env.e2e
+.env.*
+!.env.example
 
 node_modules/
 
 yarn.lock
 dist/
 artifacts/
+
 coverage/

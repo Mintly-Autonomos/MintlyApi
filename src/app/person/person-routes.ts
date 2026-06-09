@@ -1,4 +1,4 @@
-import { FastifyInstance, FastifyRequest } from 'fastify'
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { Person } from 'mintly-lib'
 import type { FindAllRequestDto, Headers } from 'mintly-lib'
 import { PersonController } from './person-controller'
@@ -36,7 +36,7 @@ export async function personRoutes (fastify: FastifyInstance) {
     return personController.update(request.params.id, request.body as Partial<Person>, request.headers)
   })
 
-  fastify.delete('/:id', async (request: DeletePersonRequest, reply) => {
+  fastify.delete('/:id', async (request: DeletePersonRequest, reply: FastifyReply) => {
     await personController.delete(request.params.id, request.headers)
     return reply.code(204).send()
   })

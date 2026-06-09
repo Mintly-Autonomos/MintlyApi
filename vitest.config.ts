@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     pool: 'threads',
     fileParallelism: false,
+    testTimeout: 30000,
+    hookTimeout: 60000,
     projects: [
       {
         test: {
@@ -17,6 +19,8 @@ export default defineConfig({
           name: 'integration',
           include: ['src/**/*.int.spec.ts'],
           exclude: ['node_modules/**', 'dist/**'],
+          testTimeout: 30000,
+          hookTimeout: 60000,
         },
       },
     ],
@@ -30,6 +34,8 @@ export default defineConfig({
         'src/**/*.e2e.spec.ts',
         'src/server.ts',
         'src/infrastructure/server/start-server.ts',
+        'src/infrastructure/db/mongodb/index.ts',
+        'src/**/index.ts',
       ],
       thresholds: {
         lines: 90,

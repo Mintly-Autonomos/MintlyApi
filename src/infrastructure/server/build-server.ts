@@ -5,6 +5,8 @@ import swaggerUi from '@fastify/swagger-ui'
 import { SapphireValidationError } from '@ascendance-hub/sapphire-core'
 import { personRoutes } from '../../app/person/person-routes'
 import { healthRoutes } from '../../app/health/health-routes'
+import { authRoutes } from '../../app/auth/auth-routes'
+import { verifyJwt } from '../../core/hooks/verify-jwt'
 import { BaseError } from '../../core/errors/core/base-error'
 
 export async function buildServer (server: FastifyInstance = Fastify()): Promise<FastifyInstance> {
@@ -52,11 +54,9 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
       })
     }
 
-    console.error('Erro não tratado:', error)
-    // Usa name check em vez de instanceof por causa do dual package hazard
-    // do sapphire-core (CJS/ESM têm classes separadas). flatten() existe em ambas.
-    const errName = (error as { name?: string } | null | undefined)?.name
-    if (errName === 'SapphireValidationError' || error instanceof SapphireValidationError) {
+    // name check além de instanceof: a lib (build CJS) lança a SapphireValidationError
+    // de outro build do sapphire-core, então instanceof sozinho falha (dual package).
+    if (error instanceof SapphireValidationError || (error as Error)?.name === 'SapphireValidationError') {
       return reply.status(400).send({
         code: 'VALIDATION_ERROR',
         message: 'Validation failed',
@@ -64,6 +64,7 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
       })
     }
 
+    console.error('Erro não tratado:', error)
     return reply.status(500).send({
       code: 'INTERNAL_ERROR',
       message: 'An unexpected error occurred',
@@ -71,7 +72,14 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
   })
 
   await server.register(healthRoutes)
-  await server.register(personRoutes, { prefix: '/people' })
+  await server.register(authRoutes, { prefix: '/auth' })
+
+  // Rotas protegidas — exigem Bearer token válido. verifyJwt lança
+  // UnauthorizedError, convertido pelo error handler no mesmo envelope (AUTH-0001).
+  await server.register(async (protectedScope: FastifyInstance) => {
+    protectedScope.addHook('preHandler', verifyJwt)
+    await protectedScope.register(personRoutes, { prefix: '/people' })
+  })
 
   return server
 }
