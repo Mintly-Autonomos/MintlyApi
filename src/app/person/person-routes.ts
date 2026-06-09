@@ -22,9 +22,10 @@ export async function personRoutes (fastify: FastifyInstance) {
   })
 
   fastify.get('/', (request: GetPersonListRequest) => {
-    return request.query.isMultipleResponse === 'true'
-      ? personController.find(request.query, request.headers)
-      : personController.findAll(request.query, request.headers)
+    const { isMultipleResponse, ...filter } = request.query
+    return isMultipleResponse === 'true'
+      ? personController.find(filter, request.headers)
+      : personController.findAll(filter, request.headers)
   })
 
   fastify.get('/:id', (request: GetPersonByIdRequest) => {
@@ -37,6 +38,6 @@ export async function personRoutes (fastify: FastifyInstance) {
 
   fastify.delete('/:id', async (request: DeletePersonRequest, reply: FastifyReply) => {
     await personController.delete(request.params.id, request.headers)
-    return reply.status(204).send()
+    return reply.code(204).send()
   })
 }

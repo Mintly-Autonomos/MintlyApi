@@ -13,8 +13,11 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
+    "test:unit": "vitest --project unit",
+    "test:int": "vitest --project integration",
     "test:cov": "vitest --run --coverage",
     "test:ci": "vitest --run --coverage",
+    "test:e2e": "vitest --run --config tests/e2e/vitest.e2e.config.ts",
     "validate:swagger": "tsx scripts/validate-swagger.ts"
   },
   "engines": {

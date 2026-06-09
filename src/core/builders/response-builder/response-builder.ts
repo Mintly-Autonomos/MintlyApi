@@ -4,7 +4,7 @@ import { PaginationResponseDto } from 'mintly-lib'
 
 type ResponsePayload = string | object | any[] | null
 
-interface ResponseStructure {
+export interface ResponseStructure {
   payload: ResponsePayload
   pagination?: PaginationResponseDto
 }
@@ -35,11 +35,7 @@ export class ResponseBuilder {
     return this
   }
 
-  build (): FastifyReply {
-    if (!this.reply) {
-      throw new Error('Reply object is required. Call .response(reply) first.')
-    }
-
+  build (): FastifyReply | ResponseStructure {
     const response: ResponseStructure = {
       payload: this.data ?? null,
     }
@@ -48,6 +44,10 @@ export class ResponseBuilder {
       response.pagination = this.paginationData
     }
 
-    return this.reply.status(this.statusCode).send(response)
+    if (this.reply) {
+      return this.reply.status(this.statusCode).send(response)
+    }
+
+    return response
   }
 }
