@@ -6,7 +6,6 @@ import { SapphireValidationError } from '@ascendance-hub/sapphire-core'
 import { personRoutes } from '../../app/person/person-routes'
 import { healthRoutes } from '../../app/health/health-routes'
 import { authRoutes } from '../../app/auth/auth-routes'
-import { verifyJwt } from '../../core/hooks/verify-jwt'
 import { BaseError } from '../../core/errors/core/base-error'
 
 export async function buildServer (server: FastifyInstance = Fastify()): Promise<FastifyInstance> {
@@ -54,15 +53,17 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
       })
     }
 
-    console.error('Erro não tratado:', error)
-    if (error instanceof SapphireValidationError) {
+    // name check além de instanceof: a lib (build CJS) lança a SapphireValidationError
+    // de outro build do sapphire-core, então instanceof sozinho falha (dual package).
+    if (error instanceof SapphireValidationError || (error as Error)?.name === 'SapphireValidationError') {
       return reply.status(400).send({
         code: 'VALIDATION_ERROR',
         message: 'Validation failed',
-        details: error.flatten().fieldErrors,
+        details: (error as SapphireValidationError).flatten().fieldErrors,
       })
     }
 
+    console.error('Erro não tratado:', error)
     return reply.status(500).send({
       code: 'INTERNAL_ERROR',
       message: 'An unexpected error occurred',
@@ -71,12 +72,7 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
 
   await server.register(healthRoutes)
   await server.register(authRoutes, { prefix: '/auth' })
-
-  // Protected routes — JWT required
-  await server.register(async (protected_: FastifyInstance) => {
-    protected_.addHook('preHandler', verifyJwt)
-    await protected_.register(personRoutes, { prefix: '/people' })
-  })
+  await server.register(personRoutes, { prefix: '/people' })
 
   return server
 }

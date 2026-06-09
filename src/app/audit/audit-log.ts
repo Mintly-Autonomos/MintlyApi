@@ -1,14 +1,14 @@
 export type AuditEvent =
-  | 'conta_criada'
-  | 'organizacao_criada'
-  | 'termos_aceitos'
-  | 'onboarding_concluido'
+  | 'account_created'
+  | 'restaurant_created'
+  | 'terms_accepted'
+  | 'onboarding_completed'
 
 export interface AuditLog {
   _id?: string
-  evento: AuditEvent
+  event: AuditEvent
   userId: string
-  organizationId?: string
-  dados: Record<string, unknown>
-  criadoEm: string
+  restaurantId?: string
+  data: Record<string, unknown>
+  createdAt: string
 }

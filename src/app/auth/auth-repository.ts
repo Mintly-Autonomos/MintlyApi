@@ -1,28 +1,24 @@
-import { Collection, ObjectId } from 'mongodb'
+import { Collection, ObjectId, Document } from 'mongodb'
+import { User } from 'mintly-lib'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
-import { User } from '../user/user'
+import { RequestContext } from '../../core/context/request-context'
 
 export class AuthRepository {
-  private getCollection (): Collection<User> {
-    const db = MongoDBConnection.getInstance().getDatabase(
-      process.env.MONGODB_AUTH_DB ?? process.env.MONGODB_DB ?? 'mintly',
-    )
-    return db.collection<User>('users')
+  private getCollection (ctx: RequestContext): Collection<Document> {
+    const db = MongoDBConnection.getInstance().getDatabase(ctx.env)
+    return db.collection('users')
   }
 
-  async findByEmail (email: string): Promise<User | null> {
-    return this.getCollection().findOne({ email })
+  async findByEmail (email: string, ctx: RequestContext): Promise<User | null> {
+    const user = await this.getCollection(ctx).findOne({ email })
+    return user as User | null
   }
 
-  async create (user: Omit<User, '_id'>): Promise<User> {
-    const result = await this.getCollection().insertOne(user as User)
-    return { ...user, _id: result.insertedId.toString() }
-  }
-
-  async updateLastAccess (userId: string): Promise<void> {
-    await this.getCollection().updateOne(
-      { _id: new ObjectId(userId) as any },
-      { $set: { ultimoAcesso: new Date().toISOString(), updatedAt: new Date().toISOString() } },
+  async updateLastAccess (userId: string, ctx: RequestContext): Promise<void> {
+    const now = new Date().toISOString()
+    await this.getCollection(ctx).updateOne(
+      { _id: new ObjectId(userId) },
+      { $set: { lastAccessAt: now, 'audit.updatedAt': now } },
     )
   }
 }

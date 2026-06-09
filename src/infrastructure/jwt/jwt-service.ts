@@ -1,15 +1,19 @@
 import { ValkyrieJwtService, createMongoStores, ValkyrieTokenProtection } from 'valkyrie-jwt'
 import MongoDBConnection from '../db/mongodb/mongodb-connection'
 
-let _service: ValkyrieJwtService | null = null
+const services = new Map<string, ValkyrieJwtService>()
 
-export function getJwtService (): ValkyrieJwtService {
-  if (!_service) {
-    const db = MongoDBConnection.getInstance().getDatabase(
-      process.env.MONGODB_AUTH_DB ?? process.env.MONGODB_DB ?? 'mintly',
-    )
+/**
+ * JWT service por env: os stores de token ficam no banco roteado pelo header
+ * `env` (RequestContext), preservando o isolamento multi-DB — inclusive o E2E
+ * (env=e2e). Cacheado por env para reutilizar a mesma instância.
+ */
+export function getJwtService (env: string): ValkyrieJwtService {
+  let service = services.get(env)
+  if (!service) {
+    const db = MongoDBConnection.getInstance().getDatabase(env)
     const stores = createMongoStores(db as any)
-    _service = new ValkyrieJwtService({
+    service = new ValkyrieJwtService({
       issuer: process.env.JWT_ISSUER ?? 'mintly',
       accessTokenLifetimeSeconds: Number(process.env.JWT_ACCESS_LIFETIME_SECONDS ?? 900),
       refreshTokenLifetimeSeconds: Number(process.env.JWT_REFRESH_LIFETIME_SECONDS ?? 604800),
@@ -17,6 +21,7 @@ export function getJwtService (): ValkyrieJwtService {
       tokenProtection: ValkyrieTokenProtection.Encrypted,
       stores,
     })
+    services.set(env, service)
   }
-  return _service
+  return service
 }
