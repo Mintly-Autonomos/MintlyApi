@@ -45,3 +45,86 @@ describe('MongodbCrudRepository.query', () => {
     ).rejects.toBeInstanceOf(UnsupportedQueryKindError)
   })
 })
+
+// ── Métodos CRUD (com collection mockada) ──────────────────────────────────────
+
+const CTX: RequestContext = { env: 'default' }
+const OID = '0123456789abcdef01234567'
+
+function chain (result: any[]) {
+  const c: any = {}
+  c.sort = vi.fn(() => c)
+  c.skip = vi.fn(() => c)
+  c.limit = vi.fn(() => c)
+  c.toArray = vi.fn().mockResolvedValue(result)
+  return c
+}
+
+function mockCollection (overrides: Record<string, any> = {}) {
+  const collection: any = {
+    insertOne: vi.fn().mockResolvedValue({ insertedId: OID }),
+    findOne: vi.fn().mockResolvedValue({ _id: OID, name: 'x' }),
+    find: vi.fn(() => chain([{ _id: OID }])),
+    findOneAndUpdate: vi.fn().mockResolvedValue({ _id: OID, name: 'y' }),
+    deleteOne: vi.fn().mockResolvedValue({ deletedCount: 1 }),
+    ...overrides,
+  }
+  vi.spyOn(MongoDBConnection, 'getInstance').mockReturnValue({
+    getDatabase: vi.fn().mockReturnValue({ collection: () => collection }),
+  } as any)
+  return collection
+}
+
+describe('MongodbCrudRepository (CRUD)', () => {
+  let repo: MongodbCrudRepository<any, string>
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    repo = new MongodbCrudRepository('things')
+  })
+
+  it('insert retorna o item com _id', async () => {
+    mockCollection()
+    expect((await repo.insert({ name: 'x' } as any, CTX))._id).toBe(OID)
+  })
+
+  it('findById retorna o doc', async () => {
+    mockCollection()
+    expect(await repo.findById(OID, CTX)).toEqual({ _id: OID, name: 'x' })
+  })
+
+  it('find retorna via findOne', async () => {
+    mockCollection()
+    expect(await repo.find({ name: 'x' }, CTX)).toEqual({ _id: OID, name: 'x' })
+  })
+
+  it('findAll aplica sort por orderBy e por createdAtDirection', async () => {
+    const col = mockCollection()
+    const r = await repo.findAll(
+      { page: 2, size: 5, orderBy: 'name', orderDirection: 'desc', createdAtDirection: 'asc' } as any,
+      CTX,
+    )
+    expect(r).toEqual([{ _id: OID }])
+    expect(col.find).toHaveBeenCalled()
+  })
+
+  it('update retorna o doc atualizado', async () => {
+    mockCollection()
+    expect(await repo.update(OID, { name: 'y' } as any, CTX)).toEqual({ _id: OID, name: 'y' })
+  })
+
+  it('update lança quando o id não existe', async () => {
+    mockCollection({ findOneAndUpdate: vi.fn().mockResolvedValue(null) })
+    await expect(repo.update(OID, { name: 'y' } as any, CTX)).rejects.toThrow()
+  })
+
+  it('delete remove quando existe', async () => {
+    mockCollection()
+    await expect(repo.delete(OID, CTX)).resolves.toBeUndefined()
+  })
+
+  it('delete lança quando o id não existe', async () => {
+    mockCollection({ deleteOne: vi.fn().mockResolvedValue({ deletedCount: 0 }) })
+    await expect(repo.delete(OID, CTX)).rejects.toThrow()
+  })
+})

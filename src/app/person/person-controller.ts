@@ -4,6 +4,6 @@ import { PersonRepository } from './person-repository'
 
 export class PersonController extends CrudController<Person, string> {
   constructor () {
-    super(new PersonRepository(), personSchema)
+    super(new PersonRepository(), personSchema, personSchema.partial())
   }
 }
