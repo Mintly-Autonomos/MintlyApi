@@ -1,7 +1,6 @@
 import { CrudRepository } from './crud-repository-interface'
 import { CrudUseCase } from './crud-use-case'
-import { IncomingHttpHeaders } from 'http'
-import { buildRequestContext } from '../context/build-request-context'
+import { buildRequestContext, ContextSource } from '../context/build-request-context'
 import { PaginationDto } from 'mintly-lib'
 import { Field } from '@ascendance-hub/sapphire-core'
 import { NotFoundError } from '../errors/core/not-found-error'
@@ -20,15 +19,15 @@ export class CrudController <T extends Record<string, any>, ID = any> {
     this.useCase = useCase
   }
 
-  async insert (item: T, headers?: IncomingHttpHeaders): Promise<ResponseStructure> {
-    const ctx = buildRequestContext(headers)
+  async insert (item: T, source?: ContextSource): Promise<ResponseStructure> {
+    const ctx = buildRequestContext(source)
     this.orm.parse(item)
     const result = await this.useCase.insert(item, ctx)
     return new ResponseBuilder().payload(result).build() as ResponseStructure
   }
 
-  async findById (id: ID, headers?: IncomingHttpHeaders): Promise<ResponseStructure> {
-    const ctx = buildRequestContext(headers)
+  async findById (id: ID, source?: ContextSource): Promise<ResponseStructure> {
+    const ctx = buildRequestContext(source)
     const result = await this.useCase.findById(id, ctx)
     if (!result) {
       throw new NotFoundError(Resource.Person, id)
@@ -36,14 +35,14 @@ export class CrudController <T extends Record<string, any>, ID = any> {
     return new ResponseBuilder().payload(result).build() as ResponseStructure
   }
 
-  async find (filter: Partial<T>, headers?: IncomingHttpHeaders): Promise<ResponseStructure> {
-    const ctx = buildRequestContext(headers)
+  async find (filter: Partial<T>, source?: ContextSource): Promise<ResponseStructure> {
+    const ctx = buildRequestContext(source)
     const result = await this.useCase.find(filter, ctx)
     return new ResponseBuilder().payload(result).build() as ResponseStructure
   }
 
-  async findAll (filter: Partial<T> & PaginationDto, headers?: IncomingHttpHeaders): Promise<ResponseStructure> {
-    const ctx = buildRequestContext(headers)
+  async findAll (filter: Partial<T> & PaginationDto, source?: ContextSource): Promise<ResponseStructure> {
+    const ctx = buildRequestContext(source)
     const result = await this.useCase.findAll(filter, ctx)
     return new ResponseBuilder()
       .payload(result)
@@ -55,15 +54,15 @@ export class CrudController <T extends Record<string, any>, ID = any> {
       .build() as ResponseStructure
   }
 
-  async update (id: ID, item: Partial<T>, headers?: IncomingHttpHeaders): Promise<ResponseStructure> {
-    const ctx = buildRequestContext(headers)
+  async update (id: ID, item: Partial<T>, source?: ContextSource): Promise<ResponseStructure> {
+    const ctx = buildRequestContext(source)
     this.ormPartial.parse(item)
     const result = await this.useCase.update(id, item, ctx)
     return new ResponseBuilder().payload(result).build() as ResponseStructure
   }
 
-  async delete (id: ID, headers?: IncomingHttpHeaders): Promise<void> {
-    const ctx = buildRequestContext(headers)
+  async delete (id: ID, source?: ContextSource): Promise<void> {
+    const ctx = buildRequestContext(source)
     await this.useCase.delete(id, ctx)
   }
 }
