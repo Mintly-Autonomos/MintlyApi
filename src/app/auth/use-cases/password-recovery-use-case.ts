@@ -1,4 +1,4 @@
-import { randomBytes, scryptSync } from 'crypto'
+import { createHash, randomBytes, scryptSync } from 'crypto'
 import { AuthRepository } from '../auth-repository'
 import { PasswordResetRepository } from '../password-reset-repository'
 import { getEmailService } from '../../../infrastructure/email/email-service'
@@ -18,6 +18,8 @@ export type { RequestRecoveryInput, ResetPasswordInput }
 
 const RECOVERY_TOKEN_EXPIRY_HOURS = Number(process.env.RECOVERY_TOKEN_EXPIRY_HOURS ?? 1)
 
+const sha256 = (value: string) => createHash('sha256').update(value).digest('hex')
+
 export class PasswordRecoveryUseCase {
   private readonly authRepo = new AuthRepository()
 
@@ -29,22 +31,27 @@ export class PasswordRecoveryUseCase {
     // Não revela se o e-mail existe
     if (!user || user.status === 'inactive') return
 
+    // O token em claro só viaja no e-mail; no banco fica apenas o sha256,
+    // para que um vazamento de leitura do banco não permita tomar contas.
     const token = randomBytes(32).toString('hex')
-    const expiresAt = new Date(Date.now() + RECOVERY_TOKEN_EXPIRY_HOURS * 3_600_000).toISOString()
+    const expiresAt = new Date(Date.now() + RECOVERY_TOKEN_EXPIRY_HOURS * 3_600_000)
 
     const tokenRepo = new PasswordResetRepository(ctx.env)
     await tokenRepo.invalidateAllForUser(String(user._id))
     await tokenRepo.create({
-      token,
+      token: sha256(token),
       userId: String(user._id),
       expiresAt,
       usedAt: null,
       createdAt: new Date().toISOString(),
     })
 
-    await getEmailService().sendPasswordRecovery(user.email, token)
+    // Fire-and-forget: falha no provedor não pode virar 500 (nem abrir canal de
+    // timing que diferencie e-mails cadastrados de não cadastrados).
+    getEmailService().sendPasswordRecovery(user.email, token)
+      .catch(err => console.error('[RECOVERY] Falha ao enviar e-mail:', err))
 
-    logAudit('password_recovery_requested', String(user._id), { email: user.email }, undefined, ctx.env).catch(() => null)
+    await logAudit('password_recovery_requested', String(user._id), { email: user.email }, user.restaurantId, ctx.env).catch(() => null)
   }
 
   async resetPassword (input: ResetPasswordInput, ctx: RequestContext): Promise<void> {
@@ -54,8 +61,10 @@ export class PasswordRecoveryUseCase {
       throwFieldError('confirmNewPassword', 'As senhas não conferem.')
     }
 
+    // Claim atômico: valida e queima o token numa única operação. Se algo falhar
+    // depois daqui, o token já era — o usuário solicita um novo link (fail-closed).
     const tokenRepo = new PasswordResetRepository(ctx.env)
-    const record = await tokenRepo.findValid(input.token)
+    const record = await tokenRepo.claim(sha256(input.token))
     if (!record) {
       throw new UnauthorizedError('Token inválido ou expirado.')
     }
@@ -65,10 +74,10 @@ export class PasswordRecoveryUseCase {
     const passwordHash = `${salt}:${hash}`
 
     await this.authRepo.updatePassword(record.userId, passwordHash, ctx)
-    await tokenRepo.markUsed(input.token)
     await this.revokeAllSessions(record.userId, ctx)
 
-    logAudit('password_reset', record.userId, {}, undefined, ctx.env).catch(() => null)
+    const user = await this.authRepo.findById(record.userId, ctx).catch(() => null)
+    await logAudit('password_reset', record.userId, {}, user?.restaurantId, ctx.env).catch(() => null)
   }
 
   private async revokeAllSessions (userId: string, ctx: RequestContext): Promise<void> {

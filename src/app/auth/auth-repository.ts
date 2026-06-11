@@ -23,6 +23,11 @@ export class AuthRepository {
     return user as UserRecord | null
   }
 
+  async findById (userId: string, ctx: RequestContext): Promise<UserRecord | null> {
+    const user = await this.getCollection(ctx).findOne({ _id: new ObjectId(userId) })
+    return user as UserRecord | null
+  }
+
   async updateLastAccess (userId: string, ctx: RequestContext): Promise<void> {
     const now = new Date().toISOString()
     await this.getCollection(ctx).updateOne(

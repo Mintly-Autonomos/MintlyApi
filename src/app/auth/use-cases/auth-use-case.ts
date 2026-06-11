@@ -27,13 +27,6 @@ export class AuthUseCase {
       throw new UnauthorizedError('Credenciais inválidas')
     }
 
-    if (user.status === 'inactive') {
-      throw new ForbiddenError('Conta inativa. Entre em contato com o suporte.')
-    }
-    if (user.status === 'blocked') {
-      throw new ForbiddenError('Conta bloqueada. Entre em contato com o suporte.')
-    }
-
     if (user.blockedUntil && new Date(user.blockedUntil) > new Date()) {
       const minutesLeft = Math.ceil((new Date(user.blockedUntil).getTime() - Date.now()) / 60_000)
       throw new TooManyRequestsError(`Conta temporariamente bloqueada. Tente novamente em ${minutesLeft} minuto(s).`)
@@ -42,6 +35,15 @@ export class AuthUseCase {
     if (!this.verifyPassword(password, user.passwordHash)) {
       await this.handleFailedAttempt(user, ctx, meta)
       throw new UnauthorizedError('Credenciais inválidas')
+    }
+
+    // Status só é revelado a quem provou ter a credencial — antes disso a resposta
+    // é o 401 genérico, para não permitir enumerar contas inativas/bloqueadas (RN9).
+    if (user.status === 'inactive') {
+      throw new ForbiddenError('Conta inativa. Entre em contato com o suporte.')
+    }
+    if (user.status === 'blocked') {
+      throw new ForbiddenError('Conta bloqueada. Entre em contato com o suporte.')
     }
 
     const userId = String(user._id)
@@ -58,7 +60,7 @@ export class AuthUseCase {
     }
     const tokens = await jwt.generate({ tenantId: TENANT, subject: userId, claims })
 
-    logAudit('login', userId, { ip: meta.ip ?? null, userAgent: meta.userAgent ?? null }, undefined, ctx.env).catch(() => null)
+    await logAudit('login', userId, { ip: meta.ip ?? null, userAgent: meta.userAgent ?? null }, user.restaurantId, ctx.env).catch(() => null)
 
     return {
       accessToken: tokens.accessToken,
@@ -79,23 +81,23 @@ export class AuthUseCase {
     }
   }
 
-  async logout (refreshToken: string, ctx: RequestContext, userId?: string): Promise<void> {
+  async logout (refreshToken: string, ctx: RequestContext, userId?: string, restaurantId?: string): Promise<void> {
     const jwt = getJwtService(ctx.env)
     await jwt.revokeRefreshToken(refreshToken)
     if (userId) {
-      logAudit('logout', userId, {}, undefined, ctx.env).catch(() => null)
+      await logAudit('logout', userId, {}, restaurantId, ctx.env).catch(() => null)
     }
   }
 
   private async handleFailedAttempt (user: UserRecord, ctx: RequestContext, meta: LoginMeta): Promise<void> {
     const userId = String(user._id)
     const attempts = await this.repo.incrementLoginAttempts(userId, ctx)
-    logAudit('login_failed', userId, { ip: meta.ip ?? null, userAgent: meta.userAgent ?? null, attempt: attempts }, undefined, ctx.env).catch(() => null)
+    await logAudit('login_failed', userId, { ip: meta.ip ?? null, userAgent: meta.userAgent ?? null, attempt: attempts }, user.restaurantId, ctx.env).catch(() => null)
 
     if (attempts >= MAX_LOGIN_ATTEMPTS) {
       const blockedUntil = new Date(Date.now() + BLOCK_DURATION_MINUTES * 60_000)
       await this.repo.setTemporaryBlock(userId, blockedUntil, ctx)
-      logAudit('account_temporarily_blocked', userId, { blockedUntil: blockedUntil.toISOString(), attempts }, undefined, ctx.env).catch(() => null)
+      await logAudit('account_temporarily_blocked', userId, { blockedUntil: blockedUntil.toISOString(), attempts }, user.restaurantId, ctx.env).catch(() => null)
     }
   }
 

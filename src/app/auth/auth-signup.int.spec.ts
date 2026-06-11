@@ -165,14 +165,20 @@ describe('POST /auth/signup (integração)', () => {
       expect(res.statusCode).toBe(401)
     })
 
-    it('refresh devolve novos tokens e logout revoga (204)', async () => {
+    it('refresh devolve novos tokens e logout autenticado revoga (204)', async () => {
       const env = freshEnv()
       const refreshToken = (await signup(env)).json().payload.refreshToken
       const refreshed = await server.inject({ method: 'POST', url: '/auth/refresh', headers: { env }, payload: { refreshToken } })
       expect(refreshed.statusCode).toBe(200)
-      expect(refreshed.json().payload.accessToken).toBeTruthy()
+      const session = refreshed.json().payload
+      expect(session.accessToken).toBeTruthy()
 
-      const loggedOut = await server.inject({ method: 'POST', url: '/auth/logout', headers: { env }, payload: { refreshToken } })
+      const loggedOut = await server.inject({
+        method: 'POST',
+        url: '/auth/logout',
+        headers: { env, authorization: `Bearer ${session.accessToken}` },
+        payload: { refreshToken: session.refreshToken },
+      })
       expect(loggedOut.statusCode).toBe(204)
     })
   })

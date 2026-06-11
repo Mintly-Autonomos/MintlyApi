@@ -5,6 +5,7 @@ import { RegisterUseCase } from './use-cases/register-use-case'
 import { PasswordRecoveryUseCase } from './use-cases/password-recovery-use-case'
 import { ResponseBuilder } from '../../core/builders/response-builder/response-builder'
 import { buildRequestContext } from '../../core/context/build-request-context'
+import { getRequestUser } from '../../core/context/request-user'
 
 const authUseCase = new AuthUseCase()
 const registerUseCase = new RegisterUseCase()
@@ -43,8 +44,8 @@ export async function logoutController (
   reply: FastifyReply,
 ) {
   const ctx = buildRequestContext(request.headers)
-  const userId = (request as any).jwtClaims?.subject as string | undefined
-  await authUseCase.logout(request.body.refreshToken, ctx, userId)
+  const user = getRequestUser(request)
+  await authUseCase.logout(request.body.refreshToken, ctx, user.userId, user.restaurantId)
   return reply.status(StatusCodes.NO_CONTENT).send()
 }
 

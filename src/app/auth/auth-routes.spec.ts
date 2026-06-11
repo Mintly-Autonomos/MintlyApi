@@ -9,9 +9,14 @@ const mockExecute = vi.hoisted(() => vi.fn())
 const mockLogin = vi.hoisted(() => vi.fn())
 const mockRefresh = vi.hoisted(() => vi.fn())
 const mockLogout = vi.hoisted(() => vi.fn())
+const mockValidate = vi.hoisted(() => vi.fn())
 
 vi.mock('./use-cases/register-use-case', () => ({
   RegisterUseCase: class { execute = mockExecute },
+}))
+
+vi.mock('../../infrastructure/jwt/jwt-service', () => ({
+  getJwtService: vi.fn(() => ({ validate: mockValidate })),
 }))
 
 vi.mock('./use-cases/auth-use-case', () => ({
@@ -112,10 +117,28 @@ describe('Auth Routes', () => {
   })
 
   describe('POST /auth/logout', () => {
-    it('retorna 204', async () => {
-      mockLogout.mockResolvedValue(undefined)
+    it('retorna 401 sem Bearer token (rota protegida)', async () => {
       const res = await server.inject({ method: 'POST', url: '/auth/logout', payload: { refreshToken: 'rt' } })
+      expect(res.statusCode).toBe(401)
+      expect(res.json().code).toBe('AUTH-0001')
+      expect(mockLogout).not.toHaveBeenCalled()
+    })
+
+    it('retorna 204 com Bearer válido e repassa userId/restaurantId para auditoria', async () => {
+      mockValidate.mockResolvedValue({
+        succeeded: true,
+        subject: 'user-1',
+        claims: { name: 'João', email: 'joao@x.com', restaurantId: 'rest-1', role: 'owner', status: 'active' },
+      })
+      mockLogout.mockResolvedValue(undefined)
+      const res = await server.inject({
+        method: 'POST',
+        url: '/auth/logout',
+        headers: { authorization: 'Bearer access-token' },
+        payload: { refreshToken: 'rt' },
+      })
       expect(res.statusCode).toBe(204)
+      expect(mockLogout).toHaveBeenCalledWith('rt', expect.anything(), 'user-1', 'rest-1')
     })
   })
 

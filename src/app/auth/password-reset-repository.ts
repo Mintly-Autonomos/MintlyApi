@@ -12,21 +12,21 @@ export class PasswordResetRepository {
   }
 
   async create (record: Omit<PasswordResetToken, '_id'>): Promise<void> {
-    await this.getCollection().insertOne(record as PasswordResetToken)
+    const collection = this.getCollection()
+    // TTL: o Mongo apaga o documento quando expiresAt passa (createIndex é idempotente).
+    await collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+    await collection.insertOne(record as PasswordResetToken)
   }
 
-  async findValid (token: string): Promise<PasswordResetToken | null> {
-    return this.getCollection().findOne({
-      token,
-      usedAt: null,
-      expiresAt: { $gt: new Date().toISOString() },
-    })
-  }
-
-  async markUsed (token: string): Promise<void> {
-    await this.getCollection().updateOne(
-      { token },
+  /**
+   * Consome o token atomicamente: valida e marca como usado num único
+   * findOneAndUpdate, garantindo uso único mesmo com requisições concorrentes.
+   */
+  async claim (tokenHash: string): Promise<PasswordResetToken | null> {
+    return this.getCollection().findOneAndUpdate(
+      { token: tokenHash, usedAt: null, expiresAt: { $gt: new Date() } },
       { $set: { usedAt: new Date().toISOString() } },
+      { returnDocument: 'after' },
     )
   }
 
