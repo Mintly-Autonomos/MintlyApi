@@ -1,0 +1,287 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-06-10T00:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v11.0.0",
+  "resources": [
+    {
+      "_id": "wrk_mintly_api",
+      "_type": "workspace",
+      "parentId": null,
+      "name": "Mintly API",
+      "description": "Rotas do MintlyApi (auth + people + system). Use o ambiente para base_url, env de banco e tokens.",
+      "scope": "collection"
+    },
+    {
+      "_id": "env_mintly_base",
+      "_type": "environment",
+      "parentId": "wrk_mintly_api",
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:3000",
+        "db_env": "default",
+        "access_token": "",
+        "refresh_token": "",
+        "reset_token": "",
+        "person_id": ""
+      },
+      "dataPropertyOrder": {
+        "&": ["base_url", "db_env", "access_token", "refresh_token", "reset_token", "person_id"]
+      },
+      "color": null,
+      "isPrivate": false,
+      "metaSortKey": 1
+    },
+    {
+      "_id": "jar_mintly",
+      "_type": "cookie_jar",
+      "parentId": "wrk_mintly_api",
+      "name": "Default Jar",
+      "cookies": []
+    },
+    {
+      "_id": "fld_system",
+      "_type": "request_group",
+      "parentId": "wrk_mintly_api",
+      "name": "System",
+      "metaSortKey": 100
+    },
+    {
+      "_id": "fld_auth",
+      "_type": "request_group",
+      "parentId": "wrk_mintly_api",
+      "name": "Auth",
+      "metaSortKey": 200
+    },
+    {
+      "_id": "fld_people",
+      "_type": "request_group",
+      "parentId": "wrk_mintly_api",
+      "name": "People (protegido)",
+      "description": "Todas exigem Authorization: Bearer (preencha access_token no ambiente após o login).",
+      "metaSortKey": 300
+    },
+    {
+      "_id": "req_health",
+      "_type": "request",
+      "parentId": "fld_system",
+      "name": "Health check",
+      "description": "200 {\"status\":\"ok\"}",
+      "method": "GET",
+      "url": "{{ _.base_url }}/health",
+      "headers": [{ "name": "env", "value": "{{ _.db_env }}" }],
+      "body": {},
+      "authentication": {},
+      "metaSortKey": 101
+    },
+    {
+      "_id": "req_docs",
+      "_type": "request",
+      "parentId": "fld_system",
+      "name": "Swagger UI",
+      "description": "Documentação OpenAPI.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/documentation",
+      "headers": [],
+      "body": {},
+      "authentication": {},
+      "metaSortKey": 102
+    },
+    {
+      "_id": "req_signup",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Signup",
+      "description": "201 cria conta + restaurante + onboarding (conta financeira e categorias padrão). 409 e-mail duplicado, 400 validação (senha: ≥8, 1 maiúscula, 1 minúscula, 1 número).",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/signup",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "env", "value": "{{ _.db_env }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"person\": { \"name\": \"Dono Teste\", \"phone\": \"11900000000\" },\n  \"email\": \"dono@mintly.test\",\n  \"password\": \"Senha123\",\n  \"restaurantName\": \"Restaurante Teste\",\n  \"termsAccepted\": true\n}"
+      },
+      "authentication": {},
+      "metaSortKey": 201
+    },
+    {
+      "_id": "req_login",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Login",
+      "description": "200 tokens + user. 401 credenciais inválidas (mensagem genérica), 403 conta inativa/bloqueada, 429 lockout após 5 tentativas (15min). Copie accessToken/refreshToken para o ambiente.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "env", "value": "{{ _.db_env }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"dono@mintly.test\",\n  \"password\": \"Senha123\"\n}"
+      },
+      "authentication": {},
+      "metaSortKey": 202
+    },
+    {
+      "_id": "req_refresh",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Refresh",
+      "description": "200 novo par de tokens (rotação: o refresh antigo deixa de valer). 401 token inválido/rotacionado/revogado.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/refresh",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "env", "value": "{{ _.db_env }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"refreshToken\": \"{{ _.refresh_token }}\"\n}"
+      },
+      "authentication": {},
+      "metaSortKey": 203
+    },
+    {
+      "_id": "req_logout",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Logout",
+      "description": "204 revoga o refresh token e audita. Exige Bearer (401 sem token).",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/logout",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "env", "value": "{{ _.db_env }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"refreshToken\": \"{{ _.refresh_token }}\"\n}"
+      },
+      "authentication": { "type": "bearer", "token": "{{ _.access_token }}" },
+      "metaSortKey": 204
+    },
+    {
+      "_id": "req_forgot_password",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Forgot password",
+      "description": "202 sempre (não revela se o e-mail existe). Sem RESEND_API_KEY o token sai no console do servidor ([EMAIL-DEV] Token: ...). 400 e-mail malformado.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/forgot-password",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "env", "value": "{{ _.db_env }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"dono@mintly.test\"\n}"
+      },
+      "authentication": {},
+      "metaSortKey": 205
+    },
+    {
+      "_id": "req_reset_password",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Reset password",
+      "description": "200 redefine e revoga sessões anteriores. Token é de uso único e expira em 1h. 401 token inválido/expirado/usado, 400 senhas divergentes ou senha fraca.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/reset-password",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "env", "value": "{{ _.db_env }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"token\": \"{{ _.reset_token }}\",\n  \"newPassword\": \"NovaSenha1\",\n  \"confirmNewPassword\": \"NovaSenha1\"\n}"
+      },
+      "authentication": {},
+      "metaSortKey": 206
+    },
+    {
+      "_id": "req_people_create",
+      "_type": "request",
+      "parentId": "fld_people",
+      "name": "Criar pessoa",
+      "description": "200 com _id. 400 body inválido (schema completo: name, phone, audit).",
+      "method": "POST",
+      "url": "{{ _.base_url }}/people",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "env", "value": "{{ _.db_env }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Cliente Um\",\n  \"phone\": \"11911111111\",\n  \"audit\": {\n    \"createdAt\": \"2026-06-10T12:00:00.000Z\",\n    \"updatedAt\": \"2026-06-10T12:00:00.000Z\"\n  }\n}"
+      },
+      "authentication": { "type": "bearer", "token": "{{ _.access_token }}" },
+      "metaSortKey": 301
+    },
+    {
+      "_id": "req_people_list",
+      "_type": "request",
+      "parentId": "fld_people",
+      "name": "Listar pessoas (paginado)",
+      "description": "200 payload + pagination. Params opcionais: page, size.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/people",
+      "parameters": [
+        { "name": "page", "value": "1", "disabled": true },
+        { "name": "size", "value": "10", "disabled": true },
+        { "name": "isMultipleResponse", "value": "true", "disabled": true }
+      ],
+      "headers": [{ "name": "env", "value": "{{ _.db_env }}" }],
+      "body": {},
+      "authentication": { "type": "bearer", "token": "{{ _.access_token }}" },
+      "metaSortKey": 302
+    },
+    {
+      "_id": "req_people_by_id",
+      "_type": "request",
+      "parentId": "fld_people",
+      "name": "Buscar pessoa por id",
+      "description": "200 ou 404 se não existe.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/people/{{ _.person_id }}",
+      "headers": [{ "name": "env", "value": "{{ _.db_env }}" }],
+      "body": {},
+      "authentication": { "type": "bearer", "token": "{{ _.access_token }}" },
+      "metaSortKey": 303
+    },
+    {
+      "_id": "req_people_patch",
+      "_type": "request",
+      "parentId": "fld_people",
+      "name": "Atualizar pessoa (parcial)",
+      "description": "200 com o doc atualizado. Valida com o schema parcial — campos enviados precisam ser válidos (400 caso contrário).",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/people/{{ _.person_id }}",
+      "headers": [
+        { "name": "Content-Type", "value": "application/json" },
+        { "name": "env", "value": "{{ _.db_env }}" }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Cliente Renomeado\"\n}"
+      },
+      "authentication": { "type": "bearer", "token": "{{ _.access_token }}" },
+      "metaSortKey": 304
+    },
+    {
+      "_id": "req_people_delete",
+      "_type": "request",
+      "parentId": "fld_people",
+      "name": "Excluir pessoa",
+      "description": "204 sem corpo.",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/people/{{ _.person_id }}",
+      "headers": [{ "name": "env", "value": "{{ _.db_env }}" }],
+      "body": {},
+      "authentication": { "type": "bearer", "token": "{{ _.access_token }}" },
+      "metaSortKey": 305
+    }
+  ]
+}
