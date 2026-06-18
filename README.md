@@ -85,16 +85,38 @@ npm install
 
 ## ⚙️ Configuração
 
-1. Crie um arquivo `.env` na raiz do projeto:
+1. Crie um arquivo `.env` na raiz do projeto (use o `.env.example` como base):
 
 ```env
-# MongoDB (pode usar a conection string +srv)
-MONGODB_URI=mongodb://localhost:27017/seu-banco
+# MongoDB — Atlas SEM SRV (formato standard, recomendado)
+MONGODB_URI=mongodb://<user>:<pass>@<host-00>.<cluster-id>.mongodb.net:27017,<host-01>.<cluster-id>.mongodb.net:27017,<host-02>.<cluster-id>.mongodb.net:27017/?ssl=true&replicaSet=<replica-set>&authSource=admin&retryWrites=true&w=majority
 
 # API
 API_URL=http://localhost:3000
 PORT=3000
 ```
+
+> ⚠️ **Por que não usar `mongodb+srv://`?** A conexão SRV depende de resolução de
+> registros DNS `SRV` e `TXT`, que algumas redes corporativas e provedores de
+> internet bloqueiam — isso causa falhas de conexão intermitentes em parte do time.
+> O formato **standard** (acima) lista os hosts do replica set explicitamente e não
+> depende desse lookup, sendo mais resiliente.
+
+#### Como obter os hosts a partir de uma string SRV
+
+Se você só tem a string `mongodb+srv://...@<cluster>.mongodb.net/`, converta para o
+formato standard com um lookup DNS no domínio do cluster:
+
+```bash
+# Hosts do replica set (porta 27017 cada)
+nslookup -type=SRV _mongodb._tcp.<cluster>.mongodb.net
+
+# Opções (replicaSet e authSource)
+nslookup -type=TXT <cluster>.mongodb.net
+```
+
+No PowerShell (Windows): `Resolve-DnsName -Type SRV _mongodb._tcp.<cluster>.mongodb.net`.
+Monte a `MONGODB_URI` com os hosts retornados + `ssl=true` (o SRV ativa TLS por padrão).
 
 2. Certifique-se de que o MongoDB está rodando (caso esteja rodando o mongodb localmente):
 
