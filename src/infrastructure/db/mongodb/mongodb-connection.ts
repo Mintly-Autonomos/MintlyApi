@@ -1,4 +1,5 @@
 import { MongoClient, Db } from 'mongodb'
+import { buildMongoUri } from './mongodb-uri'
 
 class MongoDBConnection {
   private static instance: MongoDBConnection
@@ -19,7 +20,7 @@ class MongoDBConnection {
         return
       }
 
-      this.client = new MongoClient(process.env.MONGODB_URI || '')
+      this.client = new MongoClient(buildMongoUri())
       await this.client.connect()
 
       console.log('Conectado ao MongoDB com sucesso')
