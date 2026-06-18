@@ -88,35 +88,47 @@ npm install
 1. Crie um arquivo `.env` na raiz do projeto (use o `.env.example` como base):
 
 ```env
-# MongoDB — Atlas SEM SRV (formato standard, recomendado)
-MONGODB_URI=mongodb://<user>:<pass>@<host-00>.<cluster-id>.mongodb.net:27017,<host-01>.<cluster-id>.mongodb.net:27017,<host-02>.<cluster-id>.mongodb.net:27017/?ssl=true&replicaSet=<replica-set>&authSource=admin&retryWrites=true&w=majority
+# MongoDB — Atlas SEM SRV (formato standard), por campos separados
+MONGODB_USER=<user>
+MONGODB_PASSWORD=<pass>
+MONGODB_HOSTS=<host-00>.<cluster-id>.mongodb.net:27017,<host-01>.<cluster-id>.mongodb.net:27017,<host-02>.<cluster-id>.mongodb.net:27017
+MONGODB_REPLICA_SET=<replica-set>
+MONGODB_AUTH_SOURCE=admin
 
 # API
 API_URL=http://localhost:3000
 PORT=3000
 ```
 
+O conector (`buildMongoUri`) monta a connection string a partir desses campos. A
+senha é URL-encodada automaticamente, evitando o erro comum de caracteres especiais
+(`@`, `:`, `/`) quebrarem a string.
+
 > ⚠️ **Por que não usar `mongodb+srv://`?** A conexão SRV depende de resolução de
 > registros DNS `SRV` e `TXT`, que algumas redes corporativas e provedores de
 > internet bloqueiam — isso causa falhas de conexão intermitentes em parte do time.
-> O formato **standard** (acima) lista os hosts do replica set explicitamente e não
-> depende desse lookup, sendo mais resiliente.
+> O formato **standard** (campos acima) lista os hosts do replica set explicitamente
+> e não depende desse lookup, sendo mais resiliente.
+
+> ℹ️ Alternativamente, você pode definir **`MONGODB_URI`** com a connection string
+> completa — ela tem **precedência** sobre os campos separados. É assim que os testes
+> (mongodb-memory-server) injetam a conexão. Para mongo local sem TLS, use
+> `MONGODB_TLS=false`.
 
 #### Como obter os hosts a partir de uma string SRV
 
-Se você só tem a string `mongodb+srv://...@<cluster>.mongodb.net/`, converta para o
-formato standard com um lookup DNS no domínio do cluster:
+Se você só tem a string `mongodb+srv://...@<cluster>.mongodb.net/`, descubra os hosts
+e o replica set com um lookup DNS no domínio do cluster:
 
 ```bash
-# Hosts do replica set (porta 27017 cada)
+# Hosts do replica set (porta 27017 cada) -> MONGODB_HOSTS
 nslookup -type=SRV _mongodb._tcp.<cluster>.mongodb.net
 
-# Opções (replicaSet e authSource)
+# Opções (replicaSet e authSource) -> MONGODB_REPLICA_SET / MONGODB_AUTH_SOURCE
 nslookup -type=TXT <cluster>.mongodb.net
 ```
 
 No PowerShell (Windows): `Resolve-DnsName -Type SRV _mongodb._tcp.<cluster>.mongodb.net`.
-Monte a `MONGODB_URI` com os hosts retornados + `ssl=true` (o SRV ativa TLS por padrão).
 
 2. Certifique-se de que o MongoDB está rodando (caso esteja rodando o mongodb localmente):
 
