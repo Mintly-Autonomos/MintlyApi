@@ -20,7 +20,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     private readonly collectionName: string,
   ) {}
 
-  private getCollection (ctx: RequestContext): Collection<T> {
+  protected getCollection (ctx: RequestContext): Collection<T> {
     const db = MongoDBConnection.getInstance().getDatabase(ctx.env)
     return db.collection<T>(this.collectionName)
   }
