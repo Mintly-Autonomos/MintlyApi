@@ -1,10 +1,11 @@
-import { Collection, ObjectId, Filter, Document } from 'mongodb'
+import { Collection, ObjectId, Filter, Document, ClientSession } from 'mongodb'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { CrudRepository } from './crud-repository-interface'
 import { PaginationDto } from 'mintly-lib'
 import { RequestContext } from '../context/request-context'
 import { Query } from './query'
 import { UnsupportedQueryKindError } from '../errors/core/unsupported-query-kind-error'
+
 
 /**
  * Repositório CRUD com backend MongoDB.
@@ -38,10 +39,10 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     return result as T | null
   }
 
-  async find (filter: Partial<T>, ctx: RequestContext): Promise<T> {
+  async find (filter: Partial<T>, ctx: RequestContext, options?:{ session?: ClientSession }): Promise<T> {
     const collection = this.getCollection(ctx)
 
-    const result = await collection.findOne(filter as Filter<T>)
+    const result = await collection.findOne(filter as Filter<T>, {session: options?.session})
 
     return result as T
   }
@@ -74,7 +75,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     return result as T[]
   }
 
-  async update (id: ID, item: Partial<T>, ctx: RequestContext): Promise<T> {
+  async update (id: ID, item: Partial<T>, ctx: RequestContext,options?: { session?: ClientSession }): Promise<T> {
     const collection = this.getCollection(ctx)
     const filter = { _id: new ObjectId(id as string) } as Filter<T>
     const updateDoc = { $set: item }
@@ -82,7 +83,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     const result = await collection.findOneAndUpdate(
       filter,
       updateDoc,
-      { returnDocument: 'after' },
+      { returnDocument: 'after',session: options?.session },
     )
 
     if (!result) {
