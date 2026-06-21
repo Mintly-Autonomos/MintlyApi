@@ -7,26 +7,25 @@ import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connectio
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { getJwtService } from '../../infrastructure/jwt/jwt-service'
 
-
 describe('Financial Account (Integration)', () => {
   let app: FastifyInstance
   const fakeRestaurantId = '507f1f77bcf86cd799439011'
   let createdAccountId: string
   let testToken: string
-  
+
   let mongod: MongoMemoryServer // <-- Nossa variável do banco falso
-    beforeAll(async () => {
+  beforeAll(async () => {
     mongod = await MongoMemoryServer.create()
     process.env.MONGODB_URI = mongod.getUri()
     await MongoDBConnection.getInstance().connect()
-    
-try {
+
+    try {
       const jwtService = getJwtService('test')
-      
+
       // ---> A PEÇA QUE FALTAVA <---
       // Criamos a chave criptográfica do restaurante no nosso banco em memória!
       await jwtService.rotateSigningKey(fakeRestaurantId)
-      
+
       // Agora geramos o token normalmente
       const tokenResult = await jwtService.generate({
         tenantId: fakeRestaurantId,
@@ -35,13 +34,12 @@ try {
           issuer: 'mintly',
           subject: 'admin-user-id',
           audiences: ['mintly-api'],
-          tokenId: 'token-123'
-        } as any 
+          tokenId: 'token-123',
+        } as any,
       })
-      
+
       testToken = tokenResult.accessToken
       console.log('✅ SUCESSO: Token e Chaves gerados!')
-
     } catch (error) {
       console.error('🚨 ERRO FATAL NA MÁQUINA DE CRACHÁS:', error)
     }
@@ -53,7 +51,7 @@ try {
   afterAll(async () => {
     await app.close()
     await MongoDBConnection.getInstance().disconnect()
-    
+
     // 4. Destrói o banco da memória para não travar o seu PC
     if (mongod) {
       await mongod.stop()
@@ -69,8 +67,8 @@ try {
       url: '/financial-accounts', // A rota que criámos!
       headers: {
         'x-restaurant-id': fakeRestaurantId,
-        'authorization': `Bearer ${testToken}`,
-        'env': 'test' // <-- A PONTE PARA O BANCO DE DADOS CORRETO!
+        authorization: `Bearer ${testToken}`,
+        env: 'test', // <-- A PONTE PARA O BANCO DE DADOS CORRETO!
       },
       payload: {
         name: 'Caixa Integração',
@@ -80,9 +78,9 @@ try {
         restaurantId: fakeRestaurantId, // O validador pede no body também
         audit: {
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        }
-      }
+          updatedAt: new Date().toISOString(),
+        },
+      },
     })
     expect(response.statusCode).toBe(201)
 
@@ -100,13 +98,13 @@ try {
       url: '/financial-accounts',
       headers: {
         'x-restaurant-id': fakeRestaurantId,
-        'authorization': `Bearer ${testToken}`,
-        'env': 'test' // <-- A PONTE PARA O BANCO DE DADOS CORRETO!
-      }
+        authorization: `Bearer ${testToken}`,
+        env: 'test', // <-- A PONTE PARA O BANCO DE DADOS CORRETO!
+      },
     })
 
     expect(response.statusCode).toBe(200)
-    
+
     const body = JSON.parse(response.payload)
     expect(body.payload.length).toBeGreaterThan(0)
   })
@@ -120,14 +118,14 @@ try {
       url: `/financial-accounts/${createdAccountId}`,
       headers: {
         'x-restaurant-id': fakeRestaurantId,
-        'authorization': `Bearer ${testToken}`,
-        'env': 'test' // <-- A PONTE PARA O BANCO DE DADOS CORRETO!
+        authorization: `Bearer ${testToken}`,
+        env: 'test', // <-- A PONTE PARA O BANCO DE DADOS CORRETO!
       },
       payload: {
         isDefault: false, // <-- A TENTATIVA PROIBIDA
         type: 'cash',
-        restaurantId: fakeRestaurantId
-      }
+        restaurantId: fakeRestaurantId,
+      },
     })
 
     // O sistema DEVE cuspir um erro 400 ou 500, a depender de como o CrudController do projeto base apanha o erro
@@ -135,23 +133,23 @@ try {
   })
 
   it.only('deve bloquear a criação de uma conta com nome e tipo duplicados (409 Conflict)', async () => {
-      // Tentamos criar exatamente a mesma conta do Teste 1
-      const response = await app.inject({
-        method: 'POST',
-        url: '/financial-accounts',
-        headers: {
-          'x-restaurant-id': fakeRestaurantId,
-          'authorization': `Bearer ${testToken}`,
-          'env': 'test'
-        },
-        payload: {
-          name: 'Caixa Integração', 
-          type: 'cash',             
-          status: 'active'
-        }
-      })
-
-      // O sistema DEVE barrar com status 409!
-      expect(response.statusCode).toBe(409)
+    // Tentamos criar exatamente a mesma conta do Teste 1
+    const response = await app.inject({
+      method: 'POST',
+      url: '/financial-accounts',
+      headers: {
+        'x-restaurant-id': fakeRestaurantId,
+        authorization: `Bearer ${testToken}`,
+        env: 'test',
+      },
+      payload: {
+        name: 'Caixa Integração',
+        type: 'cash',
+        status: 'active',
+      },
     })
+
+    // O sistema DEVE barrar com status 409!
+    expect(response.statusCode).toBe(409)
+  })
 })
