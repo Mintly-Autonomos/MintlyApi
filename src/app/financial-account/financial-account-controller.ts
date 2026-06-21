@@ -3,6 +3,7 @@ import { ContextSource } from '../../core/context/build-request-context'
 import { ResponseStructure } from '../../core/builders/response-builder/response-builder'
 import { financialAccountSchema, FinancialAccount } from 'mintly-lib'
 import { FinancialAccountRepository } from './financial-account-repository'
+import { ConflictError } from '../../core/errors/auth/conflict-error'
 
 export class FinancialAccountController extends CrudController<FinancialAccount, string> {
   constructor (private readonly financialAccountRepo: FinancialAccountRepository) {
@@ -15,7 +16,8 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
    */
   async update (id: string, item: Partial<FinancialAccount>, source?: ContextSource): Promise<ResponseStructure> {
     if (item.isDefault !== undefined) {
-      throw new Error('BAD_REQUEST: O campo isDefault não pode ser editado manualmente. Use a rota específica de SetDefault.')
+      // O escudo do sistema reconhece essa classe e libera a mensagem!
+      throw new ConflictError('O campo isDefault não pode ser editado manualmente. Use a rota específica de SetDefault.')
     }
 
     return super.update(id, item, source)
