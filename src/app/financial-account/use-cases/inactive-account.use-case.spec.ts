@@ -132,7 +132,7 @@ describe('InactivateAccountUseCase (MIN-65)', () => {
       expect(typeof payload.history[0].at === 'string').toBe(true) // string ISO (decisão de equipe)
     })
 
-    it("usa 'system' como autor quando ctx.userId está ausente", async () => {
+    it('usa \'system\' como autor quando ctx.userId está ausente', async () => {
       // Arrange
       const CTX_NO_USER: RequestContext = { env: 'test', restaurantId: 'rest-1' }
       h.find.mockResolvedValueOnce(ACTIVE_ACCOUNT).mockResolvedValueOnce(OTHER_ACTIVE)
