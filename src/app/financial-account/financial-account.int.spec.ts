@@ -132,7 +132,7 @@ describe('Financial Account (Integration)', () => {
     expect(response.statusCode).not.toBe(200)
   })
 
-  it.only('deve bloquear a criação de uma conta com nome e tipo duplicados (409 Conflict)', async () => {
+  it('deve bloquear a criação de uma conta com nome e tipo duplicados (409 Conflict)', async () => {
     // Tentamos criar exatamente a mesma conta do Teste 1
     const response = await app.inject({
       method: 'POST',

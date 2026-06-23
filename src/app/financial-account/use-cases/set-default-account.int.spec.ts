@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { SetDefaultAccountUseCase } from './set-default-account.use-case'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
+import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import type { RequestContext } from '../../../core/context/request-context'
 
 /**
@@ -160,7 +161,7 @@ describe('SetDefaultAccountUseCase (MIN-65)', () => {
     expect(newPayload.history[0]).toMatchObject({ by: 'user-1', action: 'set-default' })
   })
 
-  it("usa 'system' como autor quando ctx.userId está ausente", async () => {
+  it('usa \'system\' como autor quando ctx.userId está ausente', async () => {
     // Arrange
     const CTX_NO_USER: RequestContext = { env: 'test', restaurantId: 'rest-1' }
     h.find.mockResolvedValueOnce(TARGET_ACCOUNT).mockResolvedValueOnce(null)
@@ -191,22 +192,17 @@ describe('SetDefaultAccountUseCase (MIN-65)', () => {
     )
   })
 
-  it('não rebaixa a si mesma quando a conta-alvo já é a padrão (idempotência do swap)', async () => {
-    // Arrange — alvo e padrão atual são a MESMA conta
+  it('é idempotente: se a conta-alvo já é a padrão, não busca a padrão atual nem escreve', async () => {
+    // Arrange
     const SELF = { ...TARGET_ACCOUNT, _id: 'acc-self', isDefault: true }
-    h.find.mockResolvedValueOnce(SELF).mockResolvedValueOnce(SELF)
+    h.find.mockResolvedValueOnce(SELF)
 
     // Act
     await sut.execute('acc-self', CTX)
 
-    // Assert — String(_id) === id, então o ramo de rebaixamento é pulado
-    expect(h.update).toHaveBeenCalledTimes(1)
-    expect(h.update).toHaveBeenCalledWith(
-      'acc-self',
-      expect.objectContaining({ isDefault: true }),
-      CTX,
-      { session: h.session },
-    )
+    // Assert
+    expect(h.find).toHaveBeenCalledTimes(1)
+    expect(h.update).not.toHaveBeenCalled()
   })
 
   it('lança NotFoundError quando a conta-alvo não existe (cenário de erro)', async () => {
@@ -247,24 +243,25 @@ describe('SetDefaultAccountUseCase (MIN-65)', () => {
    * de criar uma asserção falsa que aparentaria validar a regra, fixamos o
    * comportamento ATUAL (permissivo) e deixamos um TODO sinalizando a lacuna.
    */
-  describe('Regra #4 — conta inativa (NÃO implementada no SUT atual)', () => {
-    it('comportamento ATUAL: não bloqueia conta inativa — promove mesmo assim', async () => {
-      // Arrange
+  describe('Regra #4 — conta inativa não pode ser padrão', () => {
+    it('lança ConflictError ao tentar definir conta inativa como padrão', async () => {
+    // Arrange
       const INACTIVE = { ...TARGET_ACCOUNT, status: 'inactive' }
-      h.find.mockResolvedValueOnce(INACTIVE).mockResolvedValueOnce(null)
+      h.find.mockResolvedValueOnce(INACTIVE)
 
-      // Act + Assert — hoje resolve sem erro e ainda escreve isDefault: true
-      await expect(sut.execute('acc-target', CTX)).resolves.toBeUndefined()
-      expect(h.update).toHaveBeenCalledWith(
-        'acc-target',
-        expect.objectContaining({ isDefault: true }),
-        CTX,
-        { session: h.session },
-      )
+      // Act + Assert
+      await expect(sut.execute('acc-target', CTX)).rejects.toBeInstanceOf(ConflictError)
     })
 
-    it.todo(
-      'deveria lançar erro ao definir conta inativa como padrão (implementar regra MIN-65 #4 no SUT)',
-    )
+    it('não busca a padrão atual nem escreve nada quando a conta-alvo está inativa', async () => {
+    // Arrange
+      const INACTIVE = { ...TARGET_ACCOUNT, status: 'inactive' }
+      h.find.mockResolvedValueOnce(INACTIVE)
+
+      // Act + Assert
+      await expect(sut.execute('acc-target', CTX)).rejects.toBeInstanceOf(ConflictError)
+      expect(h.find).toHaveBeenCalledTimes(1) // só a busca da conta-alvo
+      expect(h.update).not.toHaveBeenCalled()
+    })
   })
 })

@@ -39,6 +39,6 @@ export async function financialAccountRoutes (fastify: FastifyInstance) {
   })
 
   fastify.patch('/:id/default', async (request: any, reply) => {
-  return controller.setDefault(request, reply)
-})
+    return controller.setDefault(request, reply)
+  })
 }
