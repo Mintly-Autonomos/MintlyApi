@@ -162,7 +162,6 @@ describe('InactivateAccountUseCase (integração)', () => {
     // Arrange — id válido (ObjectId) porém inexistente
     const missingId = new ObjectId().toString()
 
-    
     // Act + Assert
     await expect(sut.execute(missingId, CTX)).rejects.toBeInstanceOf(NotFoundError)
   })

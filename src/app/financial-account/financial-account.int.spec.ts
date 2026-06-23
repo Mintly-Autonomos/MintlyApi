@@ -153,4 +153,3 @@ describe('Financial Account (Integration)', () => {
     expect(response.statusCode).toBe(409)
   })
 })
-
