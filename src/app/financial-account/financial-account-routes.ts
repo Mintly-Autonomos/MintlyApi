@@ -37,4 +37,8 @@ export async function financialAccountRoutes (fastify: FastifyInstance) {
     await controller.delete(id, request)
     return reply.status(204).send()
   })
+
+  fastify.patch('/:id/default', async (request: any, reply) => {
+  return controller.setDefault(request, reply)
+})
 }
