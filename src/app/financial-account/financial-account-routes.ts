@@ -48,4 +48,3 @@ export async function financialAccountRoutes (fastify: FastifyInstance) {
   // (deleteOne) apagava o documento driblando todos os guards e destruindo a auditoria.
   // "Desativar" uma conta é só via /:id/inactivate.
 }
-

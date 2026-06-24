@@ -113,4 +113,3 @@ describe('PATCH /financial-accounts/:id/inactivate', () => {
     // (opcional) verificar via GET que 'substituta' agora é isDefault: true
   })
 })
-

@@ -145,4 +145,3 @@ export class InactivateAccountUseCase {
     }
   }
 }
-

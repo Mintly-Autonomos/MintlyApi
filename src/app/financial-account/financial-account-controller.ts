@@ -91,4 +91,3 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
       .build()
   }
 }
-

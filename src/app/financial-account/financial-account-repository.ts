@@ -83,4 +83,3 @@ export class FinancialAccountRepository extends MongodbCrudRepository<FinancialA
     return result as unknown as FinancialAccount[]
   }
 }
-

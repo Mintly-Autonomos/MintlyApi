@@ -57,4 +57,3 @@ describe('FinancialAccountController', () => {
     superUpdateSpy.mockRestore()
   })
 })
-
