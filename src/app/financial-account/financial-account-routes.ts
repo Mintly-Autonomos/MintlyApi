@@ -1,44 +1,50 @@
 import { FastifyInstance } from 'fastify'
 import { FinancialAccountRepository } from './financial-account-repository'
 import { FinancialAccountController } from './financial-account-controller'
+import { SetDefaultAccountUseCase } from './use-cases/set-default-account.use-case'
+import { InactivateAccountUseCase } from './use-cases/inactivate-account.use-case'
 
 export async function financialAccountRoutes (fastify: FastifyInstance) {
-  // 1. Injeção de Dependências na prática!
-  // Criamos o banco, e entregamos ele para o Controller
+  // Injeção de Dependências: criamos repo + use cases e entregamos ao controller.
   const repository = new FinancialAccountRepository()
-  const controller = new FinancialAccountController(repository)
+  const setDefaultUseCase = new SetDefaultAccountUseCase(repository)
+  const inactivateUseCase = new InactivateAccountUseCase(repository)
+  const controller = new FinancialAccountController(repository, setDefaultUseCase, inactivateUseCase)
 
-  // 2. Rota de Criação (POST /financial-accounts)
+  // POST /financial-accounts
   fastify.post('/', async (request, reply) => {
-    // O 'request' é o nosso 'source' (ele carrega o Header com o restaurantId)
     const response = await controller.insert(request.body as any, request)
     return reply.status(201).send(response)
   })
 
-  // 3. Rota de Listagem e Busca (GET /financial-accounts?name=Caixa&status=active)
+  // GET /financial-accounts?name=Caixa&status=active
   fastify.get('/', async (request, reply) => {
-    // Pegamos a busca e a paginação da URL (query)
     const response = await controller.findAll(request.query as any, request)
     return reply.status(200).send(response)
   })
 
-  // 4. Rota de Atualização (PATCH /financial-accounts/:id)
+  // PATCH /financial-accounts/:id  (edição parcial: name, type, feePercent, settlementDays)
   fastify.patch('/:id', async (request: any, reply) => {
     const { id } = request.params
-    // O Controller vai barrar se tiver "isDefault" aqui dentro!
     const response = await controller.update(id, request.body as any, request)
     return reply.status(200).send(response)
   })
 
-  // 5. Rota de Deleção (DELETE /financial-accounts/:id)
-  // (Embora a task não cite deleção explicitamente, o CRUD genérico já nos dá isso de graça)
-  fastify.delete('/:id', async (request: any, reply) => {
-    const { id } = request.params
-    await controller.delete(id, request)
-    return reply.status(204).send()
-  })
-
+  // PATCH /financial-accounts/:id/default  (define conta padrão via use case transacional)
   fastify.patch('/:id/default', async (request: any, reply) => {
     return controller.setDefault(request, reply)
   })
+
+  // PATCH /financial-accounts/:id/inactivate  (inativação com guards via use case transacional)
+  // body opcional: { replacementDefaultId?: string }
+  // -> obrigatório quando a conta-alvo for a padrão (assume o lugar dela).
+  fastify.patch('/:id/inactivate', async (request: any, reply) => {
+    return controller.inactivate(request, reply)
+  })
+
+  // NOTA: a rota DELETE /:id foi REMOVIDA de propósito.
+  // A história fala em INATIVAÇÃO (soft delete com guards de saldo/única-ativa/padrão
+  // e preservação do history[] para auditoria), não em deleção física. O delete da base
+  // (deleteOne) apagava o documento driblando todos os guards e destruindo a auditoria.
+  // "Desativar" uma conta é só via /:id/inactivate.
 }

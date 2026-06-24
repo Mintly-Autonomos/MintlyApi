@@ -22,7 +22,6 @@ export class SetDefaultAccountUseCase {
         )
 
         if (!targetAccount) {
-          // Passamos a string (ou o Enum Resource) que representa a entidade, seguido do ID
           throw new NotFoundError(Resource.FinancialAccount, id)
         }
 
@@ -41,8 +40,9 @@ export class SetDefaultAccountUseCase {
           { session },
         )
 
+        // history[].at é s.date() (Date) no schema — gravamos Date real, não string ISO.
         const historyEntry = {
-          at: new Date().toISOString(),
+          at: new Date(),
           by: ctx.userId ?? 'system',
           action: 'set-default',
         }

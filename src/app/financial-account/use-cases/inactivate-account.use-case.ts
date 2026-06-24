@@ -74,9 +74,9 @@ export class InactivateAccountUseCase {
           throw new ConflictError('Não é possível inativar a única conta ativa do restaurante.')
         }
 
-        // schema: history[].at é s.date() (Date), não string ISO
+        // history[].at é s.date() (Date) no schema — gravamos Date real, não string ISO.
         const historyEntry = {
-          at: new Date().toISOString(),
+          at: new Date(),
           by: ctx.userId ?? 'system',
           action: 'inactivate',
         }

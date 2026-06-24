@@ -1,6 +1,7 @@
 import { Document, MongoServerError } from 'mongodb'
 import { MongodbCrudRepository } from '../../core/crud/mongodb-crud-repository'
 import { RequestContext } from '../../core/context/request-context'
+import { ConflictError } from '../../core/errors/auth/conflict-error'
 import { FinancialAccount } from 'mintly-lib'
 
 export class FinancialAccountRepository extends MongodbCrudRepository<FinancialAccount & Document, string> {
@@ -13,11 +14,9 @@ export class FinancialAccountRepository extends MongodbCrudRepository<FinancialA
    * Chamamos isso quando o servidor sobe para blindar o banco de dados.
    */
   async createIndexes (ctx: RequestContext): Promise<void> {
-    // Graças ao "protected", podemos pegar a coleção pronta do Pai!
     const collection = this.getCollection(ctx)
 
     // Índice 1: Duplicidade name+type (Collation case-insensitive)
-    // Impede de criar "Caixa Principal" e "CAIXA PRINCIPAL" no mesmo restaurante
     await collection.createIndex(
       { restaurantId: 1, name: 1, type: 1 },
       { unique: true, collation: { locale: 'pt', strength: 2 } },
@@ -26,8 +25,7 @@ export class FinancialAccountRepository extends MongodbCrudRepository<FinancialA
     // Índice 2: Performance de busca
     await collection.createIndex({ restaurantId: 1, status: 1 })
 
-    // Índice 3: Unique Parcial
-    // Garante que só exista 1 conta com "isDefault: true" por restaurante.
+    // Índice 3: Unique Parcial — só 1 conta com isDefault:true por restaurante
     await collection.createIndex(
       { restaurantId: 1 },
       { unique: true, partialFilterExpression: { isDefault: true } },
@@ -36,42 +34,47 @@ export class FinancialAccountRepository extends MongodbCrudRepository<FinancialA
 
   /**
    * OVERRIDE DO INSERT (Missão da MIN-64)
-   * Interceptamos o insert do Pai para traduzir o erro de duplicidade do Mongo
+   * - FIX (tenant scoping): força restaurantId do contexto autenticado, ignorando
+   *   o que vier no body. Um cliente não pode mais criar conta para outro restaurante.
+   * - FIX (409): traduz o erro 11000 do Mongo em ConflictError, que o error handler
+   *   global mapeia para HTTP 409 (Error cru viraria 500).
    */
   async insert (item: FinancialAccount, ctx: RequestContext): Promise<FinancialAccount> {
+    // A conta SEMPRE pertence ao restaurante do contexto, nunca ao restaurantId do payload.
+    const scopedItem = { ...item, restaurantId: ctx.restaurantId }
+
     try {
-      // Chama o insert original da classe pai
-      return await super.insert(item as FinancialAccount & Document, ctx)
+      return await super.insert(scopedItem as FinancialAccount & Document, ctx)
     } catch (error) {
-      // 11000 é o código universal do MongoDB para "Unique Index Violated" (Dado duplicado)
+      // 11000 = violação de índice unique (dado duplicado)
       if (error instanceof MongoServerError && error.code === 11000) {
-        // Lançamos um erro claro que o nosso Controller vai transformar em HTTP 409
-        throw new Error('Conflict: Já existe uma conta com este nome e tipo neste restaurante.')
+        throw new ConflictError('Já existe uma conta com este nome e tipo neste restaurante.')
       }
       throw error // Repassa erros desconhecidos
     }
   }
 
   async findAll (filter: any, ctx: RequestContext): Promise<Array<FinancialAccount>> {
-    // 1. Pegamos a tabela (Graças ao 'protected' que você alterou!)
     const collection = this.getCollection(ctx)
 
-    // 2. Separamos os dados de paginação dos filtros reais (nome, status, etc)
+    // Separa paginação dos filtros reais (nome, status, etc)
     const { page = 1, size = 10, orderBy, orderDirection, createdAtDirection, ...queryFilter } = filter
 
     const pageNum = Number(page) || 1
     const sizeNum = Number(size) || 10
     const skip = (pageNum - 1) * sizeNum
 
-    // 3. A NOSSA INJEÇÃO DO SORT DUPLO!
-    // 1 no MongoDB significa "Ordem Crescente (A-Z)"
-    // Como "A"tiva vem antes de "I"nativa, o status: 1 resolve o agrupamento perfeitamente.
-    // O name: 1 desempata quem tiver o mesmo status.
+    // FIX (tenant scoping): nunca lista contas de outro restaurante.
+    const scopedFilter = { ...queryFilter, restaurantId: ctx.restaurantId }
+
+    // Sort duplo: status:1 agrupa "active" antes de "inactive"; name:1 desempata.
     const customSort = { status: 1, name: 1 }
 
-    // 4. Rodamos a busca no MongoDB
+    // FIX (ordenação alfabética real): collation pt ignora caixa/acento,
+    // coerente com o índice unique. Sem isso, ordem ASCII colocaria "Z" antes de "a".
     const result = await collection
-      .find(queryFilter)
+      .find(scopedFilter)
+      .collation({ locale: 'pt', strength: 1 })
       .sort(customSort as any)
       .skip(skip)
       .limit(sizeNum)
