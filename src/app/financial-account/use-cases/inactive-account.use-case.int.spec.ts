@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify'
 // ⚠️ AJUSTAR: importe o builder de servidor que os outros .int.spec já usam
 // (referência: src/infrastructure/server/build-server.ts).
 import { buildServer } from '../../../infrastructure/server/build-server'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 /**
  * Integração HTTP da inativação (PATCH /financial-accounts/:id/inactivate).
