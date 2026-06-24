@@ -318,3 +318,4 @@ describe('InactivateAccountUseCase (MIN-65)', () => {
     })
   })
 })
+

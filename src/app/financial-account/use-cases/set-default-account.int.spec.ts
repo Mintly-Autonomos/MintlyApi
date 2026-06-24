@@ -265,3 +265,4 @@ describe('SetDefaultAccountUseCase (MIN-65)', () => {
     })
   })
 })
+
