@@ -1,7 +1,8 @@
-import { Document, MongoServerError } from 'mongodb'
+import { Collection, Document, MongoServerError } from 'mongodb'
 import { MongodbCrudRepository } from '../../core/crud/mongodb-crud-repository'
 import { RequestContext } from '../../core/context/request-context'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
+import { ensure as ensureFinancialAccountIndexes } from '../../infrastructure/db/indices/financial-accounts'
 import { FinancialAccount } from 'mintly-lib'
 
 export class FinancialAccountRepository extends MongodbCrudRepository<FinancialAccount & Document, string> {
@@ -11,25 +12,13 @@ export class FinancialAccountRepository extends MongodbCrudRepository<FinancialA
 
   /**
    * INICIALIZAÇÃO DE ÍNDICES (Missão da MIN-64)
-   * Chamamos isso quando o servidor sobe para blindar o banco de dados.
+   * Delega para a fonte única dos índices desta collection
+   * (src/infrastructure/db/indices/financial-accounts.ts), a mesma usada pelo
+   * runner do pipeline (`npm run db:indices`). Aqui serve aos testes de
+   * integração, que garantem os índices antes de exercitar as regras.
    */
   async createIndexes (ctx: RequestContext): Promise<void> {
-    const collection = this.getCollection(ctx)
-
-    // Índice 1: Duplicidade name+type (Collation case-insensitive)
-    await collection.createIndex(
-      { restaurantId: 1, name: 1, type: 1 },
-      { unique: true, collation: { locale: 'pt', strength: 2 } },
-    )
-
-    // Índice 2: Performance de busca
-    await collection.createIndex({ restaurantId: 1, status: 1 })
-
-    // Índice 3: Unique Parcial — só 1 conta com isDefault:true por restaurante
-    await collection.createIndex(
-      { restaurantId: 1 },
-      { unique: true, partialFilterExpression: { isDefault: true } },
-    )
+    await ensureFinancialAccountIndexes(this.getCollection(ctx) as unknown as Collection<Document>)
   }
 
   /**
