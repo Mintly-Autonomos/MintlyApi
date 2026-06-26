@@ -51,7 +51,7 @@ const MOCK_USER = {
   restaurantId: 'rest-1',
   loginAttempts: 0,
   blockedUntil: null,
-  audit: { createdAt: 't', updatedAt: 't' },
+  audit: { createdAt: new Date(), updatedAt: new Date() },
 }
 
 const MOCK_TOKENS = { accessToken: 'mock-access-token', refreshToken: 'mock-refresh-token' }

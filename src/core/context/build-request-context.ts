@@ -4,10 +4,13 @@ import { RequestContext } from './request-context'
 /**
  * Forma estrutural mínima de um FastifyRequest: headers + os claims que o
  * verify-jwt anexa em rotas protegidas.
+ *
+ * ValkyrieJwtService.validate() retorna claims como Record<string, string[]>
+ * (cada valor é um array), daí o tipo abaixo.
  */
 export interface RequestWithContext {
   headers: IncomingHttpHeaders
-  jwtClaims?: { subject?: string; claims?: { restaurantId?: string } }
+  jwtClaims?: { subject?: string; claims?: Record<string, string[]> }
 }
 
 export type ContextSource = IncomingHttpHeaders | RequestWithContext
@@ -29,7 +32,9 @@ export function buildRequestContext (source?: ContextSource): RequestContext {
   const jwt = isRequest ? (source as RequestWithContext).jwtClaims : undefined
   if (jwt) {
     ctx.userId = jwt.subject
-    ctx.restaurantId = jwt.claims?.restaurantId
+    // Valkyrie retorna cada claim como string[] — extrai o primeiro elemento.
+    const rid = jwt.claims?.restaurantId
+    ctx.restaurantId = Array.isArray(rid) ? rid[0] : rid as string | undefined
   }
 
   return ctx

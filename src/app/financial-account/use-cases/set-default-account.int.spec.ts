@@ -153,7 +153,7 @@ describe('SetDefaultAccountUseCase (MIN-65)', () => {
     expect(oldPayload.history).toHaveLength(2)
     expect(oldPayload.history[0]).toEqual(CURRENT_DEFAULT.history[0]) // entrada anterior preservada
     expect(oldPayload.history[1]).toMatchObject({ by: 'user-1', action: 'unset-default' })
-    expect(typeof oldPayload.history[1].at === 'string').toBe(true)
+    expect(oldPayload.history[1].at instanceof Date).toBe(true)
 
     // conta que GANHA o default: entrada 'set-default'
     const [, newPayload] = h.update.mock.calls[1]

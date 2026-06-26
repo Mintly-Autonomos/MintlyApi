@@ -6,6 +6,7 @@ import { buildServer } from '../../infrastructure/server/build-server'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { MongoMemoryServer } from 'mongodb-memory-server'
 import { getJwtService } from '../../infrastructure/jwt/jwt-service'
+import { FinancialAccountRepository } from './financial-account-repository'
 
 describe('Financial Account (Integration)', () => {
   let app: FastifyInstance
@@ -46,6 +47,8 @@ describe('Financial Account (Integration)', () => {
 
     app = await buildServer()
     await app.ready()
+
+    await new FinancialAccountRepository().createIndexes({ env: 'test', restaurantId: fakeRestaurantId })
   })
 
   afterAll(async () => {
@@ -77,8 +80,8 @@ describe('Financial Account (Integration)', () => {
         isDefault: true,
         restaurantId: fakeRestaurantId, // O validador pede no body também
         audit: {
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
         },
       },
     })
@@ -146,6 +149,9 @@ describe('Financial Account (Integration)', () => {
         name: 'Caixa Integração',
         type: 'cash',
         status: 'active',
+        isDefault: false,
+        restaurantId: fakeRestaurantId,
+        audit: { createdAt: new Date(), updatedAt: new Date() },
       },
     })
 

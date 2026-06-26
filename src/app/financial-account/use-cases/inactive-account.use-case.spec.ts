@@ -129,7 +129,7 @@ describe('InactivateAccountUseCase (MIN-65)', () => {
       const [, payload] = h.update.mock.calls[0]
       expect(payload.history).toHaveLength(1)
       expect(payload.history[0]).toMatchObject({ by: 'user-1', action: 'inactivate' })
-      expect(typeof payload.history[0].at === 'string').toBe(true) // string ISO (decisão de equipe)
+      expect(payload.history[0].at instanceof Date).toBe(true)
     })
 
     it('usa \'system\' como autor quando ctx.userId está ausente', async () => {
