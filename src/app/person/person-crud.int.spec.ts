@@ -24,7 +24,7 @@ const SIGNUP_BODY = {
 const personBody = (name: string) => ({
   name,
   phone: '11911111111',
-  audit: { createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  audit: { createdAt: new Date(), updatedAt: new Date() },
 })
 
 describe('/people (integração, protegida por JWT)', () => {

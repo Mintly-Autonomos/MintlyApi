@@ -41,9 +41,49 @@ jobs:
             exit 1
           fi
 
+  ensure-indexes:
+    name: Ensure DB indexes
+    needs: verify-inputs
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    env:
+      # buildMongoUri (mongodb-uri.ts) usa MONGODB_URI quando definida; senão
+      # monta a URI standard a partir dos campos. Passamos ambos os conjuntos
+      # para funcionar com a config que o ambiente usar (o time prefere os
+      # campos, evitando SRV). Defina por environment os que se aplicam.
+      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      MONGODB_HOSTS: ${{ secrets.MONGODB_HOSTS }}
+      MONGODB_USER: ${{ secrets.MONGODB_USER }}
+      MONGODB_PASSWORD: ${{ secrets.MONGODB_PASSWORD }}
+      MONGODB_REPLICA_SET: ${{ secrets.MONGODB_REPLICA_SET }}
+      MONGODB_AUTH_SOURCE: ${{ secrets.MONGODB_AUTH_SOURCE }}
+      MONGODB_TLS: ${{ secrets.MONGODB_TLS }}
+      # Nome do banco = env do app (getDatabase(env)). Use a variable MONGO_ENV;
+      # se não definida, cai no nome do environment do deploy.
+      MONGO_ENV: ${{ vars.MONGO_ENV || inputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Idempotente: cria os índices que faltam e ignora os que já existem.
+      # Lê src/infrastructure/db/indices/ via scripts/indices/run.ts.
+      - name: Ensure indexes
+        run: npm run db:indices
+
   deploy-vercel:
     name: Deploy to Vercel
-    needs: verify-inputs
+    needs: [verify-inputs, ensure-indexes]
     if: ${{ inputs.target == 'vercel' }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
@@ -113,7 +153,7 @@ jobs:
 
   deploy-aws:
     name: Deploy to AWS EC2
-    needs: verify-inputs
+    needs: [verify-inputs, ensure-indexes]
     if: ${{ inputs.target == 'aws' }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}

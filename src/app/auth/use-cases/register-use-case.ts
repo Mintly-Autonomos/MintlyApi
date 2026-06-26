@@ -59,7 +59,7 @@ export class RegisterUseCase {
 
     try {
       await session.withTransaction(async () => {
-        const now = new Date().toISOString()
+        const now = new Date()
         const audit = { createdAt: now, updatedAt: now }
 
         // ── e-mail único ──────────────────────────────────────────────────────

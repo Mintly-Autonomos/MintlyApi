@@ -1,4 +1,4 @@
-import { Collection, ObjectId, Filter, Document } from 'mongodb'
+import { Collection, ObjectId, Filter, Document, ClientSession } from 'mongodb'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { CrudRepository } from './crud-repository-interface'
 import { PaginationDto } from 'mintly-lib'
@@ -20,7 +20,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     private readonly collectionName: string,
   ) {}
 
-  private getCollection (ctx: RequestContext): Collection<T> {
+  protected getCollection (ctx: RequestContext): Collection<T> {
     const db = MongoDBConnection.getInstance().getDatabase(ctx.env)
     return db.collection<T>(this.collectionName)
   }
@@ -38,11 +38,17 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     return result as T | null
   }
 
-  async find (filter: Partial<T>, ctx: RequestContext): Promise<T> {
+  async find (filter: Partial<T>, ctx: RequestContext, options?: { session?: ClientSession }): Promise<T> {
     const collection = this.getCollection(ctx)
 
-    const result = await collection.findOne(filter as Filter<T>)
+    // _id chega como string nos use cases; normaliza p/ ObjectId (igual a findById/update/delete).
+    // Não toca em _id quando é operador (ex.: { $ne: ObjectId }).
+    const normalized: any = { ...filter }
+    if (typeof normalized._id === 'string') {
+      normalized._id = new ObjectId(normalized._id)
+    }
 
+    const result = await collection.findOne(normalized as Filter<T>, { session: options?.session })
     return result as T
   }
 
@@ -74,7 +80,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     return result as T[]
   }
 
-  async update (id: ID, item: Partial<T>, ctx: RequestContext): Promise<T> {
+  async update (id: ID, item: Partial<T>, ctx: RequestContext, options?: { session?: ClientSession }): Promise<T> {
     const collection = this.getCollection(ctx)
     const filter = { _id: new ObjectId(id as string) } as Filter<T>
     const updateDoc = { $set: item }
@@ -82,7 +88,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     const result = await collection.findOneAndUpdate(
       filter,
       updateDoc,
-      { returnDocument: 'after' },
+      { returnDocument: 'after', session: options?.session },
     )
 
     if (!result) {

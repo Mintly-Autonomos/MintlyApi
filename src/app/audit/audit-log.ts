@@ -16,5 +16,5 @@ export interface AuditLog {
   userId: string
   restaurantId?: string
   data: Record<string, unknown>
-  createdAt: string
+  createdAt: Date
 }

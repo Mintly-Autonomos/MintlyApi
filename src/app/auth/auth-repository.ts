@@ -29,7 +29,7 @@ export class AuthRepository {
   }
 
   async updateLastAccess (userId: string, ctx: RequestContext): Promise<void> {
-    const now = new Date().toISOString()
+    const now = new Date()
     await this.getCollection(ctx).updateOne(
       { _id: new ObjectId(userId) },
       { $set: { lastAccessAt: now, 'audit.updatedAt': now } },
@@ -39,7 +39,7 @@ export class AuthRepository {
   async incrementLoginAttempts (userId: string, ctx: RequestContext): Promise<number> {
     const result = await this.getCollection(ctx).findOneAndUpdate(
       { _id: new ObjectId(userId) },
-      { $inc: { loginAttempts: 1 }, $set: { 'audit.updatedAt': new Date().toISOString() } },
+      { $inc: { loginAttempts: 1 }, $set: { 'audit.updatedAt': new Date() } },
       { returnDocument: 'after' },
     )
     return (result as UserRecord | null)?.loginAttempts ?? 1
@@ -48,21 +48,21 @@ export class AuthRepository {
   async resetLoginAttempts (userId: string, ctx: RequestContext): Promise<void> {
     await this.getCollection(ctx).updateOne(
       { _id: new ObjectId(userId) },
-      { $set: { loginAttempts: 0, blockedUntil: null, 'audit.updatedAt': new Date().toISOString() } },
+      { $set: { loginAttempts: 0, blockedUntil: null, 'audit.updatedAt': new Date() } },
     )
   }
 
   async setTemporaryBlock (userId: string, blockedUntil: Date, ctx: RequestContext): Promise<void> {
     await this.getCollection(ctx).updateOne(
       { _id: new ObjectId(userId) },
-      { $set: { blockedUntil: blockedUntil.toISOString(), 'audit.updatedAt': new Date().toISOString() } },
+      { $set: { blockedUntil: blockedUntil.toISOString(), 'audit.updatedAt': new Date() } },
     )
   }
 
   async updatePassword (userId: string, passwordHash: string, ctx: RequestContext): Promise<void> {
     await this.getCollection(ctx).updateOne(
       { _id: new ObjectId(userId) },
-      { $set: { passwordHash, loginAttempts: 0, blockedUntil: null, 'audit.updatedAt': new Date().toISOString() } },
+      { $set: { passwordHash, loginAttempts: 0, blockedUntil: null, 'audit.updatedAt': new Date() } },
     )
   }
 }

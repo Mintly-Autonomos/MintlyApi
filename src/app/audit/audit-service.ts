@@ -20,7 +20,7 @@ export async function logAudit (
     userId,
     restaurantId,
     data,
-    createdAt: new Date().toISOString(),
+    createdAt: new Date(),
   }
   await getCollection(env).insertOne(entry).catch(() => null)
 }
