@@ -48,10 +48,19 @@ jobs:
     environment: ${{ inputs.environment }}
 
     env:
-      # URI do Mongo do ambiente alvo (secret por environment).
+      # buildMongoUri (mongodb-uri.ts) usa MONGODB_URI quando definida; senão
+      # monta a URI standard a partir dos campos. Passamos ambos os conjuntos
+      # para funcionar com a config que o ambiente usar (o time prefere os
+      # campos, evitando SRV). Defina por environment os que se aplicam.
       MONGODB_URI: ${{ secrets.MONGODB_URI }}
-      # Nome do banco = env do app (getDatabase(env)). Use uma repo/env variable
-      # MONGO_ENV; se não definida, cai no nome do environment do deploy.
+      MONGODB_HOSTS: ${{ secrets.MONGODB_HOSTS }}
+      MONGODB_USER: ${{ secrets.MONGODB_USER }}
+      MONGODB_PASSWORD: ${{ secrets.MONGODB_PASSWORD }}
+      MONGODB_REPLICA_SET: ${{ secrets.MONGODB_REPLICA_SET }}
+      MONGODB_AUTH_SOURCE: ${{ secrets.MONGODB_AUTH_SOURCE }}
+      MONGODB_TLS: ${{ secrets.MONGODB_TLS }}
+      # Nome do banco = env do app (getDatabase(env)). Use a variable MONGO_ENV;
+      # se não definida, cai no nome do environment do deploy.
       MONGO_ENV: ${{ vars.MONGO_ENV || inputs.environment }}
 
     steps:
