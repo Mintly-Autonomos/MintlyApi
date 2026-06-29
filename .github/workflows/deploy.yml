@@ -48,11 +48,11 @@ jobs:
     environment: ${{ inputs.environment }}
 
     env:
-      # buildMongoUri (mongodb-uri.ts) usa MONGODB_URI quando definida; senão
-      # monta a URI standard a partir dos campos. Passamos ambos os conjuntos
-      # para funcionar com a config que o ambiente usar (o time prefere os
-      # campos, evitando SRV). Defina por environment os que se aplicam.
-      MONGODB_URI: ${{ secrets.MONGODB_URI }}
+      # Conexão pelos MESMOS campos que o app usa: buildMongoUri monta a URI
+      # standard (sem SRV). NÃO passamos MONGODB_URI de propósito — ele tem
+      # precedência no buildMongoUri e há um MONGODB_URI legado nos environments
+      # que sombrearia estes campos (causava "Invalid scheme"). Os campos vêm
+      # dos secrets de repo, então valem para staging e production.
       MONGODB_HOSTS: ${{ secrets.MONGODB_HOSTS }}
       MONGODB_USER: ${{ secrets.MONGODB_USER }}
       MONGODB_PASSWORD: ${{ secrets.MONGODB_PASSWORD }}
