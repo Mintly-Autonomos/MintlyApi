@@ -1,5 +1,6 @@
 import MongoDBConnection from '../mongodb/mongodb-connection'
 import * as financialAccounts from './financial-accounts'
+import * as financialMovements from './financial-movements'
 
 /**
  * Registro de módulos de índice — um por collection.
@@ -10,7 +11,7 @@ import * as financialAccounts from './financial-accounts'
  * quando o índice já existe, o runner roda tudo a cada deploy com segurança,
  * por ambiente (o env define o banco em `getDatabase(env)`).
  */
-const modules = [financialAccounts]
+const modules = [financialAccounts, financialMovements]
 
 /**
  * Garante (idempotente) todos os índices registrados no banco do `env`.
