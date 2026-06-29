@@ -1,5 +1,15 @@
 name: MintlyApi Deploy
 
+# Deploy manual. A BRANCH NÃO é perguntada: o ambiente decide o código.
+#   environment = staging    -> faz checkout da branch `staging`
+#   environment = production -> faz checkout da branch `main`
+# (O dropdown "Use workflow from" do GitHub é inerente ao workflow_dispatch e
+# não dá pra remover; ele só decide de qual branch o ARQUIVO do workflow é lido.
+# O que é deployado vem sempre do ref acima, conforme o ambiente.)
+#
+# A criação de índices roda DENTRO do job de deploy (após a aprovação do
+# environment), então há uma única aprovação por deploy.
+
 on:
   workflow_dispatch:
     inputs:
@@ -11,7 +21,7 @@ on:
           - vercel
           - aws
       environment:
-        description: Which environment to deploy
+        description: Which environment to deploy (define a branch)
         required: true
         default: production
         type: choice
@@ -41,54 +51,9 @@ jobs:
             exit 1
           fi
 
-  ensure-indexes:
-    name: Ensure DB indexes
-    needs: verify-inputs
-    runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
-
-    env:
-      # Conexão pelos MESMOS campos que o app usa: buildMongoUri monta a URI
-      # standard (sem SRV). NÃO passamos MONGODB_URI de propósito — ele tem
-      # precedência no buildMongoUri e há um MONGODB_URI legado nos environments
-      # que sombrearia estes campos (causava "Invalid scheme"). Os campos vêm
-      # dos secrets de repo, então valem para staging e production.
-      MONGODB_HOSTS: ${{ secrets.MONGODB_HOSTS }}
-      MONGODB_USER: ${{ secrets.MONGODB_USER }}
-      MONGODB_PASSWORD: ${{ secrets.MONGODB_PASSWORD }}
-      MONGODB_REPLICA_SET: ${{ secrets.MONGODB_REPLICA_SET }}
-      MONGODB_AUTH_SOURCE: ${{ secrets.MONGODB_AUTH_SOURCE }}
-      MONGODB_TLS: ${{ secrets.MONGODB_TLS }}
-      # Nome do banco = env do app (getDatabase(env)). Use a variable MONGO_ENV;
-      # se não definida, cai no nome do environment do deploy.
-      MONGO_ENV: ${{ vars.MONGO_ENV || inputs.environment }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      # Mesma versão dos demais jobs: o lockfile é resolvido com npm@11.11.0
-      # (npm 10 falha no `npm ci` por causa das optional deps do esbuild).
-      - name: Setup npm
-        run: npm install --global npm@11.11.0
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Idempotente: cria os índices que faltam e ignora os que já existem.
-      # Lê src/infrastructure/db/indices/ via scripts/indices/run.ts.
-      - name: Ensure indexes
-        run: npm run db:indices
-
   deploy-vercel:
     name: Deploy to Vercel
-    needs: [verify-inputs, ensure-indexes]
+    needs: verify-inputs
     if: ${{ inputs.target == 'vercel' }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
@@ -97,10 +62,22 @@ jobs:
       API_URL: ${{ secrets.API_URL }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      # Conexão pelos MESMOS campos que o app usa (buildMongoUri monta a URI
+      # standard, sem SRV). Secrets de repo -> valem p/ staging e production.
+      MONGODB_HOSTS: ${{ secrets.MONGODB_HOSTS }}
+      MONGODB_USER: ${{ secrets.MONGODB_USER }}
+      MONGODB_PASSWORD: ${{ secrets.MONGODB_PASSWORD }}
+      MONGODB_REPLICA_SET: ${{ secrets.MONGODB_REPLICA_SET }}
+      MONGODB_AUTH_SOURCE: ${{ secrets.MONGODB_AUTH_SOURCE }}
+      MONGODB_TLS: ${{ secrets.MONGODB_TLS }}
+      MONGO_ENV: ${{ vars.MONGO_ENV || inputs.environment }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Ambiente decide a branch: production -> main, staging -> staging.
+          ref: ${{ inputs.environment == 'production' && 'main' || 'staging' }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -128,6 +105,10 @@ jobs:
 
       - name: Validate Swagger
         run: npm run validate:swagger
+
+      # Índices idempotentes antes do deploy (mesmo run/aprovação do deploy).
+      - name: Ensure DB indexes
+        run: npm run db:indices
 
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
@@ -158,7 +139,7 @@ jobs:
 
   deploy-aws:
     name: Deploy to AWS EC2
-    needs: [verify-inputs, ensure-indexes]
+    needs: verify-inputs
     if: ${{ inputs.target == 'aws' }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
@@ -169,10 +150,22 @@ jobs:
       AWS_EC2_USER: ${{ secrets.AWS_EC2_USER }}
       AWS_APP_DIR: ${{ secrets.AWS_APP_DIR }}
       AWS_PROCESS_NAME: ${{ secrets.AWS_PROCESS_NAME }}
+      # Conexão pelos MESMOS campos que o app usa (buildMongoUri monta a URI
+      # standard, sem SRV). Secrets de repo -> valem p/ staging e production.
+      MONGODB_HOSTS: ${{ secrets.MONGODB_HOSTS }}
+      MONGODB_USER: ${{ secrets.MONGODB_USER }}
+      MONGODB_PASSWORD: ${{ secrets.MONGODB_PASSWORD }}
+      MONGODB_REPLICA_SET: ${{ secrets.MONGODB_REPLICA_SET }}
+      MONGODB_AUTH_SOURCE: ${{ secrets.MONGODB_AUTH_SOURCE }}
+      MONGODB_TLS: ${{ secrets.MONGODB_TLS }}
+      MONGO_ENV: ${{ vars.MONGO_ENV || inputs.environment }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Ambiente decide a branch: production -> main, staging -> staging.
+          ref: ${{ inputs.environment == 'production' && 'main' || 'staging' }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -200,6 +193,10 @@ jobs:
 
       - name: Validate Swagger
         run: npm run validate:swagger
+
+      # Índices idempotentes antes do deploy (mesmo run/aprovação do deploy).
+      - name: Ensure DB indexes
+        run: npm run db:indices
 
       - name: Create deployment archive
         run: tar -czf mintly-api-deploy.tgz dist package.json package-lock.json
