@@ -1,0 +1,557 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-06-28T23:29:24.000Z",
+  "__export_source": "mintly.curl-tests",
+  "resources": [
+    {
+      "_id": "wrk_mintly",
+      "_type": "workspace",
+      "name": "MintlyApi",
+      "description": "ColeÃ§Ã£o de testes da MintlyApi (env=staging). Token expira â€” rode 'Auth / Signup' e atualize o env.",
+      "scope": "collection"
+    },
+    {
+      "_id": "env_base",
+      "_type": "environment",
+      "parentId": "wrk_mintly",
+      "name": "Base",
+      "data": {
+        "base_url": "http://localhost:3000",
+        "env": "staging",
+        "token": "",
+        "restaurantId": "6a41d79a48d80aed7226e41b",
+        "cashAccountId": "6a41d79a48d80aed7226e41d",
+        "platformAccountId": "6a41d81148d80aed7226e43b",
+        "revenueCategoryId": "6a41d79a48d80aed7226e41e",
+        "expenseCategoryId": "6a41d79a48d80aed7226e420",
+        "movementId": "6a41d81148d80aed7226e43d"
+      },
+      "dataPropertyOrder": null
+    },
+    {
+      "_id": "fld_auth",
+      "_type": "request_group",
+      "parentId": "wrk_mintly",
+      "name": "Auth"
+    },
+    {
+      "_id": "req_001",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Signup",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/signup",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        }
+      ],
+      "description": "Cria restaurante + onboarding (conta Caixa + categorias). Copie payload.accessToken para o env 'token'.",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"person\": {\n    \"name\": \"Curl Test\",\n    \"phone\": \"11955554444\"\n  },\n  \"password\": \"Senha123\",\n  \"restaurantName\": \"Curl Test Rest\",\n  \"email\": \"novo_{{ $timestamp }}@teste.com\",\n  \"termsAccepted\": true\n}"
+      }
+    },
+    {
+      "_id": "req_002",
+      "_type": "request",
+      "parentId": "fld_auth",
+      "name": "Login",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/login",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"SEU_EMAIL@teste.com\",\n  \"password\": \"Senha123\"\n}"
+      }
+    },
+    {
+      "_id": "fld_acc",
+      "_type": "request_group",
+      "parentId": "wrk_mintly",
+      "name": "Financial Accounts"
+    },
+    {
+      "_id": "req_003",
+      "_type": "request",
+      "parentId": "fld_acc",
+      "name": "Listar contas",
+      "method": "GET",
+      "url": "{{ _.base_url }}/financial-accounts/",
+      "headers": [
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": ""
+    },
+    {
+      "_id": "req_004",
+      "_type": "request",
+      "parentId": "fld_acc",
+      "name": "Criar conta (cash)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/financial-accounts/",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"restaurantId\": \"{{ _.restaurantId }}\",\n  \"name\": \"Banco X\",\n  \"type\": \"bank\",\n  \"status\": \"active\",\n  \"isDefault\": false,\n  \"audit\": {\n    \"createdAt\": \"2026-06-28T00:00:00Z\",\n    \"updatedAt\": \"2026-06-28T00:00:00Z\"\n  }\n}"
+      }
+    },
+    {
+      "_id": "req_005",
+      "_type": "request",
+      "parentId": "fld_acc",
+      "name": "Criar conta (platform)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/financial-accounts/",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"restaurantId\": \"{{ _.restaurantId }}\",\n  \"name\": \"iFood\",\n  \"type\": \"platform\",\n  \"status\": \"active\",\n  \"isDefault\": false,\n  \"feePercent\": 12,\n  \"settlementDays\": 30,\n  \"audit\": {\n    \"createdAt\": \"2026-06-28T00:00:00Z\",\n    \"updatedAt\": \"2026-06-28T00:00:00Z\"\n  }\n}"
+      }
+    },
+    {
+      "_id": "req_006",
+      "_type": "request",
+      "parentId": "fld_acc",
+      "name": "Atualizar conta",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/financial-accounts/{{ _.platformAccountId }}",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"iFood (editado)\"\n}"
+      }
+    },
+    {
+      "_id": "req_007",
+      "_type": "request",
+      "parentId": "fld_acc",
+      "name": "Definir como padrÃ£o",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/financial-accounts/{{ _.platformAccountId }}/default",
+      "headers": [
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": ""
+    },
+    {
+      "_id": "req_008",
+      "_type": "request",
+      "parentId": "fld_acc",
+      "name": "Inativar conta",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/financial-accounts/{{ _.platformAccountId }}/inactivate",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{}"
+      }
+    },
+    {
+      "_id": "fld_mov",
+      "_type": "request_group",
+      "parentId": "wrk_mintly",
+      "name": "Financial Movements"
+    },
+    {
+      "_id": "req_009",
+      "_type": "request",
+      "parentId": "fld_mov",
+      "name": "Registrar entrada (cash)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/financial-movements/",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"direction\": \"in\",\n  \"title\": \"Venda balcÃ£o\",\n  \"grossValue\": 100,\n  \"date\": \"2026-06-16T00:00:00Z\",\n  \"accountId\": \"{{ _.cashAccountId }}\",\n  \"categoryId\": \"{{ _.revenueCategoryId }}\",\n  \"paymentMethod\": \"cash\"\n}"
+      }
+    },
+    {
+      "_id": "req_010",
+      "_type": "request",
+      "parentId": "fld_mov",
+      "name": "Registrar entrada (platform â†’ pending)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/financial-movements/",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"direction\": \"in\",\n  \"title\": \"Venda iFood\",\n  \"grossValue\": 100,\n  \"date\": \"2026-06-16T00:00:00Z\",\n  \"accountId\": \"{{ _.platformAccountId }}\",\n  \"categoryId\": \"{{ _.revenueCategoryId }}\",\n  \"paymentMethod\": \"pix\"\n}"
+      }
+    },
+    {
+      "_id": "req_011",
+      "_type": "request",
+      "parentId": "fld_mov",
+      "name": "Registrar saÃ­da",
+      "method": "POST",
+      "url": "{{ _.base_url }}/financial-movements/",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"direction\": \"out\",\n  \"title\": \"Compra de insumos\",\n  \"grossValue\": 40,\n  \"date\": \"2026-06-16T00:00:00Z\",\n  \"accountId\": \"{{ _.cashAccountId }}\",\n  \"categoryId\": \"{{ _.expenseCategoryId }}\",\n  \"paymentMethod\": \"cash\",\n  \"counterparty\": {\n    \"name\": \"Distribuidora X\",\n    \"kind\": \"supplier\"\n  },\n  \"fiscalNote\": \"NF-12345\"\n}"
+      }
+    },
+    {
+      "_id": "req_012",
+      "_type": "request",
+      "parentId": "fld_mov",
+      "name": "Listar movimentaÃ§Ãµes",
+      "method": "GET",
+      "url": "{{ _.base_url }}/financial-movements/",
+      "headers": [
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": ""
+    },
+    {
+      "_id": "req_013",
+      "_type": "request",
+      "parentId": "fld_mov",
+      "name": "Listar (busca + filtros)",
+      "method": "GET",
+      "url": "{{ _.base_url }}/financial-movements/?q=Venda&direction=in&status=settled&dateFrom=2026-06-01&dateTo=2026-06-30&page=1&size=10",
+      "headers": [
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": ""
+    },
+    {
+      "_id": "req_014",
+      "_type": "request",
+      "parentId": "fld_mov",
+      "name": "Mudar status",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/financial-movements/{{ _.movementId }}/status",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"status\": \"settled\"\n}"
+      }
+    },
+    {
+      "_id": "req_015",
+      "_type": "request",
+      "parentId": "fld_mov",
+      "name": "Editar movimentaÃ§Ã£o",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/financial-movements/{{ _.movementId }}",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"grossValue\": 200\n}"
+      }
+    },
+    {
+      "_id": "req_016",
+      "_type": "request",
+      "parentId": "fld_mov",
+      "name": "Recompute balances",
+      "method": "POST",
+      "url": "{{ _.base_url }}/financial-movements/recompute-balances",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"accountId\": \"{{ _.cashAccountId }}\"\n}"
+      }
+    },
+    {
+      "_id": "fld_err",
+      "_type": "request_group",
+      "parentId": "wrk_mintly",
+      "name": "Movements - erros esperados"
+    },
+    {
+      "_id": "req_017",
+      "_type": "request",
+      "parentId": "fld_err",
+      "name": "Entrada com categoria de despesa â†’ 400",
+      "method": "POST",
+      "url": "{{ _.base_url }}/financial-movements/",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"direction\": \"in\",\n  \"title\": \"Errada\",\n  \"grossValue\": 10,\n  \"date\": \"2026-06-16T00:00:00Z\",\n  \"accountId\": \"{{ _.cashAccountId }}\",\n  \"categoryId\": \"{{ _.expenseCategoryId }}\",\n  \"paymentMethod\": \"cash\"\n}"
+      }
+    },
+    {
+      "_id": "req_018",
+      "_type": "request",
+      "parentId": "fld_err",
+      "name": "Conta inexistente â†’ 404",
+      "method": "POST",
+      "url": "{{ _.base_url }}/financial-movements/",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"direction\": \"in\",\n  \"title\": \"X\",\n  \"grossValue\": 10,\n  \"date\": \"2026-06-16T00:00:00Z\",\n  \"accountId\": \"000000000000000000000000\",\n  \"categoryId\": \"{{ _.revenueCategoryId }}\",\n  \"paymentMethod\": \"cash\"\n}"
+      }
+    },
+    {
+      "_id": "req_019",
+      "_type": "request",
+      "parentId": "fld_err",
+      "name": "Duplicidade â†’ 409 (rode 2x)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/financial-movements/",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"direction\": \"in\",\n  \"title\": \"Dup\",\n  \"grossValue\": 33,\n  \"date\": \"2026-06-16T00:00:00Z\",\n  \"accountId\": \"{{ _.cashAccountId }}\",\n  \"categoryId\": \"{{ _.revenueCategoryId }}\",\n  \"paymentMethod\": \"cash\"\n}"
+      }
+    },
+    {
+      "_id": "req_020",
+      "_type": "request",
+      "parentId": "fld_err",
+      "name": "Confirma duplicidade â†’ 201",
+      "method": "POST",
+      "url": "{{ _.base_url }}/financial-movements/",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"direction\": \"in\",\n  \"title\": \"Dup\",\n  \"grossValue\": 33,\n  \"date\": \"2026-06-16T00:00:00Z\",\n  \"accountId\": \"{{ _.cashAccountId }}\",\n  \"categoryId\": \"{{ _.revenueCategoryId }}\",\n  \"paymentMethod\": \"cash\",\n  \"confirmDuplicate\": true\n}"
+      }
+    }
+  ]
+}
