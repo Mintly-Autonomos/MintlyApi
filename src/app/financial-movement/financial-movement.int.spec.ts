@@ -217,4 +217,30 @@ describe('Financial Movement (Integration)', () => {
     expect(list[0].title).toBe('Nova')
     expect(list[1].title).toBe('Antiga')
   })
+
+  // MIN-69: saída com fornecedor + NF; sem fee/net (net = bruto); débito.
+  it('saída registra counterparty (supplier) e fiscalNote, sem fee (net = bruto)', async () => {
+    const { auth, db, cashId, expenseCatId } = await setup()
+    const res = await app.inject({
+      method: 'POST',
+      url: '/financial-movements',
+      headers: auth,
+      payload: baseMovement({
+        direction: 'out',
+        title: 'Compra de insumos',
+        grossValue: 80,
+        accountId: cashId,
+        categoryId: expenseCatId,
+        counterparty: { name: 'Distribuidora X', kind: 'supplier' },
+        fiscalNote: 'NF-12345',
+      }),
+    })
+    expect(res.statusCode).toBe(201)
+    const body = res.json().payload
+    expect(body.counterparty).toMatchObject({ name: 'Distribuidora X', kind: 'supplier' })
+    expect(body.fiscalNote).toBe('NF-12345')
+    expect(body.netValue).toBe(80)
+    expect(body.feeValue).toBe(0)
+    expect((await accountBalances(db, cashId)).available).toBe(-80)
+  })
 })
