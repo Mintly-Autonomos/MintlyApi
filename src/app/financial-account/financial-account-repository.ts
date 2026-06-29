@@ -3,7 +3,18 @@ import { MongodbCrudRepository } from '../../core/crud/mongodb-crud-repository'
 import { RequestContext } from '../../core/context/request-context'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
 import { ensure as ensureFinancialAccountIndexes } from '../../infrastructure/db/indices/financial-accounts'
+import { toDecimal128, decimalToNumber } from '../../core/money/money'
 import { FinancialAccount } from 'mintly-lib'
+
+/** Saldos são persistidos como Decimal128 (dinheiro exato); a leitura volta a number. */
+function balancesToNumber<T extends Record<string, any>> (doc: T | null): T | null {
+  if (!doc) return doc
+  return {
+    ...doc,
+    availableBalance: decimalToNumber(doc.availableBalance),
+    predictedBalance: decimalToNumber(doc.predictedBalance),
+  }
+}
 
 export class FinancialAccountRepository extends MongodbCrudRepository<FinancialAccount & Document, string> {
   constructor () {
@@ -30,10 +41,17 @@ export class FinancialAccountRepository extends MongodbCrudRepository<FinancialA
    */
   async insert (item: FinancialAccount, ctx: RequestContext): Promise<FinancialAccount> {
     // A conta SEMPRE pertence ao restaurante do contexto, nunca ao restaurantId do payload.
-    const scopedItem = { ...item, restaurantId: ctx.restaurantId }
+    // Saldos persistidos como Decimal128 (dinheiro exato; movimentações ajustam via $inc).
+    const scopedItem = {
+      ...item,
+      restaurantId: ctx.restaurantId,
+      availableBalance: toDecimal128((item as any).availableBalance ?? 0),
+      predictedBalance: toDecimal128((item as any).predictedBalance ?? 0),
+    }
 
     try {
-      return await super.insert(scopedItem as FinancialAccount & Document, ctx)
+      const inserted = await super.insert(scopedItem as unknown as FinancialAccount & Document, ctx)
+      return balancesToNumber(inserted as any) as FinancialAccount
     } catch (error) {
       // 11000 = violação de índice unique (dado duplicado)
       if (error instanceof MongoServerError && error.code === 11000) {
@@ -69,6 +87,12 @@ export class FinancialAccountRepository extends MongodbCrudRepository<FinancialA
       .limit(sizeNum)
       .toArray()
 
-    return result as unknown as FinancialAccount[]
+    return result.map(d => balancesToNumber(d as any)) as unknown as FinancialAccount[]
+  }
+
+  // Converte os saldos Decimal128 -> number na leitura por id.
+  async findById (id: string, ctx: RequestContext): Promise<(FinancialAccount & Document) | null> {
+    const result = await super.findById(id, ctx)
+    return balancesToNumber(result as any)
   }
 }
