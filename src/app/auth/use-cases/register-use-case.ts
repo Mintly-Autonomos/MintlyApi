@@ -12,6 +12,7 @@ import {
 } from 'mintly-lib'
 import type { SignupResult } from 'mintly-lib'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
+import { toDecimal128 } from '../../../core/money/money'
 import { getJwtService } from '../../../infrastructure/jwt/jwt-service'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { RequestContext } from '../../../core/context/request-context'
@@ -106,6 +107,9 @@ export class RegisterUseCase {
             type: FinancialAccountType.Cash,
             status: RecordStatus.Active,
             isDefault: true,
+            // Saldos exatos (Decimal128); movimentações ajustam via $inc.
+            availableBalance: toDecimal128(0),
+            predictedBalance: toDecimal128(0),
             audit,
           },
           { session },

@@ -1,0 +1,102 @@
+import { MovementDirection, MovementStatus } from 'mintly-lib'
+import { computeFeeNet } from '../../core/money/money'
+
+/**
+ * Regras puras de domínio da movimentação (MIN-49/50) — sem Mongo, testáveis
+ * isoladamente. Dinheiro aqui é `number` de domínio; a conversão p/ Decimal128
+ * acontece na borda de persistência (repository).
+ */
+
+/** Subset da conta financeira necessário às regras (snapshot/saldo). */
+export interface AccountForRules {
+  type: string
+  feePercent?: number
+  settlementDays?: number
+}
+
+/** Soma `days` dias corridos a uma data (não muta a original). */
+export function addDays (date: Date, days: number): Date {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000)
+}
+
+/**
+ * Status default: conta com prazo de recebimento (`settlementDays > 0`) →
+ * `pending`; sem prazo → `settled`. O usuário pode sobrescrever depois.
+ */
+export function defaultStatus (account: AccountForRules): MovementStatus {
+  return account.settlementDays != null && account.settlementDays > 0
+    ? MovementStatus.Pending
+    : MovementStatus.Settled
+}
+
+export interface MovementSnapshot {
+  feeValue: number
+  netValue: number
+  feePercentApplied?: number
+  settlementDaysApplied?: number
+  predictedReceiptDate?: Date
+}
+
+/**
+ * Calcula fee/net e o snapshot de taxa/prazo. Taxa só se aplica a **entradas**
+ * em conta `platform` (receber via plataforma desconta a taxa). Saídas e contas
+ * não-platform: `feeValue = 0`, `netValue = grossValue`, sem data prevista.
+ */
+export function computeSnapshot (params: {
+  direction: MovementDirection
+  grossValue: number
+  date: Date
+  account: AccountForRules
+}): MovementSnapshot {
+  const { direction, grossValue, date, account } = params
+  const isPlatform = account.feePercent != null
+
+  if (direction === MovementDirection.In && isPlatform) {
+    const { feeValue, netValue } = computeFeeNet(grossValue, account.feePercent)
+    const snapshot: MovementSnapshot = {
+      feeValue,
+      netValue,
+      feePercentApplied: account.feePercent,
+    }
+    if (account.settlementDays != null) {
+      snapshot.settlementDaysApplied = account.settlementDays
+      snapshot.predictedReceiptDate = addDays(date, account.settlementDays)
+    }
+    return snapshot
+  }
+
+  return { feeValue: 0, netValue: grossValue }
+}
+
+export type BalanceBucket = 'available' | 'predicted'
+
+export interface BalanceImpact {
+  /** Bucket do saldo afetado; `null` quando não há impacto (cancelled). */
+  bucket: BalanceBucket | null
+  /** Valor com sinal (em reais): +netValue para entrada, −grossValue para saída. */
+  delta: number
+}
+
+/**
+ * Impacto no saldo da conta:
+ *  - `settled` → bucket `available`; `pending` → bucket `predicted`;
+ *    `cancelled` → sem impacto.
+ *  - sinal: entrada soma `netValue`; saída subtrai `grossValue`.
+ */
+export function balanceImpact (params: {
+  direction: MovementDirection
+  status: MovementStatus
+  grossValue: number
+  netValue: number
+}): BalanceImpact {
+  const { direction, status, grossValue, netValue } = params
+
+  if (status === MovementStatus.Cancelled) {
+    return { bucket: null, delta: 0 }
+  }
+
+  const delta = direction === MovementDirection.In ? netValue : -grossValue
+  const bucket: BalanceBucket = status === MovementStatus.Settled ? 'available' : 'predicted'
+
+  return { bucket, delta }
+}

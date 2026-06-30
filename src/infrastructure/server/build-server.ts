@@ -5,6 +5,7 @@ import swaggerUi from '@fastify/swagger-ui'
 import { SapphireValidationError } from '@ascendance-hub/sapphire-core'
 import { personRoutes } from '../../app/person/person-routes'
 import { financialAccountRoutes } from '../../app/financial-account/financial-account-routes'
+import { financialMovementRoutes } from '../../app/financial-movement/financial-movement-routes'
 import { healthRoutes } from '../../app/health/health-routes'
 import { authRoutes } from '../../app/auth/auth-routes'
 import { verifyJwt } from '../../core/hooks/verify-jwt'
@@ -82,6 +83,8 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
     await protectedScope.register(personRoutes, { prefix: '/people' })
 
     await protectedScope.register(financialAccountRoutes, { prefix: '/financial-accounts' })
+
+    await protectedScope.register(financialMovementRoutes, { prefix: '/financial-movements' })
   })
 
   // await server.register(financialAccountRoutes, { prefix: '/financial-accounts' })
