@@ -92,11 +92,6 @@ export class FinancialMovementRepository extends MongodbCrudRepository<Financial
     return result.map(d => movementFromStorage(d as any)) as unknown as FinancialMovement[]
   }
 
-  async findById (id: string, ctx: RequestContext): Promise<(FinancialMovement & Document) | null> {
-    const result = await super.findById(id, ctx)
-    return movementFromStorage(result as any)
-  }
-
   /**
    * Procura uma movimentação potencialmente duplicada: mesmo restaurante, conta,
    * título, valor bruto e data, criada há menos de 2 minutos. (MIN-49 regra 26)

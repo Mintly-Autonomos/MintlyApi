@@ -271,4 +271,60 @@ describe('Financial Movement lifecycle (Integration)', () => {
     expect(p.fiscalNote).toBe('NF-9')
     expect(p.description).toBe('obs')
   })
+
+  it('change-status: settled → pending move do disponível p/ o previsto', async () => {
+    const { auth, db, cashId, revenueCatId } = await setup()
+    const movId = (await register(auth, { direction: 'in', title: 'V', grossValue: 70, date: '2026-06-16T00:00:00.000Z', accountId: cashId, categoryId: revenueCatId, paymentMethod: 'cash' })).json().payload._id
+    expect((await balances(db, cashId)).available).toBe(70)
+    const res = await app.inject({ method: 'PATCH', url: `/financial-movements/${movId}/status`, headers: auth, payload: { status: 'pending' } })
+    expect(res.statusCode).toBe(200)
+    expect(await balances(db, cashId)).toEqual({ available: 0, predicted: 70 })
+  })
+
+  it('recompute ignora canceladas e soma só as liquidadas', async () => {
+    const { auth, cashId, revenueCatId } = await setup()
+    const m1 = (await register(auth, { direction: 'in', title: 'V1', grossValue: 100, date: '2026-06-16T00:00:00.000Z', accountId: cashId, categoryId: revenueCatId, paymentMethod: 'cash' })).json().payload._id
+    await register(auth, { direction: 'in', title: 'V2', grossValue: 50, date: '2026-06-17T00:00:00.000Z', accountId: cashId, categoryId: revenueCatId, paymentMethod: 'cash' })
+    await app.inject({ method: 'PATCH', url: `/financial-movements/${m1}/status`, headers: auth, payload: { status: 'cancelled' } })
+    const res = await app.inject({ method: 'POST', url: '/financial-movements/recompute-balances', headers: auth, payload: { accountId: cashId } })
+    expect(res.json().payload).toEqual({ availableBalance: 50, predictedBalance: 0 })
+  })
+
+  it('edição trocando de conta move o saldo entre as contas', async () => {
+    const { auth, db, restaurantId, cashId, revenueCatId } = await setup()
+    const acc2 = await db.collection('financial_accounts').insertOne({
+      restaurantId,
+      name: 'Conta 2',
+      type: 'cash',
+      status: 'active',
+      isDefault: false,
+      availableBalance: 0,
+      predictedBalance: 0,
+      audit: audit(),
+    })
+    const acc2Id = String(acc2.insertedId)
+    const movId = (await register(auth, { direction: 'in', title: 'V', grossValue: 30, date: '2026-06-16T00:00:00.000Z', accountId: cashId, categoryId: revenueCatId, paymentMethod: 'cash' })).json().payload._id
+    expect((await balances(db, cashId)).available).toBe(30)
+
+    const res = await app.inject({ method: 'PATCH', url: `/financial-movements/${movId}`, headers: auth, payload: { accountId: acc2Id } })
+    expect(res.statusCode).toBe(200)
+    expect((await balances(db, cashId)).available).toBe(0)
+    expect((await balances(db, acc2Id)).available).toBe(30)
+  })
+
+  it('change-status: cancelled → settled reaplica o efeito no saldo', async () => {
+    const { auth, db, cashId, revenueCatId } = await setup()
+    const movId = (await register(auth, { direction: 'in', title: 'V', grossValue: 25, date: '2026-06-16T00:00:00.000Z', accountId: cashId, categoryId: revenueCatId, paymentMethod: 'cash' })).json().payload._id
+    await app.inject({ method: 'PATCH', url: `/financial-movements/${movId}/status`, headers: auth, payload: { status: 'cancelled' } })
+    expect((await balances(db, cashId)).available).toBe(0)
+    const res = await app.inject({ method: 'PATCH', url: `/financial-movements/${movId}/status`, headers: auth, payload: { status: 'settled' } })
+    expect(res.statusCode).toBe(200)
+    expect((await balances(db, cashId)).available).toBe(25)
+  })
+
+  it('recompute: conta inexistente (id válido) → 404', async () => {
+    const { auth } = await setup()
+    const res = await app.inject({ method: 'POST', url: '/financial-movements/recompute-balances', headers: auth, payload: { accountId: new ObjectId().toHexString() } })
+    expect(res.statusCode).toBe(404)
+  })
 })
