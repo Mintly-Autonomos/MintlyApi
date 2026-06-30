@@ -7,8 +7,7 @@ import { toDecimal128, decimalToNumber } from '../../core/money/money'
 import { FinancialAccount } from 'mintly-lib'
 
 /** Saldos são persistidos como Decimal128 (dinheiro exato); a leitura volta a number. */
-function balancesToNumber<T extends Record<string, any>> (doc: T | null): T | null {
-  if (!doc) return doc
+function balancesToNumber<T extends Record<string, any>> (doc: T): T {
   return {
     ...doc,
     availableBalance: decimalToNumber(doc.availableBalance),
@@ -88,11 +87,5 @@ export class FinancialAccountRepository extends MongodbCrudRepository<FinancialA
       .toArray()
 
     return result.map(d => balancesToNumber(d as any)) as unknown as FinancialAccount[]
-  }
-
-  // Converte os saldos Decimal128 -> number na leitura por id.
-  async findById (id: string, ctx: RequestContext): Promise<(FinancialAccount & Document) | null> {
-    const result = await super.findById(id, ctx)
-    return balancesToNumber(result as any)
   }
 }
