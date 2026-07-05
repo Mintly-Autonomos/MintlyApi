@@ -25,6 +25,11 @@ export class FinancialCategoryRepository extends MongodbCrudRepository<Financial
    * - FIX (imutabilidade isSystem): categorias criadas via API NUNCA são isSystem — as 6
    *   categorias padrão só existem via onboarding (register-use-case.ts), que insere direto
    *   na collection. Isso impede um cliente de se autodeclarar isSystem:true.
+   * - FIX (usage/history): CrudController.insert só valida com o schema (que declara
+   *   .default(0)/.default([])) mas descarta o resultado parseado, então os defaults do
+   *   Sapphire nunca chegam ao item persistido. Como usage/history são computados pelo
+   *   RegisterMovementUseCase e não editáveis via CRUD (ver schema), forçamos aqui os
+   *   valores iniciais e ignoramos qualquer valor enviado no body.
    * - FIX (409): traduz o erro 11000 do Mongo (índice unique name+type) em ConflictError.
    */
   async insert (item: FinancialCategory, ctx: RequestContext): Promise<FinancialCategory> {
@@ -32,6 +37,8 @@ export class FinancialCategoryRepository extends MongodbCrudRepository<Financial
       ...item,
       restaurantId: ctx.restaurantId,
       isSystem: false,
+      usage: 0,
+      history: [],
     }
 
     try {
