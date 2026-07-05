@@ -113,6 +113,29 @@ describe('Financial Account (Integration)', () => {
   })
 
   // ---------------------------------------------------------
+  // TESTE 2b: LISTAR CONTAS com isMultipleResponse=true (parâmetro fixo
+  // do HttpBaseClient.findAll da mintly-lib — regressão de bug: esse
+  // parâmetro vazava pro filtro do Mongo e a listagem via client oficial
+  // sempre voltava vazia)
+  // ---------------------------------------------------------
+  it('deve listar as contas financeiras mesmo com isMultipleResponse=true na query', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/financial-accounts?isMultipleResponse=true',
+      headers: {
+        'x-restaurant-id': fakeRestaurantId,
+        authorization: `Bearer ${testToken}`,
+        env: 'test',
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+
+    const body = JSON.parse(response.payload)
+    expect(body.payload.length).toBeGreaterThan(0)
+  })
+
+  // ---------------------------------------------------------
   // TESTE 3: ATUALIZAÇÃO PROIBIDA (Regra de Negócio)
   // ---------------------------------------------------------
   it('deve bloquear a edição direta do isDefault via PUT', async () => {
