@@ -64,7 +64,10 @@ export class FinancialAccountRepository extends MongodbCrudRepository<FinancialA
     const collection = this.getCollection(ctx)
 
     // Separa paginação dos filtros reais (nome, status, etc)
-    const { page = 1, size = 10, orderBy, orderDirection, createdAtDirection, ...queryFilter } = filter
+    // FIX (isMultipleResponse): o HttpBaseClient.findAll() da mintly-lib sempre manda
+    // isMultipleResponse=true na query, mas nenhum documento tem esse campo — se ele
+    // vazasse pro filtro do Mongo, a listagem via client oficial sempre voltaria vazia.
+    const { page = 1, size = 10, orderBy, orderDirection, createdAtDirection, isMultipleResponse, ...queryFilter } = filter
 
     const pageNum = Number(page) || 1
     const sizeNum = Number(size) || 10
