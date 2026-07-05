@@ -117,6 +117,17 @@ describe('RegisterUseCase', () => {
       expect(docs.filter((c: any) => c.type === 'expense')).toHaveLength(4)
     })
 
+    it('grava usage:0 e history:[] nas categorias padrão do onboarding (MIN-71)', async () => {
+      const { collections } = makeMongoMock()
+      await useCase.execute(VALID_INPUT, CTX)
+      const [docs] = collections.financial_categories.insertMany.mock.calls[0]
+      expect(docs).toBeDefined()
+      for (const cat of docs) {
+        expect(cat.usage).toBe(0)
+        expect(cat.history).toEqual([])
+      }
+    })
+
     it('registra os 4 eventos de auditoria', async () => {
       const { collections } = makeMongoMock()
       await useCase.execute(VALID_INPUT, CTX)

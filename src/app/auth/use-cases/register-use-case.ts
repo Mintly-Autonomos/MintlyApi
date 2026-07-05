@@ -124,6 +124,8 @@ export class RegisterUseCase {
           operationalNature: cat.operationalNature,
           status: RecordStatus.Active,
           isSystem: true,
+          usage: 0,
+          history: [],
           audit,
         }))
         await db.collection('financial_categories').insertMany(categoryDocs, { session })
