@@ -56,10 +56,13 @@ export class FinancialCategoryRepository extends MongodbCrudRepository<Financial
    * - FIX (tenant scoping): nunca lista categorias de outro restaurante.
    * - Ordenação: status:1 agrupa "active" antes de "inactive" (ASCII: 'active' < 'inactive');
    *   name:1 desempata. Collation pt torna a ordenação alfabética real (ignora caixa/acento).
+   * - FIX (isMultipleResponse): o HttpBaseClient.findAll() da mintly-lib sempre manda
+   *   isMultipleResponse=true na query, mas nenhum documento tem esse campo — se ele vazasse
+   *   pro filtro do Mongo, a listagem via client oficial sempre voltaria vazia.
    */
   async findAll (filter: any, ctx: RequestContext): Promise<Array<FinancialCategory>> {
     const collection = this.getCollection(ctx)
-    const { page = 1, size = 10, orderBy, orderDirection, createdAtDirection, ...queryFilter } = filter
+    const { page = 1, size = 10, orderBy, orderDirection, createdAtDirection, isMultipleResponse, ...queryFilter } = filter
 
     const pageNum = Number(page) || 1
     const sizeNum = Number(size) || 10

@@ -109,6 +109,17 @@ describe('Financial Category (Integration)', () => {
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, 'pt')))
   })
 
+  it('lista categorias mesmo com isMultipleResponse=true na query (parâmetro fixo do HttpBaseClient.findAll da mintly-lib)', async () => {
+    const env = freshEnv()
+    const { auth } = await setup(env)
+
+    const res = await getCategories(auth, '?isMultipleResponse=true')
+
+    expect(res.statusCode).toBe(200)
+    const categories = res.json().payload as Array<any>
+    expect(categories).toHaveLength(6)
+  })
+
   it('lista só as categorias do restaurante autenticado — isolamento multi-tenant', async () => {
     const env1 = freshEnv()
     const env2 = freshEnv()
