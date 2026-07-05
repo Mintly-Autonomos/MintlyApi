@@ -29,7 +29,7 @@ export class InactivateCategoryUseCase {
       return
     }
 
-    const history = [...(target as any).history]
+    const history = Array.isArray((target as any).history) ? [...(target as any).history] : []
     history.push({ at: new Date(), by: ctx.userId ?? 'system', action })
 
     await this.repo.update(id, { status, history } as any, ctx)

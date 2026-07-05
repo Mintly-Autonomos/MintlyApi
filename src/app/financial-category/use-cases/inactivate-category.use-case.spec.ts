@@ -92,6 +92,21 @@ describe('InactivateCategoryUseCase (MIN-71)', () => {
       await expect(sut.inactivate('missing', CTX)).rejects.toBeInstanceOf(NotFoundError)
       expect(h.update).not.toHaveBeenCalled()
     })
+
+    it('não lança ao processar documento legado sem o campo history', async () => {
+      const legacy = { ...ACTIVE_CATEGORY }
+      delete (legacy as any).history
+
+      h.find.mockResolvedValueOnce(legacy)
+
+      await expect(sut.inactivate('cat-1', CTX)).resolves.toBeUndefined()
+
+      expect(h.update).toHaveBeenCalledTimes(1)
+      const [, payload] = h.update.mock.calls[0]
+      expect(Array.isArray(payload.history)).toBe(true)
+      expect(payload.history).toHaveLength(1)
+      expect(payload.history[0]).toMatchObject({ by: 'user-1', action: 'inactivate' })
+    })
   })
 
   describe('reactivate', () => {
