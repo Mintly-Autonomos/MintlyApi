@@ -6,6 +6,8 @@ import { ResponseBuilder, ResponseStructure } from '../../core/builders/response
 import { financialCategorySchema, financialCategoryUpdateSchema, FinancialCategory, MovementDirection } from 'mintly-lib'
 import { FinancialCategoryRepository } from './financial-category-repository'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
+import { NotFoundError } from '../../core/errors/core/not-found-error'
+import { Resource } from '../../core/types/resource'
 import { InactivateCategoryUseCase } from './use-cases/inactivate-category.use-case'
 import { SuggestCategoriesQuery } from './use-cases/suggest-categories.query'
 
@@ -39,7 +41,11 @@ export class FinancialCategoryController extends CrudController<FinancialCategor
     const ctx = buildRequestContext(source)
     const current = await this.repo.find({ _id: id as any, restaurantId: ctx.restaurantId } as any, ctx)
 
-    if (current && (current as any).isSystem === true) {
+    if (!current) {
+      throw new NotFoundError(Resource.FinancialCategory, id)
+    }
+
+    if ((current as any).isSystem === true) {
       throw new ConflictError('Categorias do sistema não podem ser editadas. Use /:id/inactivate ou /:id/reactivate para mudar o status.')
     }
 

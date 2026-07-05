@@ -148,6 +148,24 @@ describe('Financial Category (Integration)', () => {
     expect(res.statusCode).toBe(409)
   })
 
+  it('bloqueia PATCH em categoria de outro restaurante → 404 (não 409, não 200)', async () => {
+    const env1 = freshEnv()
+    const env2 = freshEnv()
+    const { auth: auth1, restaurantId: rid1 } = await setup(env1)
+    const { auth: auth2 } = await setup(env2)
+    const created = await createCategory(auth1, rid1, { name: 'Só do Restaurante 1' })
+    const { _id } = created.json().payload
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/financial-categories/${_id}`,
+      headers: auth2,
+      payload: { name: 'Tentativa cross-tenant' },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+
   it('permite editar campos de uma categoria custom via PATCH', async () => {
     const env = freshEnv()
     const { auth, restaurantId } = await setup(env)
