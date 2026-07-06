@@ -18,11 +18,21 @@ describe('CrudUseCase', () => {
     } as any
   }
 
-  it('insert delega pro repository', async () => {
+  it('insert enriquece o item com audit do servidor e delega pro repository', async () => {
     const repo = mockRepo()
     const useCase = new CrudUseCase(repo)
-    const result = await useCase.insert({ a: 1 } as any, ctx)
-    expect(repo.insert).toHaveBeenCalledWith({ a: 1 }, ctx)
+    const ctxWithUser: RequestContext = { env: 'unit', userId: 'user-1' }
+
+    const result = await useCase.insert({ a: 1 } as any, ctxWithUser)
+
+    expect(repo.insert).toHaveBeenCalledTimes(1)
+    const [item, passedCtx] = (repo.insert as any).mock.calls[0]
+    expect(item.a).toBe(1)
+    expect(item.audit.createdBy).toBe('user-1')
+    expect(item.audit.updatedBy).toBe('user-1')
+    expect(item.audit.createdAt instanceof Date).toBe(true)
+    expect(item.audit.updatedAt instanceof Date).toBe(true)
+    expect(passedCtx).toBe(ctxWithUser)
     expect(result).toEqual({ ok: 'insert' })
   })
 

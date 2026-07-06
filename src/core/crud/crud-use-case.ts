@@ -7,7 +7,20 @@ export class CrudUseCase<T, ID> {
   constructor (private readonly repository: CrudRepository<T, ID>) {}
 
   async insert (item: T, ctx: RequestContext): Promise<T> {
-    return await this.repository.insert(item, ctx)
+    // Auditoria é autoritativa do servidor: preenchida aqui no insert (não vem
+    // do client). Os insert-schemas da mintly-lib deixam `audit` opcional
+    // justamente porque este passo o preenche — o que o client mandar é ignorado.
+    const now = new Date()
+    const withAudit = {
+      ...(item as Record<string, unknown>),
+      audit: {
+        createdAt: now,
+        updatedAt: now,
+        createdBy: ctx.userId,
+        updatedBy: ctx.userId,
+      },
+    } as T
+    return await this.repository.insert(withAudit, ctx)
   }
 
   async findById (id: ID, ctx: RequestContext): Promise<T | null> {

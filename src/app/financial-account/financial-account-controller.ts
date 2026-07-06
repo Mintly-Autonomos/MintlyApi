@@ -1,7 +1,7 @@
 import { CrudController } from '../../core/crud/crud-controller'
 import { ContextSource, buildRequestContext } from '../../core/context/build-request-context'
 import { ResponseBuilder, ResponseStructure } from '../../core/builders/response-builder/response-builder'
-import { financialAccountSchema, financialAccountUpdateSchema, FinancialAccount } from 'mintly-lib'
+import { financialAccountInsertSchema, financialAccountUpdateSchema, FinancialAccount } from 'mintly-lib'
 import { FinancialAccountRepository } from './financial-account-repository'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
 import { SetDefaultAccountUseCase } from './use-cases/set-default-account.use-case'
@@ -28,7 +28,7 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
     // updates parciais por falta de campos obrigatórios.
     super(
       financialAccountRepo,
-      financialAccountSchema as any,
+      financialAccountInsertSchema as any,
       financialAccountUpdateSchema as any,
     )
   }
