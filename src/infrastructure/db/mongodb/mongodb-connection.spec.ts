@@ -58,14 +58,17 @@ describe('MongoDBConnection', () => {
       expect(conn.getDatabase().databaseName).toBe('default')
     })
 
-    it('ensureConnected mantém a conexão quando viva (ping ok)', async () => {
+    it('ensureConnected é no-op quando a topologia está viva', async () => {
+      const clientAntes = conn.getClient()
       await expect(conn.ensureConnected()).resolves.toBeUndefined()
       expect(conn.isConnected()).toBe(true)
+      expect(conn.getClient()).toBe(clientAntes) // não reconectou
     })
 
-    it('ensureConnected reconecta quando a topologia do cliente foi fechada', async () => {
-      await conn.getClient().close() // fecha o socket sem limpar this.client
-      await conn.ensureConnected() // ping falha -> descarta e reconecta
+    it('ensureConnected reconecta quando não há cliente', async () => {
+      await conn.disconnect()
+      expect(conn.isConnected()).toBe(false)
+      await conn.ensureConnected()
       expect(conn.isConnected()).toBe(true)
       await expect(conn.getClient().db('admin').command({ ping: 1 })).resolves.toBeDefined()
     })
