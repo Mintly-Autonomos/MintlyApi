@@ -1,10 +1,11 @@
 name: MintlyApi Deploy
 
-# Deploy manual. O código deployado é sempre o da branch `staging` (fonte
-# única de verdade), independente do "Use workflow from" do GitHub (que só
-# decide de qual branch o ARQUIVO do workflow é lido, não o código).
-# O input `environment` decide o destino: production -> Vercel/AWS de
-# produção (com os secrets/vars/aprovações desse GitHub Environment).
+# Deploy manual. O AMBIENTE decide a nuvem e a branch de código:
+#   environment = staging    -> Vercel   (código da branch `staging`)
+#   environment = production -> AWS EC2   (código da branch `main`)
+# Não há input de nuvem: staging é sempre Vercel e production é sempre AWS,
+# evitando combinações erradas (ex.: subir produção na Vercel por engano).
+# Enquanto o AWS não estiver pronto, deploys de production vão falhar — esperado.
 #
 # A criação de índices roda DENTRO do job de deploy (após a aprovação do
 # environment), então há uma única aprovação por deploy.
@@ -12,17 +13,10 @@ name: MintlyApi Deploy
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: Where to deploy
-        required: true
-        type: choice
-        options:
-          - vercel
-          - aws
       environment:
-        description: Which environment to deploy (secrets/vars/approvals)
+        description: Which environment to deploy (staging -> Vercel, production -> AWS)
         required: true
-        default: production
+        default: staging
         type: choice
         options:
           - staging
@@ -34,7 +28,7 @@ on:
         type: boolean
 
 concurrency:
-  group: mintlyapi-deploy-${{ inputs.target }}-${{ inputs.environment }}
+  group: mintlyapi-deploy-${{ inputs.environment }}
   cancel-in-progress: false
 
 jobs:
@@ -51,18 +45,18 @@ jobs:
           fi
 
   deploy-vercel:
-    name: Deploy to Vercel
+    name: Deploy to Vercel (staging)
     needs: verify-inputs
-    if: ${{ inputs.target == 'vercel' }}
+    if: ${{ inputs.environment == 'staging' }}
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: staging
 
     env:
       API_URL: ${{ secrets.API_URL }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       # Conexão pelos MESMOS campos que o app usa (buildMongoUri monta a URI
-      # standard, sem SRV). Secrets de repo -> valem p/ staging e production.
+      # standard, sem SRV).
       MONGODB_HOSTS: ${{ secrets.MONGODB_HOSTS }}
       MONGODB_USER: ${{ secrets.MONGODB_USER }}
       MONGODB_PASSWORD: ${{ secrets.MONGODB_PASSWORD }}
@@ -82,7 +76,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # staging é sempre a fonte de verdade do código, pro ambiente que for.
           ref: staging
 
       - name: Setup Node.js
@@ -125,6 +118,9 @@ jobs:
       # projeto Vercel, e conexões caem em `bad auth` por senha ausente/vazia.
       # GitHub Secrets/Variables = única fonte de verdade; cada deploy re-sincroniza.
       #
+      # A Vercel hospeda o ambiente de teste: usamos o slot "production" do
+      # projeto Vercel (alias estável) como nosso staging.
+      #
       # REQUIRED: envs sem default no código do app — se faltar, o deploy FALHA.
       # OPTIONAL: ausência é válida (MONGODB_TLS ausente => TLS habilitado no Atlas).
       # VERCEL_ORG_ID/VERCEL_PROJECT_ID ficam de fora: são config do CLI, não do app.
@@ -133,7 +129,7 @@ jobs:
           TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           set -euo pipefail
-          TARGET=$([ "${{ inputs.environment }}" = "production" ] && echo production || echo preview)
+          TARGET=production
 
           REQUIRED="MONGODB_HOSTS MONGODB_USER MONGODB_PASSWORD MONGODB_REPLICA_SET MONGODB_AUTH_SOURCE"
           REQUIRED="$REQUIRED MONGO_ENV API_URL GMAIL_USER GMAIL_APP_PASSWORD EMAIL_FROM FRONTEND_URL"
@@ -162,35 +158,20 @@ jobs:
           done
 
       - name: Pull Vercel environment
-        run: |
-          if [ "${{ inputs.environment }}" = "production" ]; then
-            vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-          else
-            vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
-          fi
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Build Vercel artifacts
-        run: |
-          if [ "${{ inputs.environment }}" = "production" ]; then
-            vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-          else
-            vercel build --token=${{ secrets.VERCEL_TOKEN }}
-          fi
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Deploy to Vercel
-        run: |
-          if [ "${{ inputs.environment }}" = "production" ]; then
-            vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
-          else
-            vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
-          fi
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
 
   deploy-aws:
-    name: Deploy to AWS EC2
+    name: Deploy to AWS EC2 (production)
     needs: verify-inputs
-    if: ${{ inputs.target == 'aws' }}
+    if: ${{ inputs.environment == 'production' }}
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: production
 
     env:
       API_URL: ${{ secrets.API_URL }}
@@ -199,7 +180,7 @@ jobs:
       AWS_APP_DIR: ${{ secrets.AWS_APP_DIR }}
       AWS_PROCESS_NAME: ${{ secrets.AWS_PROCESS_NAME }}
       # Conexão pelos MESMOS campos que o app usa (buildMongoUri monta a URI
-      # standard, sem SRV). Secrets de repo -> valem p/ staging e production.
+      # standard, sem SRV).
       MONGODB_HOSTS: ${{ secrets.MONGODB_HOSTS }}
       MONGODB_USER: ${{ secrets.MONGODB_USER }}
       MONGODB_PASSWORD: ${{ secrets.MONGODB_PASSWORD }}
@@ -219,8 +200,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # staging é sempre a fonte de verdade do código, pro ambiente que for.
-          ref: staging
+          # production deploya o código da branch main.
+          ref: main
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
