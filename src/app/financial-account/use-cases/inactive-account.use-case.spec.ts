@@ -157,6 +157,43 @@ describe('InactivateAccountUseCase (MIN-65)', () => {
       expect(h.find).toHaveBeenCalledTimes(1)
       expect(h.update).not.toHaveBeenCalled()
     })
+
+    it('trata availableBalance/predictedBalance ausentes como zero (nullish ?? 0)', async () => {
+      // Arrange — conta ativa SEM os campos de saldo (undefined). Os guards de saldo
+      // não devem disparar: Number(undefined ?? 0) === 0.
+      const NO_BALANCES = {
+        _id: 'acc-1',
+        name: 'Caixa',
+        type: 'cash',
+        status: 'active',
+        isDefault: false,
+        restaurantId: 'rest-1',
+        history: [],
+      }
+      h.find.mockResolvedValueOnce(NO_BALANCES).mockResolvedValueOnce(OTHER_ACTIVE)
+
+      // Act
+      await sut.execute('acc-1', CTX)
+
+      // Assert — inativou normalmente (nenhum guard de saldo bloqueou)
+      expect(h.update).toHaveBeenCalledTimes(1)
+      const [, payload] = h.update.mock.calls[0]
+      expect(payload.status === 'inactive').toBe(true)
+    })
+
+    it('inicializa history quando o campo da conta-alvo não é array', async () => {
+      // Arrange — history ausente (undefined) na conta-alvo
+      const NO_HISTORY = { ...ACTIVE_ACCOUNT, history: undefined }
+      h.find.mockResolvedValueOnce(NO_HISTORY).mockResolvedValueOnce(OTHER_ACTIVE)
+
+      // Act
+      await sut.execute('acc-1', CTX)
+
+      // Assert — começa do zero e grava a entrada de auditoria
+      const [, payload] = h.update.mock.calls[0]
+      expect(payload.history).toHaveLength(1)
+      expect(payload.history[0]).toMatchObject({ action: 'inactivate' })
+    })
   })
 
   describe('inativação de conta padrão (com substituta)', () => {
@@ -205,6 +242,22 @@ describe('InactivateAccountUseCase (MIN-65)', () => {
       const [, rPayload] = h.update.mock.calls[1]
       const last = rPayload.history[rPayload.history.length - 1]
       expect(last).toMatchObject({ by: 'user-1', action: 'set-default' })
+    })
+
+    it('inicializa o history da substituta quando o campo não é array', async () => {
+      // Arrange — substituta sem history (undefined)
+      h.find
+        .mockResolvedValueOnce(DEFAULT_TARGET)
+        .mockResolvedValueOnce(OTHER_ACTIVE)
+        .mockResolvedValueOnce({ ...REPLACEMENT, history: undefined })
+
+      // Act
+      await sut.execute('acc-1', CTX, 'acc-2')
+
+      // Assert — começa do zero e grava só a entrada 'set-default'
+      const [, rPayload] = h.update.mock.calls[1]
+      expect(rPayload.history).toHaveLength(1)
+      expect(rPayload.history[0]).toMatchObject({ action: 'set-default' })
     })
   })
 

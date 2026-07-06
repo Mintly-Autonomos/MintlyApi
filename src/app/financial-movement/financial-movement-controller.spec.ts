@@ -58,6 +58,18 @@ describe('FinancialMovementController', () => {
     expect(sent.pagination.totalItems).toBe(2)
   })
 
+  it('list sem query (undefined) usa filtro vazio e default de size 10', async () => {
+    repo.findAll.mockResolvedValue([{ _id: 'a' }])
+    await controller.list(makeRequest({ query: undefined }), reply)
+
+    expect(repo.findAll).toHaveBeenCalledWith({}, expect.anything())
+    expect(reply.status).toHaveBeenCalledWith(200)
+    const sent = reply.send.mock.calls[0][0]
+    // 1 item, size default 10 -> totalPages = ceil(1/10) = 1
+    expect(sent.pagination.totalItems).toBe(1)
+    expect(sent.pagination.totalPages).toBe(1)
+  })
+
   it('changeStatus delega passando id e status', async () => {
     await controller.changeStatus(makeRequest({ params: { id: 'm1' }, body: { status: 'settled' } }), reply)
 

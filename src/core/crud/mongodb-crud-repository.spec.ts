@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { ObjectId } from 'mongodb'
 import { MongodbCrudRepository } from './mongodb-crud-repository'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { UnsupportedQueryKindError } from '../errors/core/unsupported-query-kind-error'
@@ -98,6 +99,14 @@ describe('MongodbCrudRepository (CRUD)', () => {
     expect(await repo.find({ name: 'x' }, CTX)).toEqual({ _id: OID, name: 'x' })
   })
 
+  it('find normaliza _id string para ObjectId no filtro', async () => {
+    const col = mockCollection()
+    await repo.find({ _id: OID } as any, CTX)
+    const passedFilter = col.findOne.mock.calls[0][0]
+    expect(passedFilter._id).toBeInstanceOf(ObjectId)
+    expect(String(passedFilter._id)).toBe(OID)
+  })
+
   it('findAll aplica sort por orderBy e por createdAtDirection', async () => {
     const col = mockCollection()
     const r = await repo.findAll(
@@ -106,6 +115,33 @@ describe('MongodbCrudRepository (CRUD)', () => {
     )
     expect(r).toEqual([{ _id: OID }])
     expect(col.find).toHaveBeenCalled()
+  })
+
+  it('findAll aplica sort ascendente por orderBy e descendente por createdAtDirection', async () => {
+    const col = mockCollection()
+    const c = chain([{ _id: OID }])
+    col.find = vi.fn(() => c)
+
+    await repo.findAll(
+      { orderBy: 'name', orderDirection: 'asc', createdAtDirection: 'desc' } as any,
+      CTX,
+    )
+
+    expect(c.sort).toHaveBeenCalledWith({ name: 1, createdAt: -1 })
+  })
+
+  it('findAll usa page=1/size=10 quando page/size não coercem para número válido', async () => {
+    const col = mockCollection()
+    const c = chain([{ _id: OID }])
+    col.find = vi.fn(() => c)
+
+    // page='abc' → Number(NaN) || 1 = 1  |  size='' → Number(0) || 10 = 10
+    const r = await repo.findAll({ page: 'abc', size: '' } as any, CTX)
+
+    expect(r).toEqual([{ _id: OID }])
+    // skip = (1 - 1) * 10 = 0 ; limit = 10
+    expect(c.skip).toHaveBeenCalledWith(0)
+    expect(c.limit).toHaveBeenCalledWith(10)
   })
 
   it('update retorna o doc atualizado', async () => {

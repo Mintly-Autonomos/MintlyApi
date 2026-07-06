@@ -50,6 +50,16 @@ describe('movement-rules', () => {
       expect(computeSnapshot({ direction: MovementDirection.Out, grossValue: 100, date, account: platform }))
         .toEqual({ feeValue: 0, netValue: 100 })
     })
+
+    it('entrada em conta platform SEM settlementDays: aplica fee/net mas sem prazo/data prevista', () => {
+      const platformSemPrazo = { type: 'platform', feePercent: 10 }
+      expect(computeSnapshot({ direction: MovementDirection.In, grossValue: 100, date, account: platformSemPrazo }))
+        .toEqual({
+          feeValue: 10,
+          netValue: 90,
+          feePercentApplied: 10,
+        })
+    })
   })
 
   describe('balanceImpact', () => {
