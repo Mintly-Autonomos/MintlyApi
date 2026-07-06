@@ -17,7 +17,6 @@ dotenv.config()
 let appPromise: Promise<FastifyInstance> | null = null
 
 async function bootstrap (): Promise<FastifyInstance> {
-  await mongoConnection.connect()
   const app = await buildServer()
 
   // A Vercel parseia o corpo do request e o expõe em `req.body`, consumindo o
@@ -57,6 +56,11 @@ function getApp (): Promise<FastifyInstance> {
 
 export default async function handler (req: IncomingMessage, res: ServerResponse): Promise<void> {
   const app = await getApp()
+
+  // Conexão viva por request: em serverless a topologia do cliente cacheado
+  // pode fechar entre invocações (MongoTopologyClosedError). ensureConnected
+  // faz ping e reconecta se necessário.
+  await mongoConnection.ensureConnected()
 
   // Aguarda a resposta terminar antes de resolver. Sem isso, a Vercel encerra a
   // invocação assim que esta função resolve — o que ocorre logo após o emit,

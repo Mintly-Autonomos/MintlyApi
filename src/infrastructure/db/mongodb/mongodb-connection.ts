@@ -30,6 +30,29 @@ class MongoDBConnection {
     }
   }
 
+  /**
+   * Garante uma conexão viva antes de usar. Essencial em serverless (Vercel):
+   * a função é congelada entre invocações e a topologia do cliente cacheado
+   * pode ter sido fechada (MongoTopologyClosedError). Faz um ping; se falhar,
+   * descarta o cliente e reconecta. No dev/AWS (processo longo) o ping passa e
+   * retorna rápido.
+   */
+  async ensureConnected (): Promise<void> {
+    if (this.client) {
+      try {
+        await this.client.db('admin').command({ ping: 1 })
+        return
+      } catch {
+        try {
+          await this.client.close()
+        } catch { /* topologia já fechada */ }
+        this.client = null
+        this.db = null
+      }
+    }
+    await this.connect()
+  }
+
   async disconnect (): Promise<void> {
     try {
       if (this.client) {
