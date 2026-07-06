@@ -19,6 +19,28 @@ let appPromise: Promise<FastifyInstance> | null = null
 async function bootstrap (): Promise<FastifyInstance> {
   await mongoConnection.connect()
   const app = await buildServer()
+
+  // A Vercel parseia o corpo do request e o expõe em `req.body`, consumindo o
+  // stream ANTES de repassarmos ao Fastify via emit(). Sem isto, o parser JSON
+  // padrão do Fastify lê um stream já vazio e `request.body` fica undefined
+  // (quebrando controllers que fazem destructuring do body, ex.: login).
+  // Trocamos o parser de application/json para usar o corpo já parseado pela
+  // plataforma. Aplicado só aqui (path serverless) — o dev/AWS roda com
+  // listen() e o stream intacto, usando o parser padrão.
+  app.removeContentTypeParser('application/json')
+  app.addContentTypeParser('application/json', {}, (_req, payload, done) => {
+    const parsed = (payload as IncomingMessage & { body?: unknown }).body
+    if (typeof parsed === 'string') {
+      try {
+        done(null, parsed.length > 0 ? JSON.parse(parsed) : undefined)
+      } catch (error) {
+        done(error as Error)
+      }
+      return
+    }
+    done(null, parsed)
+  })
+
   await app.ready()
   return app
 }
