@@ -29,6 +29,12 @@ describe('buildMongoUri', () => {
     expect(uri).toContain('mongodb://a%40b:p%40ss%3Aw%2Frd@h0:27017/')
   })
 
+  it('usa senha vazia quando há usuário mas MONGODB_PASSWORD não está definida', () => {
+    const uri = buildMongoUri({ MONGODB_USER: 'alex', MONGODB_HOSTS: 'h0:27017' })
+    // credenciais montadas com senha vazia: "alex:@"
+    expect(uri).toContain('mongodb://alex:@h0:27017/')
+  })
+
   it('omite credenciais quando não há usuário (mongo local sem auth)', () => {
     const uri = buildMongoUri({ MONGODB_HOSTS: 'localhost:27017' })
     expect(uri).toBe('mongodb://localhost:27017/?ssl=true&authSource=admin&retryWrites=true&w=majority')

@@ -163,6 +163,40 @@ describe('AuthUseCase', () => {
       await useCase.login('joao@restaurante.com', 'Senha123', { env: 'e2e' })
       expect(jwtModule.getJwtService).toHaveBeenCalledWith('e2e')
     })
+
+    it('login continua com sucesso mesmo se updateLastAccess falhar', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+      mockUpdateLastAccess.mockRejectedValue(new Error('db indisponível'))
+      const result = await useCase.login('joao@restaurante.com', 'Senha123', CTX)
+      expect(result.accessToken).toBe('mock-access-token')
+    })
+
+    it('login continua com sucesso mesmo se a auditoria falhar', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+      mockLogAudit.mockRejectedValue(new Error('audit indisponível'))
+      const result = await useCase.login('joao@restaurante.com', 'Senha123', CTX)
+      expect(result.accessToken).toBe('mock-access-token')
+    })
+
+    it('senha errada ainda lança UnauthorizedError mesmo se a auditoria de login_failed falhar', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+      mockLogAudit.mockRejectedValue(new Error('audit indisponível'))
+      await expect(useCase.login('joao@restaurante.com', 'Errada1', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
+      expect(mockIncrementAttempts).toHaveBeenCalledWith('user-id-123', CTX)
+    })
+
+    it('bloqueio temporário é aplicado mesmo se a auditoria de bloqueio falhar', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+      mockIncrementAttempts.mockResolvedValue(5)
+      mockLogAudit.mockRejectedValue(new Error('audit indisponível'))
+      await expect(useCase.login('joao@restaurante.com', 'Errada1', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
+      expect(mockSetBlock).toHaveBeenCalled()
+    })
+
+    it('lança UnauthorizedError quando o passwordHash está malformado (sem separador)', async () => {
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, passwordHash: 'semseparador' })
+      await expect(useCase.login('joao@restaurante.com', 'Senha123', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
+    })
   })
 
   describe('refresh', () => {
@@ -177,6 +211,13 @@ describe('AuthUseCase', () => {
       mockRefresh.mockResolvedValue({ succeeded: false, failureReason: 'x', tokens: null })
       await expect(useCase.refresh('bad', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
     })
+
+    it('usa a mensagem padrão "Token inválido" quando não há failureReason', async () => {
+      mockRefresh.mockResolvedValue({ succeeded: false, tokens: null })
+      const err = await useCase.refresh('bad', CTX).catch(e => e)
+      expect(err).toBeInstanceOf(UnauthorizedError)
+      expect(err.message).toBe('Token inválido')
+    })
   })
 
   describe('logout', () => {
@@ -190,6 +231,12 @@ describe('AuthUseCase', () => {
       await useCase.logout('rt', CTX)
       expect(mockRevoke).toHaveBeenCalledWith('rt')
       expect(mockLogAudit).not.toHaveBeenCalled()
+    })
+
+    it('logout conclui com sucesso mesmo se a auditoria falhar', async () => {
+      mockLogAudit.mockRejectedValue(new Error('audit indisponível'))
+      await expect(useCase.logout('rt', CTX, 'user-id-123', 'rest-1')).resolves.toBeUndefined()
+      expect(mockRevoke).toHaveBeenCalledWith('rt')
     })
   })
 })

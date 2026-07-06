@@ -38,6 +38,11 @@ describe('verifyJwt', () => {
       validate.mockResolvedValue({ succeeded: false, failureReason: 'Token expirado' })
       await expect(verifyJwt(makeRequest('Bearer token-invalido'))).rejects.toBeInstanceOf(UnauthorizedError)
     })
+
+    it('usa mensagem padrão "Token inválido" quando não há failureReason', async () => {
+      validate.mockResolvedValue({ succeeded: false, failureReason: null })
+      await expect(verifyJwt(makeRequest('Bearer token-invalido'))).rejects.toThrow('Token inválido')
+    })
   })
 
   describe('token válido', () => {

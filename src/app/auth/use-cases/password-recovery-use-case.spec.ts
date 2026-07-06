@@ -141,6 +141,13 @@ describe('PasswordRecoveryUseCase', () => {
       const err = await useCase.requestRecovery({ email: 'nao-e-email' }, CTX).catch(e => e)
       expect(err.name).toBe('SapphireValidationError')
     })
+
+    it('conclui com sucesso mesmo se a auditoria falhar', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+      mockLogAudit.mockRejectedValue(new Error('audit indisponível'))
+      await expect(useCase.requestRecovery({ email: 'joao@restaurante.com' }, CTX)).resolves.toBeUndefined()
+      expect(mockCreateToken).toHaveBeenCalledOnce()
+    })
   })
 
   describe('resetPassword', () => {
@@ -188,6 +195,28 @@ describe('PasswordRecoveryUseCase', () => {
     it('lança erro de validação para senha fraca', async () => {
       const err = await useCase.resetPassword({ token: 'tok', newPassword: 'fraca', confirmNewPassword: 'fraca' }, CTX).catch(e => e)
       expect(err.name).toBe('SapphireValidationError')
+    })
+
+    it('conclui e audita com restaurantId indefinido quando findById falha', async () => {
+      mockClaim.mockResolvedValue(VALID_TOKEN_RECORD)
+      mockFindById.mockRejectedValue(new Error('db indisponível'))
+      await expect(useCase.resetPassword(resetInput, CTX)).resolves.toBeUndefined()
+      expect(mockUpdatePassword).toHaveBeenCalled()
+      expect(mockLogAudit).toHaveBeenCalledWith('password_reset', 'user-id-123', {}, undefined, 'default')
+    })
+
+    it('conclui a redefinição mesmo se a auditoria falhar', async () => {
+      mockClaim.mockResolvedValue(VALID_TOKEN_RECORD)
+      mockLogAudit.mockRejectedValue(new Error('audit indisponível'))
+      await expect(useCase.resetPassword(resetInput, CTX)).resolves.toBeUndefined()
+      expect(mockUpdatePassword).toHaveBeenCalled()
+    })
+
+    it('não propaga falha ao revogar sessões (best-effort)', async () => {
+      mockClaim.mockResolvedValue(VALID_TOKEN_RECORD)
+      mockUpdateMany.mockRejectedValue(new Error('db indisponível'))
+      await expect(useCase.resetPassword(resetInput, CTX)).resolves.toBeUndefined()
+      expect(mockUpdatePassword).toHaveBeenCalled()
     })
   })
 })
