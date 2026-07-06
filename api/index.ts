@@ -35,5 +35,18 @@ function getApp (): Promise<FastifyInstance> {
 
 export default async function handler (req: IncomingMessage, res: ServerResponse): Promise<void> {
   const app = await getApp()
-  app.server.emit('request', req, res)
+
+  // Aguarda a resposta terminar antes de resolver. Sem isso, a Vercel encerra a
+  // invocação assim que esta função resolve — o que ocorre logo após o emit,
+  // ANTES de handlers assíncronos do Fastify (qualquer `async () =>`, incluindo
+  // os que consultam o Mongo) escreverem a resposta —, derrubando a função com
+  // FUNCTION_INVOCATION_FAILED. Rotas síncronas (ex.: 404) escapam por responder
+  // no mesmo tick; as assíncronas não. Os listeners são anexados antes do emit
+  // para não haver corrida com respostas que terminam de imediato.
+  await new Promise<void>((resolve, reject) => {
+    res.once('finish', resolve)
+    res.once('close', resolve)
+    res.once('error', reject)
+    app.server.emit('request', req, res)
+  })
 }
