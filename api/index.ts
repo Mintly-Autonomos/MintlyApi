@@ -17,6 +17,7 @@ dotenv.config()
 let appPromise: Promise<FastifyInstance> | null = null
 
 async function bootstrap (): Promise<FastifyInstance> {
+  await mongoConnection.connect()
   const app = await buildServer()
 
   // A Vercel parseia o corpo do request e o expõe em `req.body`, consumindo o

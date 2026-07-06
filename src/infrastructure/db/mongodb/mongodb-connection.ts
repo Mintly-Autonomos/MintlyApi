@@ -38,19 +38,23 @@ class MongoDBConnection {
    * retorna rápido.
    */
   async ensureConnected (): Promise<void> {
-    if (this.client) {
-      try {
-        await this.client.db('admin').command({ ping: 1 })
-        return
-      } catch {
-        try {
-          await this.client.close()
-        } catch { /* topologia já fechada */ }
-        this.client = null
-        this.db = null
-      }
+    if (!this.client) {
+      await this.connect()
+      return
     }
-    await this.connect()
+    // Checagem SÍNCRONA (sem ping/rede): só reconecta quando o driver reporta a
+    // topologia explicitamente fechada — cenário serverless em que a função foi
+    // congelada e o socket morreu. Evita handshakes por request, que sob
+    // reconexões frequentes estouram limites de conexão/auth do Atlas.
+    const topology = (this.client as unknown as { topology?: { isConnected?: () => boolean } }).topology
+    if (topology?.isConnected?.() === false) {
+      try {
+        await this.client.close()
+      } catch { /* já fechada */ }
+      this.client = null
+      this.db = null
+      await this.connect()
+    }
   }
 
   async disconnect (): Promise<void> {
