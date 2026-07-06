@@ -71,10 +71,9 @@ jobs:
       MONGODB_AUTH_SOURCE: ${{ secrets.MONGODB_AUTH_SOURCE }}
       MONGODB_TLS: ${{ secrets.MONGODB_TLS }}
       MONGO_ENV: ${{ vars.MONGO_ENV || inputs.environment }}
-      # E-mail de recuperação de senha (getEmailService: Resend > Gmail > console).
+      # E-mail de recuperação de senha (getEmailService: Gmail > console).
       # FRONTEND_URL é o domínio do MintlyWeb deployado — sem isso, o link do
       # e-mail aponta pro default de dev (localhost:4200).
-      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       GMAIL_USER: ${{ secrets.GMAIL_USER }}
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
@@ -167,10 +166,9 @@ jobs:
       MONGODB_AUTH_SOURCE: ${{ secrets.MONGODB_AUTH_SOURCE }}
       MONGODB_TLS: ${{ secrets.MONGODB_TLS }}
       MONGO_ENV: ${{ vars.MONGO_ENV || inputs.environment }}
-      # E-mail de recuperação de senha (getEmailService: Resend > Gmail > console).
+      # E-mail de recuperação de senha (getEmailService: Gmail > console).
       # FRONTEND_URL é o domínio do MintlyWeb deployado — sem isso, o link do
       # e-mail aponta pro default de dev (localhost:4200).
-      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       GMAIL_USER: ${{ secrets.GMAIL_USER }}
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       EMAIL_FROM: ${{ secrets.EMAIL_FROM }}

@@ -1,4 +1,3 @@
-import { Resend } from 'resend'
 import nodemailer, { Transporter } from 'nodemailer'
 
 export interface IEmailService {
@@ -22,41 +21,11 @@ function buildRecoveryEmailHtml (resetUrl: string): string {
   `
 }
 
-class ResendEmailService implements IEmailService {
-  private readonly client: Resend
-  private readonly from: string
-
-  constructor () {
-    const apiKey = process.env.RESEND_API_KEY
-    if (!apiKey) throw new Error('RESEND_API_KEY não configurada no ambiente.')
-    this.client = new Resend(apiKey)
-    this.from = process.env.EMAIL_FROM ?? 'Mintly <noreply@mintly.app>'
-  }
-
-  async sendPasswordRecovery (to: string, token: string): Promise<void> {
-    const resetUrl = `${process.env.FRONTEND_URL ?? 'http://localhost:4200'}/auth/redefinir-senha?token=${token}`
-
-    const { data, error } = await this.client.emails.send({
-      from: this.from,
-      to,
-      subject: 'Recuperação de senha — Mintly',
-      html: buildRecoveryEmailHtml(resetUrl),
-    })
-
-    if (error) {
-      console.error('[RESEND] Falha ao enviar e-mail:', JSON.stringify(error))
-      throw new Error(`Falha ao enviar e-mail: ${error.message}`)
-    }
-
-    console.log('[RESEND] E-mail enviado com sucesso. ID:', data?.id)
-  }
-}
-
 /**
  * Envia via SMTP do Gmail (App Password — não a senha normal da conta).
  * Gratuito, sem verificação de domínio; limite de ~500 e-mails/dia por conta.
  */
-class GmailEmailService implements IEmailService {
+export class GmailEmailService implements IEmailService {
   private readonly transporter: Transporter
   private readonly from: string
 
@@ -100,9 +69,7 @@ let _instance: IEmailService | null = null
 
 export function getEmailService (): IEmailService {
   if (!_instance) {
-    if (process.env.RESEND_API_KEY) {
-      _instance = new ResendEmailService()
-    } else if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+    if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
       _instance = new GmailEmailService()
     } else {
       _instance = new ConsoleEmailService()
