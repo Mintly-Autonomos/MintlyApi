@@ -151,14 +151,13 @@ describe('UpdateMovementUseCase', () => {
   })
 
   it('status informado sobrescreve; sem status preserva o atual', async () => {
-    const { movements: m1 } = wire()
+    wire()
     const up1 = await useCase.execute(MOV_ID, { status: 'pending' }, CTX)
     expect(up1.status).toBe('pending')
 
-    const { movements: m2 } = wire()
+    wire()
     const up2 = await useCase.execute(MOV_ID, {}, CTX)
     expect(up2.status).toBe('settled')
-    void m1; void m2
   })
 
   it('history ausente (não-array) inicia um novo histórico', async () => {
