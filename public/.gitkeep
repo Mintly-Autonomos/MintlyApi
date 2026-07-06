@@ -1,0 +1,3 @@
+# Diretório de saída estático (vazio) exigido pelo `vercel build`.
+# O app é servido pela função serverless em api/index.ts via rewrite no
+# vercel.json; nada é servido estaticamente daqui. Não expõe dist/ compilado.
