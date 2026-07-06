@@ -119,6 +119,29 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
+      # Empurra os secrets do repo para as Environment Variables do projeto na
+      # Vercel. Sem isso, o bloco `env:` acima só alcança os steps do runner
+      # (ex.: db:indices) — o RUNTIME da função na Vercel lê apenas as vars do
+      # projeto Vercel, e conexões caem em `bad auth` por senha ausente/vazia.
+      # GitHub Secrets = única fonte de verdade; cada deploy re-sincroniza.
+      - name: Sync runtime env vars to Vercel
+        env:
+          TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          TARGET=$([ "${{ inputs.environment }}" = "production" ] && echo production || echo preview)
+          VARS="MONGODB_HOSTS MONGODB_USER MONGODB_PASSWORD MONGODB_REPLICA_SET MONGODB_AUTH_SOURCE MONGODB_TLS"
+          VARS="$VARS MONGO_ENV API_URL GMAIL_USER GMAIL_APP_PASSWORD EMAIL_FROM FRONTEND_URL"
+          for VAR in $VARS; do
+            VALUE="${!VAR}"
+            if [ -z "$VALUE" ]; then
+              echo "skip $VAR (vazio, não sincronizado)"
+              continue
+            fi
+            vercel env rm "$VAR" "$TARGET" --yes --token="$TOKEN" 2>/dev/null || true
+            printf '%s' "$VALUE" | vercel env add "$VAR" "$TARGET" --token="$TOKEN"
+            echo "synced $VAR -> $TARGET"
+          done
+
       - name: Pull Vercel environment
         run: |
           if [ "${{ inputs.environment }}" = "production" ]; then
