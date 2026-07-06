@@ -20,7 +20,12 @@ class MongoDBConnection {
         return
       }
 
-      this.client = new MongoClient(buildMongoUri())
+      // maxPoolSize baixo é essencial em serverless: sem isso cada instância
+      // abre até 100 conexões e a plataforma cria várias instâncias, estourando
+      // o limite do Atlas (500 no tier free). Configurável por env.
+      this.client = new MongoClient(buildMongoUri(), {
+        maxPoolSize: Number(process.env.MONGODB_MAX_POOL_SIZE ?? 5),
+      })
       await this.client.connect()
 
       console.log('Conectado ao MongoDB com sucesso')
