@@ -3,7 +3,7 @@ import { StatusCodes } from 'http-status-codes'
 import { CrudController } from '../../core/crud/crud-controller'
 import { ContextSource, buildRequestContext } from '../../core/context/build-request-context'
 import { ResponseBuilder, ResponseStructure } from '../../core/builders/response-builder/response-builder'
-import { financialCategorySchema, financialCategoryUpdateSchema, FinancialCategory, MovementDirection } from 'mintly-lib'
+import { financialCategoryInsertSchema, financialCategoryUpdateSchema, FinancialCategory, MovementDirection } from 'mintly-lib'
 import { FinancialCategoryRepository } from './financial-category-repository'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
 import { NotFoundError } from '../../core/errors/core/not-found-error'
@@ -25,7 +25,7 @@ export class FinancialCategoryController extends CrudController<FinancialCategor
   ) {
     super(
       repo,
-      financialCategorySchema as any,
+      financialCategoryInsertSchema as any,
       financialCategoryUpdateSchema as any,
     )
   }
