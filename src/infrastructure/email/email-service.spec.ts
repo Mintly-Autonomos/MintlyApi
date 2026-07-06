@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-import { getEmailService, setEmailService } from './email-service'
+import { getEmailService, setEmailService, ResendEmailService, GmailEmailService } from './email-service'
 
 const mockSend = vi.hoisted(() => vi.fn())
 vi.mock('resend', () => ({ Resend: class { emails = { send: mockSend } } }))
@@ -82,6 +82,17 @@ describe('email-service', () => {
     setEmailService(null as any)
     mockSendMail.mockRejectedValue(new Error('conexão recusada'))
     await expect(getEmailService().sendPasswordRecovery('x@x.com', 'tok')).rejects.toThrow(/falha/i)
+  })
+
+  it('ResendEmailService lança se RESEND_API_KEY não estiver setada', () => {
+    delete process.env.RESEND_API_KEY
+    expect(() => new ResendEmailService()).toThrow(/RESEND_API_KEY/)
+  })
+
+  it('GmailEmailService lança se GMAIL_USER/GMAIL_APP_PASSWORD não estiverem setados', () => {
+    delete process.env.GMAIL_USER
+    delete process.env.GMAIL_APP_PASSWORD
+    expect(() => new GmailEmailService()).toThrow(/GMAIL_USER/)
   })
 
   it('reutiliza a mesma instância (singleton)', () => {

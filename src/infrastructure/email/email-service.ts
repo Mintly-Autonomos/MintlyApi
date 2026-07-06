@@ -22,7 +22,7 @@ function buildRecoveryEmailHtml (resetUrl: string): string {
   `
 }
 
-class ResendEmailService implements IEmailService {
+export class ResendEmailService implements IEmailService {
   private readonly client: Resend
   private readonly from: string
 
@@ -56,7 +56,7 @@ class ResendEmailService implements IEmailService {
  * Envia via SMTP do Gmail (App Password — não a senha normal da conta).
  * Gratuito, sem verificação de domínio; limite de ~500 e-mails/dia por conta.
  */
-class GmailEmailService implements IEmailService {
+export class GmailEmailService implements IEmailService {
   private readonly transporter: Transporter
   private readonly from: string
 
