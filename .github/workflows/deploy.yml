@@ -1,11 +1,10 @@
 name: MintlyApi Deploy
 
-# Deploy manual. A BRANCH NÃO é perguntada: o ambiente decide o código.
-#   environment = staging    -> faz checkout da branch `staging`
-#   environment = production -> faz checkout da branch `main`
-# (O dropdown "Use workflow from" do GitHub é inerente ao workflow_dispatch e
-# não dá pra remover; ele só decide de qual branch o ARQUIVO do workflow é lido.
-# O que é deployado vem sempre do ref acima, conforme o ambiente.)
+# Deploy manual. O código deployado é sempre o da branch `staging` (fonte
+# única de verdade), independente do "Use workflow from" do GitHub (que só
+# decide de qual branch o ARQUIVO do workflow é lido, não o código).
+# O input `environment` decide o destino: production -> Vercel/AWS de
+# produção (com os secrets/vars/aprovações desse GitHub Environment).
 #
 # A criação de índices roda DENTRO do job de deploy (após a aprovação do
 # environment), então há uma única aprovação por deploy.
@@ -21,7 +20,7 @@ on:
           - vercel
           - aws
       environment:
-        description: Which environment to deploy (define a branch)
+        description: Which environment to deploy (secrets/vars/approvals)
         required: true
         default: production
         type: choice
@@ -83,8 +82,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Ambiente decide a branch: production -> main, staging -> staging.
-          ref: ${{ inputs.environment == 'production' && 'main' || 'staging' }}
+          # staging é sempre a fonte de verdade do código, pro ambiente que for.
+          ref: staging
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -178,8 +177,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Ambiente decide a branch: production -> main, staging -> staging.
-          ref: ${{ inputs.environment == 'production' && 'main' || 'staging' }}
+          # staging é sempre a fonte de verdade do código, pro ambiente que for.
+          ref: staging
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
