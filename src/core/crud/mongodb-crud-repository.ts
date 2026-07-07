@@ -25,15 +25,33 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     return db.collection<T>(this.collectionName)
   }
 
+  /**
+   * Escopo multi-tenant: limita TODA operação da base ao `restaurantId` do
+   * contexto (que vem do JWT validado, nunca de header). Sem isto, o filtro
+   * só-por-`_id` de findById/update/delete permite ler/alterar/apagar docs de
+   * outro restaurante no mesmo banco (IDOR), e findAll/find listam sem tenant.
+   * Quando o contexto não tem `restaurantId` (fluxos internos sem tenant), não
+   * adiciona nada — preserva o comportamento anterior.
+   */
+  protected withTenant (filter: Record<string, any>, ctx: RequestContext): Record<string, any> {
+    if (ctx.restaurantId == null) {
+      return filter
+    }
+    return { ...filter, restaurantId: ctx.restaurantId }
+  }
+
   async insert (item: T, ctx: RequestContext): Promise<T> {
     const collection = this.getCollection(ctx)
-    const result = await collection.insertOne(item as any)
-    return { ...item, _id: result.insertedId } as T
+    // O doc SEMPRE pertence ao restaurante do contexto: o `restaurantId` do ctx
+    // prevalece sobre qualquer valor vindo do body (anti-injeção de tenant).
+    const doc = ctx.restaurantId == null ? item : { ...item, restaurantId: ctx.restaurantId }
+    const result = await collection.insertOne(doc as any)
+    return { ...doc, _id: result.insertedId } as T
   }
 
   async findById (id: ID, ctx: RequestContext): Promise<T | null> {
     const collection = this.getCollection(ctx)
-    const filter = { _id: new ObjectId(id as string) } as Filter<T>
+    const filter = this.withTenant({ _id: new ObjectId(id as string) }, ctx) as Filter<T>
     const result = await collection.findOne(filter)
     return result as T | null
   }
@@ -48,7 +66,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
       normalized._id = new ObjectId(normalized._id)
     }
 
-    const result = await collection.findOne(normalized as Filter<T>, { session: options?.session })
+    const result = await collection.findOne(this.withTenant(normalized, ctx) as Filter<T>, { session: options?.session })
     return result as T
   }
 
@@ -71,7 +89,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     }
 
     const result = await collection
-      .find(queryFilter as Filter<T>)
+      .find(this.withTenant(queryFilter, ctx) as Filter<T>)
       .sort(sort)
       .skip(skip)
       .limit(sizeNum)
@@ -82,7 +100,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
 
   async update (id: ID, item: Partial<T>, ctx: RequestContext, options?: { session?: ClientSession }): Promise<T> {
     const collection = this.getCollection(ctx)
-    const filter = { _id: new ObjectId(id as string) } as Filter<T>
+    const filter = this.withTenant({ _id: new ObjectId(id as string) }, ctx) as Filter<T>
     const updateDoc = { $set: item }
 
     const result = await collection.findOneAndUpdate(
@@ -100,7 +118,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
 
   async delete (id: ID, ctx: RequestContext): Promise<void> {
     const collection = this.getCollection(ctx)
-    const filter = { _id: new ObjectId(id as string) } as Filter<T>
+    const filter = this.withTenant({ _id: new ObjectId(id as string) }, ctx) as Filter<T>
     const result = await collection.deleteOne(filter)
 
     if (result.deletedCount === 0) {
@@ -117,7 +135,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
         return result as Q
       }
       case 'mongo:filter': {
-        const result = await collection.find(q.filter as Filter<T>).toArray()
+        const result = await collection.find(this.withTenant(q.filter as Record<string, any>, ctx) as Filter<T>).toArray()
         return result as Q
       }
       default:

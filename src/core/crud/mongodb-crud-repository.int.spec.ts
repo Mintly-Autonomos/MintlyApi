@@ -105,4 +105,47 @@ describe('MongodbCrudRepository (integration)', () => {
       repo.delete('507f1f77bcf86cd799439011', ctx),
     ).rejects.toThrow(/não encontrado/)
   })
+
+  describe('escopo por tenant (restaurantId)', () => {
+    const ctxA: RequestContext = { env: 'int-test-query', restaurantId: 'rest-A' }
+    const ctxB: RequestContext = { env: 'int-test-query', restaurantId: 'rest-B' }
+    let tenantRepo: MongodbCrudRepository<{ name: string, restaurantId?: string }, string>
+
+    beforeAll(() => {
+      tenantRepo = new MongodbCrudRepository('tenant_people')
+    })
+
+    const idOf = (doc: any): string => String(doc._id)
+
+    it('insert injeta o restaurantId do contexto e ignora o do body (anti-injeção)', async () => {
+      const doc = await tenantRepo.insert({ name: 'Ada', restaurantId: 'rest-B' } as any, ctxA)
+      expect((doc as any).restaurantId).toBe('rest-A')
+    })
+
+    it('findById não enxerga doc de outro tenant', async () => {
+      const a = await tenantRepo.insert({ name: 'Ada' } as any, ctxA)
+      expect(await tenantRepo.findById(idOf(a), ctxA)).toMatchObject({ name: 'Ada' })
+      expect(await tenantRepo.findById(idOf(a), ctxB)).toBeNull()
+    })
+
+    it('findAll lista só o tenant do contexto', async () => {
+      await tenantRepo.insert({ name: 'A1' } as any, ctxA)
+      await tenantRepo.insert({ name: 'A2' } as any, ctxA)
+      await tenantRepo.insert({ name: 'B1' } as any, ctxB)
+      expect(await tenantRepo.findAll({ page: 1, size: 10 }, ctxA)).toHaveLength(2)
+      expect(await tenantRepo.findAll({ page: 1, size: 10 }, ctxB)).toHaveLength(1)
+    })
+
+    it('update não altera doc de outro tenant (não encontrado) e mantém o original intacto', async () => {
+      const a = await tenantRepo.insert({ name: 'Ada' } as any, ctxA)
+      await expect(tenantRepo.update(idOf(a), { name: 'Hacked' }, ctxB)).rejects.toThrow(/não encontrado/)
+      expect(await tenantRepo.findById(idOf(a), ctxA)).toMatchObject({ name: 'Ada' })
+    })
+
+    it('delete não apaga doc de outro tenant', async () => {
+      const a = await tenantRepo.insert({ name: 'Ada' } as any, ctxA)
+      await expect(tenantRepo.delete(idOf(a), ctxB)).rejects.toThrow(/não encontrado/)
+      expect(await tenantRepo.findById(idOf(a), ctxA)).toMatchObject({ name: 'Ada' })
+    })
+  })
 })
