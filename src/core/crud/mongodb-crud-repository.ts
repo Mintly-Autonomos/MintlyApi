@@ -5,6 +5,7 @@ import { PaginationDto } from 'mintly-lib'
 import { RequestContext } from '../context/request-context'
 import { Query } from './query'
 import { UnsupportedQueryKindError } from '../errors/core/unsupported-query-kind-error'
+import { NotFoundError } from '../errors/core/not-found-error'
 
 /**
  * Repositório CRUD com backend MongoDB.
@@ -110,7 +111,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     )
 
     if (!result) {
-      throw new Error(`Item com id ${id} não encontrado`)
+      throw new NotFoundError(this.collectionName, id)
     }
 
     return result as T
@@ -122,7 +123,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     const result = await collection.deleteOne(filter)
 
     if (result.deletedCount === 0) {
-      throw new Error(`Item com id ${id} não encontrado`)
+      throw new NotFoundError(this.collectionName, id)
     }
   }
 

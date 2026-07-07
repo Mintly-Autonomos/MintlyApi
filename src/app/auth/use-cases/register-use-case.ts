@@ -144,7 +144,7 @@ export class RegisterUseCase {
         const tokens = await jwt.generate({
           tenantId: TENANT,
           subject: userId,
-          claims: { name: data.person.name, email: data.email, role: UserRole.Owner, restaurantId },
+          claims: { name: data.person.name, email: data.email, role: UserRole.Owner, status: UserStatus.Active, restaurantId },
         })
 
         result = {
