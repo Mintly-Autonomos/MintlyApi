@@ -56,14 +56,14 @@ export class RegisterUseCase {
     const db = connection.getDatabase(ctx.env)
     await this.ensureUserIndexes(ctx.env)
 
+    const email = normalizeEmail(data.email)
     const session = connection.getClient().startSession()
-    let result!: SignupResult
+    let created!: { userId: string; personId: string; restaurantId: string; now: Date; audit: { createdAt: Date; updatedAt: Date } }
 
     try {
       await session.withTransaction(async () => {
         const now = new Date()
         const audit = { createdAt: now, updatedAt: now }
-        const email = normalizeEmail(data.email)
 
         // ── e-mail único ──────────────────────────────────────────────────────
         const existing = await db.collection('users').findOne({ email }, { session })
@@ -141,36 +141,41 @@ export class RegisterUseCase {
         ]
         await db.collection('audit_logs').insertMany(auditLogs, { session })
 
-        // ── JWT ───────────────────────────────────────────────────────────────
-        const jwt = getJwtService(ctx.env)
-        const tokens = await jwt.generate({
-          tenantId: TENANT,
-          subject: userId,
-          claims: { name: data.person.name, email, role: UserRole.Owner, status: UserStatus.Active, restaurantId },
-        })
-
-        result = {
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          user: {
-            _id: userId,
-            person: { _id: personId, name: data.person.name },
-            email,
-            role: UserRole.Owner,
-            status: UserStatus.Active,
-            restaurantId,
-            termsAcceptedAt: now,
-            lastAccessAt: now,
-            audit,
-          },
-          restaurant: { _id: restaurantId, name: data.restaurantName, audit },
-        }
+        // Captura os IDs p/ emitir o JWT DEPOIS do commit (ver bloco abaixo).
+        created = { userId, personId, restaurantId, now, audit }
       })
     } finally {
       await session.endSession()
     }
 
-    return result
+    // ── JWT (fora da transação) ───────────────────────────────────────────────
+    // valkyrie-jwt persiste o refresh token no seu próprio store, fora do escopo
+    // transacional do Mongo. Gerar dentro do withTransaction deixaria um refresh
+    // token órfão a cada retry (erro transitório) da transação. Só emitimos após
+    // o commit — se a transação falhar, nenhum token é criado.
+    const jwt = getJwtService(ctx.env)
+    const tokens = await jwt.generate({
+      tenantId: TENANT,
+      subject: created.userId,
+      claims: { name: data.person.name, email, role: UserRole.Owner, status: UserStatus.Active, restaurantId: created.restaurantId },
+    })
+
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: {
+        _id: created.userId,
+        person: { _id: created.personId, name: data.person.name },
+        email,
+        role: UserRole.Owner,
+        status: UserStatus.Active,
+        restaurantId: created.restaurantId,
+        termsAcceptedAt: created.now,
+        lastAccessAt: created.now,
+        audit: created.audit,
+      },
+      restaurant: { _id: created.restaurantId, name: data.restaurantName, audit: created.audit },
+    }
   }
 
   private async ensureUserIndexes (env: string): Promise<void> {
