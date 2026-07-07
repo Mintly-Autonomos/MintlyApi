@@ -75,6 +75,20 @@ export class AuthUseCase {
     if (!result.succeeded || !result.tokens) {
       throw new UnauthorizedError(result.failureReason ?? 'Token inválido')
     }
+
+    // Reconsulta o usuário: quem foi desativado/bloqueado/removido DEPOIS do login
+    // não pode renovar o acesso — senão manteria tokens válidos por todo o refresh
+    // lifetime (7 dias). O `subject` vem do access token recém-emitido.
+    const validation = await jwt.validate(result.tokens.accessToken)
+    const userId = validation.succeeded ? validation.subject : undefined
+    const user = typeof userId === 'string' ? await this.repo.findById(userId, ctx) : null
+    if (!user || user.status !== 'active') {
+      if (result.tokens.refreshToken != null) {
+        await jwt.revokeRefreshToken(result.tokens.refreshToken).catch(() => null)
+      }
+      throw new UnauthorizedError('Sessão inválida. Faça login novamente.')
+    }
+
     return {
       accessToken: result.tokens.accessToken,
       refreshToken: result.tokens.refreshToken,

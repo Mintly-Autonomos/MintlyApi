@@ -15,11 +15,14 @@ const mockSetBlock = vi.hoisted(() => vi.fn())
 const mockGenerate = vi.hoisted(() => vi.fn())
 const mockRefresh = vi.hoisted(() => vi.fn())
 const mockRevoke = vi.hoisted(() => vi.fn())
+const mockValidate = vi.hoisted(() => vi.fn())
+const mockFindById = vi.hoisted(() => vi.fn())
 const mockLogAudit = vi.hoisted(() => vi.fn())
 
 vi.mock('../auth-repository', () => ({
   AuthRepository: class {
     findByEmail = mockFindByEmail
+    findById = mockFindById
     updateLastAccess = mockUpdateLastAccess
     resetLoginAttempts = mockResetAttempts
     incrementLoginAttempts = mockIncrementAttempts
@@ -28,7 +31,7 @@ vi.mock('../auth-repository', () => ({
 }))
 
 vi.mock('../../../infrastructure/jwt/jwt-service', () => ({
-  getJwtService: vi.fn(() => ({ generate: mockGenerate, refresh: mockRefresh, revokeRefreshToken: mockRevoke })),
+  getJwtService: vi.fn(() => ({ generate: mockGenerate, refresh: mockRefresh, revokeRefreshToken: mockRevoke, validate: mockValidate })),
 }))
 
 vi.mock('../../audit/audit-service', () => ({ logAudit: mockLogAudit }))
@@ -67,6 +70,9 @@ describe('AuthUseCase', () => {
     mockSetBlock.mockResolvedValue(undefined)
     mockLogAudit.mockResolvedValue(undefined)
     mockGenerate.mockResolvedValue(MOCK_TOKENS)
+    mockRevoke.mockResolvedValue(undefined)
+    mockValidate.mockResolvedValue({ succeeded: true, subject: 'user-id-123' })
+    mockFindById.mockResolvedValue(MOCK_USER)
     useCase = new AuthUseCase()
   })
 
@@ -217,6 +223,20 @@ describe('AuthUseCase', () => {
       const err = await useCase.refresh('bad', CTX).catch(e => e)
       expect(err).toBeInstanceOf(UnauthorizedError)
       expect(err.message).toBe('Token inválido')
+    })
+
+    it('nega refresh de usuário desativado e revoga o refresh token', async () => {
+      mockRefresh.mockResolvedValue({ succeeded: true, tokens: { accessToken: 'na', refreshToken: 'nr' } })
+      mockFindById.mockResolvedValue({ ...MOCK_USER, status: 'inactive' })
+      await expect(useCase.refresh('valid', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
+      expect(mockRevoke).toHaveBeenCalledWith('nr')
+    })
+
+    it('nega refresh quando o usuário não existe mais', async () => {
+      mockRefresh.mockResolvedValue({ succeeded: true, tokens: { accessToken: 'na', refreshToken: 'nr' } })
+      mockFindById.mockResolvedValue(null)
+      await expect(useCase.refresh('valid', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
+      expect(mockRevoke).toHaveBeenCalledWith('nr')
     })
   })
 
