@@ -1,4 +1,4 @@
-import { MovementDirection, MovementStatus } from 'mintly-lib'
+import { FinancialAccountType, MovementDirection, MovementStatus } from 'mintly-lib'
 import { computeFeeNet } from '../../core/money/money'
 
 /**
@@ -20,13 +20,33 @@ export function addDays (date: Date, days: number): Date {
 }
 
 /**
- * Status default: conta com prazo de recebimento (`settlementDays > 0`) →
- * `pending`; sem prazo → `settled`. O usuário pode sobrescrever depois.
+ * Única fonte de verdade p/ "conta com liquidação via plataforma": só contas
+ * `platform` cobram taxa (`feePercent`) e têm prazo (`settlementDays`) — o schema
+ * (união discriminada) garante isso. `defaultStatus` e `computeSnapshot` decidem
+ * pelo MESMO sinal, evitando divergência (ex.: pendente sem data prevista).
  */
-export function defaultStatus (account: AccountForRules): MovementStatus {
-  return account.settlementDays != null && account.settlementDays > 0
-    ? MovementStatus.Pending
-    : MovementStatus.Settled
+export function isPlatformAccount (account: AccountForRules): boolean {
+  return account.type === FinancialAccountType.Platform
+}
+
+/**
+ * Status default: **entrada** em conta `platform` com prazo (`settlementDays > 0`)
+ * → `pending` (o recebimento só cai depois); demais casos → `settled`. Prazo só
+ * vale p/ recebimento — saídas nunca ficam pendentes por liquidação. O usuário
+ * pode sobrescrever depois.
+ */
+export function defaultStatus (params: {
+  direction: MovementDirection
+  account: AccountForRules
+}): MovementStatus {
+  const { direction, account } = params
+  const platformInflowWithDelay =
+    direction === MovementDirection.In &&
+    isPlatformAccount(account) &&
+    account.settlementDays != null &&
+    account.settlementDays > 0
+
+  return platformInflowWithDelay ? MovementStatus.Pending : MovementStatus.Settled
 }
 
 export interface MovementSnapshot {
@@ -49,7 +69,7 @@ export function computeSnapshot (params: {
   account: AccountForRules
 }): MovementSnapshot {
   const { direction, grossValue, date, account } = params
-  const isPlatform = account.feePercent != null
+  const isPlatform = isPlatformAccount(account)
 
   if (direction === MovementDirection.In && isPlatform) {
     const { feeValue, netValue } = computeFeeNet(grossValue, account.feePercent)

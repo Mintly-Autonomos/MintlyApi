@@ -9,3 +9,5 @@ dist/
 artifacts/
 
 coverage/
+.vercel
+.env*

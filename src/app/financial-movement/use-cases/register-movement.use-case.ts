@@ -6,8 +6,8 @@ import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { Resource } from '../../../core/types/resource'
 import { FinancialMovementRepository, movementToStorage, movementFromStorage } from '../financial-movement-repository'
-import { toDecimal128 } from '../../../core/money/money'
 import { computeSnapshot, defaultStatus, balanceImpact } from '../movement-rules'
+import { applyBalanceImpact } from '../movement-balance'
 
 export interface RegisterMovementInput {
   direction: MovementDirection
@@ -77,7 +77,7 @@ export class RegisterMovementUseCase {
           date,
           account: account as any,
         })
-        const status = input.status ?? defaultStatus(account as any)
+        const status = input.status ?? defaultStatus({ direction: input.direction, account: account as any })
         const now = new Date()
 
         // 4. Documento (snapshots de account/category; campos computados).
@@ -123,21 +123,15 @@ export class RegisterMovementUseCase {
         const storageDoc = movementToStorage(doc)
         const insertRes = await movements.insertOne(storageDoc as any, { session })
 
-        // 8. Ajusta o saldo da conta na mesma transação ($inc Decimal128).
+        // 8. Ajusta o saldo da conta na mesma transação ($inc Decimal128,
+        //    escopado por restaurantId — via helper compartilhado).
         const impact = balanceImpact({
           direction: input.direction,
           status: status as any,
           grossValue: input.grossValue,
           netValue: snapshot.netValue,
         })
-        if (impact.bucket) {
-          const field = impact.bucket === 'available' ? 'availableBalance' : 'predictedBalance'
-          await accounts.updateOne(
-            { _id: account._id },
-            { $inc: { [field]: toDecimal128(impact.delta) }, $set: { 'audit.updatedAt': now } },
-            { session },
-          )
-        }
+        await applyBalanceImpact(accounts, account._id, ctx.restaurantId, impact, 1, session, now)
 
         created = movementFromStorage({ ...(storageDoc as any), _id: insertRes.insertedId })
       })

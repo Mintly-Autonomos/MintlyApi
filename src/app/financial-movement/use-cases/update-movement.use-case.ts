@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb'
-import { financialMovementSchema } from 'mintly-lib'
+import { financialMovementSchema, MovementStatus } from 'mintly-lib'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import { RequestContext } from '../../../core/context/request-context'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
@@ -24,6 +24,8 @@ export interface UpdateMovementInput {
 
 const num = (v: any): number => Number((v ?? 0).toString())
 
+const VALID_STATUS = new Set<string>([MovementStatus.Pending, MovementStatus.Settled, MovementStatus.Cancelled])
+
 /**
  * Edita uma movimentação (MIN-68). Alterações em valor/conta/status (e demais
  * campos) recalculam fee/net/data-prevista e corrigem o saldo na MESMA
@@ -34,6 +36,9 @@ export class UpdateMovementUseCase {
   async execute (movementId: string, changes: UpdateMovementInput, ctx: RequestContext): Promise<any> {
     if (!ObjectId.isValid(movementId)) {
       throw new NotFoundError(Resource.FinancialMovement, movementId)
+    }
+    if (changes.status != null && !VALID_STATUS.has(changes.status)) {
+      throw new ConflictError(`Status inválido: ${changes.status}.`)
     }
 
     const connection = MongoDBConnection.getInstance()
@@ -121,8 +126,8 @@ export class UpdateMovementUseCase {
         // Correção de saldo: reverte o efeito antigo na conta ANTIGA, aplica o novo na NOVA.
         const oldImpact = balanceImpact({ direction: direction as any, status: mov.status, grossValue: num(mov.grossValue), netValue: num(mov.netValue) })
         const newImpact = balanceImpact({ direction: direction as any, status: newStatus, grossValue: newGross, netValue: snapshot.netValue })
-        await applyBalanceImpact(accounts, new ObjectId(oldAccountId), oldImpact, -1, session, now)
-        await applyBalanceImpact(accounts, new ObjectId(newAccountId), newImpact, 1, session, now)
+        await applyBalanceImpact(accounts, new ObjectId(oldAccountId), ctx.restaurantId, oldImpact, -1, session, now)
+        await applyBalanceImpact(accounts, new ObjectId(newAccountId), ctx.restaurantId, newImpact, 1, session, now)
 
         const storageDoc = movementToStorage(newDoc)
         await movements.replaceOne({ _id: mov._id }, storageDoc as any, { session })
