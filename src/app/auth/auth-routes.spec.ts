@@ -61,7 +61,7 @@ describe('Auth Routes', () => {
   describe('POST /auth/signup', () => {
     it('retorna 201 com payload contendo tokens, user e restaurant', async () => {
       mockExecute.mockResolvedValue(SIGNUP_RESULT)
-      const res = await server.inject({ method: 'POST', url: '/auth/signup', payload: SIGNUP_BODY })
+      const res = await server.inject({ method: 'POST', url: '/auth/signup', headers: { env: 'test' }, payload: SIGNUP_BODY })
       expect(res.statusCode).toBe(201)
       expect(res.json().payload.accessToken).toBe('mock-access')
       expect(res.json().payload.restaurant.name).toBe('Restaurante do João')
@@ -71,21 +71,21 @@ describe('Auth Routes', () => {
       mockExecute.mockRejectedValue(
         new SapphireValidationError([{ path: ['email'], code: 'format', message: 'E-mail inválido.' }]),
       )
-      const res = await server.inject({ method: 'POST', url: '/auth/signup', payload: SIGNUP_BODY })
+      const res = await server.inject({ method: 'POST', url: '/auth/signup', headers: { env: 'test' }, payload: SIGNUP_BODY })
       expect(res.statusCode).toBe(400)
       expect(res.json().code).toBe('VALIDATION_ERROR')
     })
 
     it('retorna 409 quando o e-mail já está cadastrado', async () => {
       mockExecute.mockRejectedValue(new ConflictError('Este e-mail já está cadastrado.'))
-      const res = await server.inject({ method: 'POST', url: '/auth/signup', payload: SIGNUP_BODY })
+      const res = await server.inject({ method: 'POST', url: '/auth/signup', headers: { env: 'test' }, payload: SIGNUP_BODY })
       expect(res.statusCode).toBe(409)
       expect(res.json().code).toBe('AUTH-0002')
     })
 
     it('retorna 500 INTERNAL_ERROR para erro inesperado', async () => {
       mockExecute.mockRejectedValue(new Error('boom'))
-      const res = await server.inject({ method: 'POST', url: '/auth/signup', payload: SIGNUP_BODY })
+      const res = await server.inject({ method: 'POST', url: '/auth/signup', headers: { env: 'test' }, payload: SIGNUP_BODY })
       expect(res.statusCode).toBe(500)
       expect(res.json().code).toBe('INTERNAL_ERROR')
     })
@@ -94,14 +94,14 @@ describe('Auth Routes', () => {
   describe('POST /auth/login', () => {
     it('retorna 200 com payload', async () => {
       mockLogin.mockResolvedValue({ accessToken: 'a', refreshToken: 'r', user: { email: 'x' } })
-      const res = await server.inject({ method: 'POST', url: '/auth/login', payload: { email: 'x@x.com', password: 'Senha123' } })
+      const res = await server.inject({ method: 'POST', url: '/auth/login', headers: { env: 'test' }, payload: { email: 'x@x.com', password: 'Senha123' } })
       expect(res.statusCode).toBe(200)
       expect(res.json().payload.accessToken).toBe('a')
     })
 
     it('retorna 401 para credenciais inválidas', async () => {
       mockLogin.mockRejectedValue(new UnauthorizedError('Credenciais inválidas'))
-      const res = await server.inject({ method: 'POST', url: '/auth/login', payload: { email: 'x@x.com', password: 'z' } })
+      const res = await server.inject({ method: 'POST', url: '/auth/login', headers: { env: 'test' }, payload: { email: 'x@x.com', password: 'z' } })
       expect(res.statusCode).toBe(401)
       expect(res.json().code).toBe('AUTH-0001')
     })
@@ -110,7 +110,7 @@ describe('Auth Routes', () => {
   describe('POST /auth/refresh', () => {
     it('retorna 200 com novos tokens no payload', async () => {
       mockRefresh.mockResolvedValue({ accessToken: 'na', refreshToken: 'nr' })
-      const res = await server.inject({ method: 'POST', url: '/auth/refresh', payload: { refreshToken: 'valid' } })
+      const res = await server.inject({ method: 'POST', url: '/auth/refresh', headers: { env: 'test' }, payload: { refreshToken: 'valid' } })
       expect(res.statusCode).toBe(200)
       expect(res.json().payload.accessToken).toBe('na')
     })
@@ -118,7 +118,7 @@ describe('Auth Routes', () => {
 
   describe('POST /auth/logout', () => {
     it('retorna 401 sem Bearer token (rota protegida)', async () => {
-      const res = await server.inject({ method: 'POST', url: '/auth/logout', payload: { refreshToken: 'rt' } })
+      const res = await server.inject({ method: 'POST', url: '/auth/logout', headers: { env: 'test' }, payload: { refreshToken: 'rt' } })
       expect(res.statusCode).toBe(401)
       expect(res.json().code).toBe('AUTH-0001')
       expect(mockLogout).not.toHaveBeenCalled()
@@ -134,7 +134,7 @@ describe('Auth Routes', () => {
       const res = await server.inject({
         method: 'POST',
         url: '/auth/logout',
-        headers: { authorization: 'Bearer access-token' },
+        headers: { env: 'test', authorization: 'Bearer access-token' },
         payload: { refreshToken: 'rt' },
       })
       expect(res.statusCode).toBe(204)

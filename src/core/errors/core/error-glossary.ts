@@ -15,4 +15,9 @@ export const errorGlossary: ErrorEntry = {
     apiMessage: 'The provided query kind is not supported by this backend.',
     code: 'APP-0002',
   },
+  missingEnv: {
+    message: 'Header "env" ausente. Informe o ambiente/tenant da requisição.',
+    apiMessage: 'The "env" header is required to resolve the tenant database.',
+    code: 'APP-0003',
+  },
 }

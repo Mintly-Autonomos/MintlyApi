@@ -6,7 +6,7 @@ import * as jwtModule from '../../infrastructure/jwt/jwt-service'
 vi.mock('../../infrastructure/jwt/jwt-service')
 
 function makeRequest (authorization?: string): any {
-  return { headers: authorization ? { authorization } : {} }
+  return { headers: { env: 'test', ...(authorization ? { authorization } : {}) } }
 }
 
 describe('verifyJwt', () => {
