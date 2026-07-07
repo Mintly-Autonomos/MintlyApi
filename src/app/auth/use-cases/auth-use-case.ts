@@ -117,12 +117,13 @@ export class AuthUseCase {
 
   private async handleFailedAttempt (user: UserRecord, ctx: RequestContext, meta: LoginMeta): Promise<void> {
     const userId = String(user._id)
-    const attempts = await this.repo.incrementLoginAttempts(userId, ctx)
+    // Incremento + bloqueio (ao cruzar o teto) numa única operação atômica —
+    // sem corrida entre contar e bloquear sob concorrência.
+    const blockedUntil = new Date(Date.now() + BLOCK_DURATION_MINUTES * 60_000)
+    const { attempts, blocked } = await this.repo.registerFailedAttempt(userId, MAX_LOGIN_ATTEMPTS, blockedUntil, ctx)
     await logAudit('login_failed', userId, ctx.env, user.restaurantId, { ip: meta.ip ?? null, userAgent: meta.userAgent ?? null, attempt: attempts }).catch(() => null)
 
-    if (attempts >= MAX_LOGIN_ATTEMPTS) {
-      const blockedUntil = new Date(Date.now() + BLOCK_DURATION_MINUTES * 60_000)
-      await this.repo.setTemporaryBlock(userId, blockedUntil, ctx)
+    if (blocked) {
       await logAudit('account_temporarily_blocked', userId, ctx.env, user.restaurantId, { blockedUntil: blockedUntil.toISOString(), attempts }).catch(() => null)
     }
   }

@@ -10,8 +10,7 @@ import * as jwtModule from '../../../infrastructure/jwt/jwt-service'
 const mockFindByEmail = vi.hoisted(() => vi.fn())
 const mockUpdateLastAccess = vi.hoisted(() => vi.fn())
 const mockResetAttempts = vi.hoisted(() => vi.fn())
-const mockIncrementAttempts = vi.hoisted(() => vi.fn())
-const mockSetBlock = vi.hoisted(() => vi.fn())
+const mockRegisterFailedAttempt = vi.hoisted(() => vi.fn())
 const mockGenerate = vi.hoisted(() => vi.fn())
 const mockRefresh = vi.hoisted(() => vi.fn())
 const mockRevoke = vi.hoisted(() => vi.fn())
@@ -25,8 +24,7 @@ vi.mock('../auth-repository', () => ({
     findById = mockFindById
     updateLastAccess = mockUpdateLastAccess
     resetLoginAttempts = mockResetAttempts
-    incrementLoginAttempts = mockIncrementAttempts
-    setTemporaryBlock = mockSetBlock
+    registerFailedAttempt = mockRegisterFailedAttempt
   },
 }))
 
@@ -66,8 +64,7 @@ describe('AuthUseCase', () => {
     vi.clearAllMocks()
     mockUpdateLastAccess.mockResolvedValue(undefined)
     mockResetAttempts.mockResolvedValue(undefined)
-    mockIncrementAttempts.mockResolvedValue(1)
-    mockSetBlock.mockResolvedValue(undefined)
+    mockRegisterFailedAttempt.mockResolvedValue({ attempts: 1, blocked: false })
     mockLogAudit.mockResolvedValue(undefined)
     mockGenerate.mockResolvedValue(MOCK_TOKENS)
     mockRevoke.mockResolvedValue(undefined)
@@ -147,18 +144,17 @@ describe('AuthUseCase', () => {
       await expect(useCase.login('joao@restaurante.com', 'Senha123', CTX)).rejects.toBeInstanceOf(TooManyRequestsError)
     })
 
-    it('senha errada incrementa tentativas, audita e lança UnauthorizedError', async () => {
+    it('senha errada registra a tentativa (atômico), audita e lança UnauthorizedError', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
       await expect(useCase.login('joao@restaurante.com', 'Errada1', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
-      expect(mockIncrementAttempts).toHaveBeenCalledWith('user-id-123', CTX)
+      expect(mockRegisterFailedAttempt).toHaveBeenCalledWith('user-id-123', expect.any(Number), expect.any(Date), CTX)
       expect(mockLogAudit).toHaveBeenCalledWith('login_failed', 'user-id-123', 'default', 'rest-1', expect.anything())
     })
 
-    it('ao atingir o limite de tentativas, bloqueia temporariamente', async () => {
+    it('ao atingir o limite de tentativas (blocked=true), audita o bloqueio', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
-      mockIncrementAttempts.mockResolvedValue(5)
+      mockRegisterFailedAttempt.mockResolvedValue({ attempts: 5, blocked: true })
       await useCase.login('joao@restaurante.com', 'Errada1', CTX).catch(() => null)
-      expect(mockSetBlock).toHaveBeenCalled()
       expect(mockLogAudit).toHaveBeenCalledWith('account_temporarily_blocked', 'user-id-123', 'default', 'rest-1', expect.anything())
     })
 
@@ -194,15 +190,15 @@ describe('AuthUseCase', () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
       mockLogAudit.mockRejectedValue(new Error('audit indisponível'))
       await expect(useCase.login('joao@restaurante.com', 'Errada1', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
-      expect(mockIncrementAttempts).toHaveBeenCalledWith('user-id-123', CTX)
+      expect(mockRegisterFailedAttempt).toHaveBeenCalledWith('user-id-123', expect.any(Number), expect.any(Date), CTX)
     })
 
-    it('bloqueio temporário é aplicado mesmo se a auditoria de bloqueio falhar', async () => {
+    it('bloqueio temporário é aplicado (registerFailedAttempt) mesmo se a auditoria de bloqueio falhar', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
-      mockIncrementAttempts.mockResolvedValue(5)
+      mockRegisterFailedAttempt.mockResolvedValue({ attempts: 5, blocked: true })
       mockLogAudit.mockRejectedValue(new Error('audit indisponível'))
       await expect(useCase.login('joao@restaurante.com', 'Errada1', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
-      expect(mockSetBlock).toHaveBeenCalled()
+      expect(mockRegisterFailedAttempt).toHaveBeenCalled()
     })
 
     it('lança UnauthorizedError quando o passwordHash está malformado (sem separador)', async () => {
