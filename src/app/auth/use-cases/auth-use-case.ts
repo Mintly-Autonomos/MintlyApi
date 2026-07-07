@@ -1,7 +1,7 @@
-import { scryptSync, timingSafeEqual, randomBytes } from 'crypto'
 import type { User, LoginResult, RefreshResult, AuthUser } from 'mintly-lib'
 import { getJwtService } from '../../../infrastructure/jwt/jwt-service'
 import { AuthRepository, UserRecord } from '../auth-repository'
+import { hashPassword, verifyPassword } from '../password-hash'
 import { UnauthorizedError } from '../../../core/errors/auth/unauthorized-error'
 import { ForbiddenError } from '../../../core/errors/auth/forbidden-error'
 import { TooManyRequestsError } from '../../../core/errors/auth/too-many-requests-error'
@@ -17,10 +17,7 @@ const BLOCK_DURATION_MINUTES = Number(process.env.BLOCK_DURATION_MINUTES ?? 15)
 // Hash dummy (válido) usado para equalizar o tempo do login quando o e-mail não
 // existe: rodamos o mesmo scrypt do caminho de senha errada, evitando o oráculo
 // de timing que revelaria quais e-mails estão cadastrados.
-const DUMMY_PASSWORD_HASH = ((): string => {
-  const salt = randomBytes(16).toString('hex')
-  return `${salt}:${scryptSync('timing-equalizer', salt, 64).toString('hex')}`
-})()
+const DUMMY_PASSWORD_HASH = hashPassword('timing-equalizer')
 
 export interface LoginMeta {
   ip?: string
@@ -35,7 +32,7 @@ export class AuthUseCase {
     if (!user) {
       // Roda o scrypt mesmo sem usuário: o 401 de e-mail inexistente custa ~o
       // mesmo que o de senha errada (anti-enumeração por timing).
-      this.verifyPassword(password, DUMMY_PASSWORD_HASH)
+      verifyPassword(password, DUMMY_PASSWORD_HASH)
       throw new UnauthorizedError('Credenciais inválidas')
     }
 
@@ -44,7 +41,7 @@ export class AuthUseCase {
       throw new TooManyRequestsError(`Conta temporariamente bloqueada. Tente novamente em ${minutesLeft} minuto(s).`)
     }
 
-    if (!this.verifyPassword(password, user.passwordHash)) {
+    if (!verifyPassword(password, user.passwordHash)) {
       await this.handleFailedAttempt(user, ctx, meta)
       throw new UnauthorizedError('Credenciais inválidas')
     }
@@ -133,12 +130,5 @@ export class AuthUseCase {
     const copy: Partial<User> = { ...user }
     delete copy.passwordHash
     return copy as AuthUser
-  }
-
-  private verifyPassword (password: string, stored: string): boolean {
-    const [salt, hash] = stored.split(':')
-    if (!salt || !hash) return false
-    const incoming = scryptSync(password, salt, 64)
-    return timingSafeEqual(Buffer.from(hash, 'hex'), incoming)
   }
 }

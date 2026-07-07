@@ -14,7 +14,9 @@ import { Decimal128 } from 'mongodb'
 
 /** Valor monetário (ex.: 99.9) → centavos inteiros (9990). */
 export function toCents (value: number): number {
-  return Math.round(value * 100)
+  // Arredonda a 4 casas antes de truncar p/ centavos: remove o ruído de float do
+  // produto (ex.: 1.005*100 = 100.4999999) que arredondaria 1 centavo p/ menos.
+  return Math.round(Number((value * 100).toFixed(4)))
 }
 
 /** Centavos inteiros (9990) → valor monetário (99.9). */

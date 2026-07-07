@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scryptSync } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 import { AuthRepository } from '../auth-repository'
 import { PasswordResetRepository } from '../password-reset-repository'
 import { getEmailService } from '../../../infrastructure/email/email-service'
@@ -6,6 +6,7 @@ import { logAudit } from '../../audit/audit-service'
 import { UnauthorizedError } from '../../../core/errors/auth/unauthorized-error'
 import { RequestContext } from '../../../core/context/request-context'
 import { normalizeEmail } from '../normalize-email'
+import { hashPassword } from '../password-hash'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import {
   requestRecoverySchema,
@@ -70,9 +71,7 @@ export class PasswordRecoveryUseCase {
       throw new UnauthorizedError('Token inválido ou expirado.')
     }
 
-    const salt = randomBytes(16).toString('hex')
-    const hash = scryptSync(input.newPassword, salt, 64).toString('hex')
-    const passwordHash = `${salt}:${hash}`
+    const passwordHash = hashPassword(input.newPassword)
 
     await this.authRepo.updatePassword(record.userId, passwordHash, ctx)
     await this.revokeAllSessions(record.userId, ctx)

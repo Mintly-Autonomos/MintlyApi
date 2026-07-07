@@ -1,4 +1,3 @@
-import { randomBytes, scryptSync } from 'crypto'
 import { SapphireValidationError } from '@ascendance-hub/sapphire-core'
 import {
   signupRequestSchema,
@@ -18,6 +17,7 @@ import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { RequestContext } from '../../../core/context/request-context'
 import { AuditLog } from '../../audit/audit-log'
 import { normalizeEmail } from '../normalize-email'
+import { hashPassword } from '../password-hash'
 
 const TENANT = 'mintly'
 
@@ -84,7 +84,7 @@ export class RegisterUseCase {
         const restaurantId = restaurantInsert.insertedId.toHexString()
 
         // ── user (person como Extended Reference) ─────────────────────────────
-        const passwordHash = this.hashPassword(data.password)
+        const passwordHash = hashPassword(data.password)
         const userInsert = await db.collection('users').insertOne(
           {
             person: { _id: personId, name: data.person.name },
@@ -183,11 +183,5 @@ export class RegisterUseCase {
     const db = MongoDBConnection.getInstance().getDatabase(env)
     await db.collection('users').createIndex({ email: 1 }, { unique: true })
     indexedEnvs.add(env)
-  }
-
-  private hashPassword (password: string): string {
-    const salt = randomBytes(16).toString('hex')
-    const hash = scryptSync(password, salt, 64).toString('hex')
-    return `${salt}:${hash}`
   }
 }

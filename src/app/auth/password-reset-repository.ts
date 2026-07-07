@@ -2,6 +2,11 @@ import { Collection } from 'mongodb'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { PasswordResetToken } from './password-reset-token'
 
+// Garante o índice TTL uma vez por env (banco) por processo — antes ele era
+// recriado a cada `create()` (request). `createIndex` é idempotente, mas rodá-lo
+// por request é desperdício.
+const indexedEnvs = new Set<string>()
+
 export class PasswordResetRepository {
   constructor (private readonly env = 'default') {}
 
@@ -11,10 +16,16 @@ export class PasswordResetRepository {
       .collection<PasswordResetToken>('password_reset_tokens')
   }
 
+  private async ensureTtlIndex (collection: Collection<PasswordResetToken>): Promise<void> {
+    if (indexedEnvs.has(this.env)) return
+    // TTL: o Mongo apaga o documento quando expiresAt passa.
+    await collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+    indexedEnvs.add(this.env)
+  }
+
   async create (record: Omit<PasswordResetToken, '_id'>): Promise<void> {
     const collection = this.getCollection()
-    // TTL: o Mongo apaga o documento quando expiresAt passa (createIndex é idempotente).
-    await collection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+    await this.ensureTtlIndex(collection)
     await collection.insertOne(record as PasswordResetToken)
   }
 

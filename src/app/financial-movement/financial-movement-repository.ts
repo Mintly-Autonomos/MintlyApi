@@ -3,12 +3,10 @@ import { MongodbCrudRepository } from '../../core/crud/mongodb-crud-repository'
 import { RequestContext } from '../../core/context/request-context'
 import { toDecimal128, decimalToNumber } from '../../core/money/money'
 import { ensure as ensureFinancialMovementIndexes } from '../../infrastructure/db/indices/financial-movements'
+import { escapeRegex } from '../../core/util/escape-regex'
 import { FinancialMovement } from 'mintly-lib'
 
 const MONEY_FIELDS = ['grossValue', 'feeValue', 'netValue'] as const
-
-/** Escapa metacaracteres de regex (input de busca do cliente). */
-const escapeRegex = (v: string): string => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /** Dinheiro do domínio (number) -> Decimal128 (persistência). Muta uma cópia. */
 export function movementToStorage<T extends Record<string, any>> (doc: T): T {

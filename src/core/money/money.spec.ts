@@ -17,6 +17,12 @@ describe('money', () => {
       expect(toCents(100)).toBe(10000)
     })
 
+    it('não perde 1 centavo em bordas com ruído de float (ex.: 0.615 → 62)', () => {
+      // 0.615*100 = 61.4999999… — Math.round(value*100) daria 61 (errado).
+      expect(toCents(0.615)).toBe(62)
+      expect(toCents(1.005)).toBe(101)
+    })
+
     it('volta de centavos para valor', () => {
       expect(fromCents(9999)).toBe(99.99)
       expect(fromCents(10000)).toBe(100)

@@ -8,11 +8,9 @@ import { FinancialCategoryRepository } from './financial-category-repository'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
 import { NotFoundError } from '../../core/errors/core/not-found-error'
 import { Resource } from '../../core/types/resource'
+import { escapeRegex } from '../../core/util/escape-regex'
 import { InactivateCategoryUseCase } from './use-cases/inactivate-category.use-case'
 import { SuggestCategoriesQuery } from './use-cases/suggest-categories.query'
-
-const escapeRegex = (value: string): string =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const s = new Sapphire()
 const directionSchema = s.type().enum(MovementDirection)

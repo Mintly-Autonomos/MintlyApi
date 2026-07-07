@@ -7,14 +7,8 @@ import { ConflictError } from '../../core/errors/auth/conflict-error'
 import { Resource } from '../../core/types/resource'
 import { SetDefaultAccountUseCase } from './use-cases/set-default-account.use-case'
 import { InactivateAccountUseCase } from './use-cases/inactivate-account.use-case'
+import { escapeRegex } from '../../core/util/escape-regex'
 import { StatusCodes } from 'http-status-codes'
-
-/**
- * Escapa metacaracteres de regex no input do cliente.
- * Sem isso, o termo de busca vai direto para o $regex → regex injection / ReDoS.
- */
-const escapeRegex = (value: string): string =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 export class FinancialAccountController extends CrudController<FinancialAccount, string> {
   constructor (
