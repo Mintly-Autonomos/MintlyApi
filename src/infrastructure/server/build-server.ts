@@ -67,6 +67,16 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
   })
 
   server.setErrorHandler((error, _request, reply) => {
+    // Erro de validação de schema do Fastify (body/params/query): 400 no mesmo
+    // envelope de validação, senão cairia no 500 genérico abaixo.
+    if ((error as { validation?: unknown }).validation) {
+      return reply.status(400).send({
+        code: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+        details: (error as { validation?: unknown }).validation,
+      })
+    }
+
     if (error instanceof BaseError) {
       return reply.status(error.statusCode).send({
         code: error.code,

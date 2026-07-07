@@ -92,6 +92,13 @@ describe('Auth Routes', () => {
   })
 
   describe('POST /auth/login', () => {
+    it('retorna 400 VALIDATION_ERROR quando falta um campo obrigatório (schema Fastify)', async () => {
+      const res = await server.inject({ method: 'POST', url: '/auth/login', headers: { env: 'test' }, payload: { email: 'x@x.com' } })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().code).toBe('VALIDATION_ERROR')
+      expect(mockLogin).not.toHaveBeenCalled()
+    })
+
     it('retorna 200 com payload', async () => {
       mockLogin.mockResolvedValue({ accessToken: 'a', refreshToken: 'r', user: { email: 'x' } })
       const res = await server.inject({ method: 'POST', url: '/auth/login', headers: { env: 'test' }, payload: { email: 'x@x.com', password: 'Senha123' } })
