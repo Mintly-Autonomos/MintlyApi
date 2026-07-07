@@ -52,7 +52,7 @@ export class PasswordRecoveryUseCase {
     getEmailService().sendPasswordRecovery(user.email, token)
       .catch(err => console.error('[RECOVERY] Falha ao enviar e-mail:', err))
 
-    await logAudit('password_recovery_requested', String(user._id), { email: user.email }, user.restaurantId, ctx.env).catch(() => null)
+    await logAudit('password_recovery_requested', String(user._id), ctx.env, user.restaurantId, { email: user.email }).catch(() => null)
   }
 
   async resetPassword (input: ResetPasswordInput, ctx: RequestContext): Promise<void> {
@@ -78,7 +78,7 @@ export class PasswordRecoveryUseCase {
     await this.revokeAllSessions(record.userId, ctx)
 
     const user = await this.authRepo.findById(record.userId, ctx).catch(() => null)
-    await logAudit('password_reset', record.userId, {}, user?.restaurantId, ctx.env).catch(() => null)
+    await logAudit('password_reset', record.userId, ctx.env, user?.restaurantId, {}).catch(() => null)
   }
 
   private async revokeAllSessions (userId: string, ctx: RequestContext): Promise<void> {

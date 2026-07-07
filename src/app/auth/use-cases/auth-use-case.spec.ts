@@ -113,7 +113,7 @@ describe('AuthUseCase', () => {
     it('registra auditoria de login com ip/userAgent', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
       await useCase.login('joao@restaurante.com', 'Senha123', CTX, { ip: '1.2.3.4', userAgent: 'jest' })
-      expect(mockLogAudit).toHaveBeenCalledWith('login', 'user-id-123', expect.objectContaining({ ip: '1.2.3.4' }), 'rest-1', 'default')
+      expect(mockLogAudit).toHaveBeenCalledWith('login', 'user-id-123', 'default', 'rest-1', expect.objectContaining({ ip: '1.2.3.4' }))
     })
 
     it('lança UnauthorizedError quando o usuário não existe', async () => {
@@ -151,7 +151,7 @@ describe('AuthUseCase', () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
       await expect(useCase.login('joao@restaurante.com', 'Errada1', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
       expect(mockIncrementAttempts).toHaveBeenCalledWith('user-id-123', CTX)
-      expect(mockLogAudit).toHaveBeenCalledWith('login_failed', 'user-id-123', expect.anything(), 'rest-1', 'default')
+      expect(mockLogAudit).toHaveBeenCalledWith('login_failed', 'user-id-123', 'default', 'rest-1', expect.anything())
     })
 
     it('ao atingir o limite de tentativas, bloqueia temporariamente', async () => {
@@ -159,7 +159,7 @@ describe('AuthUseCase', () => {
       mockIncrementAttempts.mockResolvedValue(5)
       await useCase.login('joao@restaurante.com', 'Errada1', CTX).catch(() => null)
       expect(mockSetBlock).toHaveBeenCalled()
-      expect(mockLogAudit).toHaveBeenCalledWith('account_temporarily_blocked', 'user-id-123', expect.anything(), 'rest-1', 'default')
+      expect(mockLogAudit).toHaveBeenCalledWith('account_temporarily_blocked', 'user-id-123', 'default', 'rest-1', expect.anything())
     })
 
     it('não vaza qual campo está errado (email vs senha)', async () => {
@@ -250,7 +250,7 @@ describe('AuthUseCase', () => {
     it('revoga o refresh token e audita com restaurantId quando há userId', async () => {
       await useCase.logout('rt', CTX, 'user-id-123', 'rest-1')
       expect(mockRevoke).toHaveBeenCalledWith('rt')
-      expect(mockLogAudit).toHaveBeenCalledWith('logout', 'user-id-123', {}, 'rest-1', 'default')
+      expect(mockLogAudit).toHaveBeenCalledWith('logout', 'user-id-123', 'default', 'rest-1', {})
     })
 
     it('revoga sem auditar quando não há userId', async () => {

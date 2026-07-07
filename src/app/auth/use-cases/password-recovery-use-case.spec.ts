@@ -133,7 +133,7 @@ describe('PasswordRecoveryUseCase', () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
       await useCase.requestRecovery({ email: 'joao@restaurante.com' }, CTX)
       expect(mockLogAudit).toHaveBeenCalledWith(
-        'password_recovery_requested', 'user-id-123', expect.objectContaining({ email: 'joao@restaurante.com' }), 'rest-1', 'default',
+        'password_recovery_requested', 'user-id-123', 'default', 'rest-1', expect.objectContaining({ email: 'joao@restaurante.com' }),
       )
     })
 
@@ -177,7 +177,7 @@ describe('PasswordRecoveryUseCase', () => {
     it('registra auditoria de password_reset com restaurantId', async () => {
       mockClaim.mockResolvedValue(VALID_TOKEN_RECORD)
       await useCase.resetPassword(resetInput, CTX)
-      expect(mockLogAudit).toHaveBeenCalledWith('password_reset', 'user-id-123', {}, 'rest-1', 'default')
+      expect(mockLogAudit).toHaveBeenCalledWith('password_reset', 'user-id-123', 'default', 'rest-1', {})
     })
 
     it('lança UnauthorizedError para token inválido, expirado ou já usado', async () => {
@@ -202,7 +202,7 @@ describe('PasswordRecoveryUseCase', () => {
       mockFindById.mockRejectedValue(new Error('db indisponível'))
       await expect(useCase.resetPassword(resetInput, CTX)).resolves.toBeUndefined()
       expect(mockUpdatePassword).toHaveBeenCalled()
-      expect(mockLogAudit).toHaveBeenCalledWith('password_reset', 'user-id-123', {}, undefined, 'default')
+      expect(mockLogAudit).toHaveBeenCalledWith('password_reset', 'user-id-123', 'default', undefined, {})
     })
 
     it('conclui a redefinição mesmo se a auditoria falhar', async () => {

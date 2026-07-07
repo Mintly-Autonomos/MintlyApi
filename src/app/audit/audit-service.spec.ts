@@ -21,7 +21,7 @@ describe('logAudit', () => {
     const { collectionFn } = mockCollection(insertOne)
 
     const before = Date.now()
-    await logAudit('login', 'user-1', { ip: '10.0.0.1' }, 'rest-9')
+    await logAudit('login', 'user-1', 'env-x', 'rest-9', { ip: '10.0.0.1' })
     const after = Date.now()
 
     expect(collectionFn).toHaveBeenCalledWith('audit_logs')
@@ -41,7 +41,7 @@ describe('logAudit', () => {
     const insertOne = vi.fn().mockResolvedValue({ insertedId: 'abc' })
     const { getDatabase } = mockCollection(insertOne)
 
-    await logAudit('logout', 'user-2', undefined, undefined, 'staging')
+    await logAudit('logout', 'user-2', 'staging', undefined)
 
     expect(getDatabase).toHaveBeenCalledWith('staging')
     const entry = insertOne.mock.calls[0][0]
@@ -53,7 +53,7 @@ describe('logAudit', () => {
     const insertOne = vi.fn().mockRejectedValue(new Error('mongo indisponível'))
     mockCollection(insertOne)
 
-    await expect(logAudit('login_failed', 'user-3')).resolves.toBeUndefined()
+    await expect(logAudit('login_failed', 'user-3', 'test-env', undefined)).resolves.toBeUndefined()
     expect(insertOne).toHaveBeenCalledTimes(1)
   })
 })

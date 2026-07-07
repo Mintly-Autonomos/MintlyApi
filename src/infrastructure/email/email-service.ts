@@ -71,7 +71,13 @@ export function getEmailService (): IEmailService {
   if (!_instance) {
     if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
       _instance = new GmailEmailService()
+    } else if (process.env.NODE_ENV === 'production') {
+      // Em produção, cair no ConsoleEmailService seria um vazamento: a recuperação
+      // "teria sucesso" sem enviar nada e ainda logaria o token em claro. Falha alto.
+      throw new Error('Serviço de e-mail não configurado em produção (defina GMAIL_USER/GMAIL_APP_PASSWORD).')
     } else {
+      // Fora de produção: sem SMTP, imprime o link no console (única forma de
+      // testar recuperação localmente). Inacessível em produção pelo guard acima.
       _instance = new ConsoleEmailService()
     }
   }
