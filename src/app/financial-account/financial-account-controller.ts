@@ -4,6 +4,7 @@ import { ResponseBuilder, ResponseStructure } from '../../core/builders/response
 import { financialAccountInsertSchema, financialAccountUpdateSchema, FinancialAccount } from 'mintly-lib'
 import { FinancialAccountRepository } from './financial-account-repository'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
+import { Resource } from '../../core/types/resource'
 import { SetDefaultAccountUseCase } from './use-cases/set-default-account.use-case'
 import { InactivateAccountUseCase } from './use-cases/inactivate-account.use-case'
 import { StatusCodes } from 'http-status-codes'
@@ -30,6 +31,7 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
       financialAccountRepo,
       financialAccountInsertSchema as any,
       financialAccountUpdateSchema as any,
+      Resource.FinancialAccount,
     )
   }
 

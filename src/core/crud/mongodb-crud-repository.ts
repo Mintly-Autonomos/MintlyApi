@@ -72,7 +72,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     return result as T | null
   }
 
-  async find (filter: Partial<T>, ctx: RequestContext, options?: { session?: ClientSession }): Promise<T> {
+  async find (filter: Partial<T>, ctx: RequestContext, options?: { session?: ClientSession }): Promise<T | null> {
     const collection = this.getCollection(ctx)
 
     // _id chega como string nos use cases; normaliza p/ ObjectId (igual a findById/update/delete).
@@ -83,7 +83,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     }
 
     const result = await collection.findOne(this.withTenant(normalized, ctx) as Filter<T>, { session: options?.session })
-    return result as T
+    return result as T | null
   }
 
   async findAll (filter: Partial<T> & PaginationDto, ctx: RequestContext): Promise<Array<T>> {

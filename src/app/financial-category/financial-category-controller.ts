@@ -27,6 +27,7 @@ export class FinancialCategoryController extends CrudController<FinancialCategor
       repo,
       financialCategoryInsertSchema as any,
       financialCategoryUpdateSchema as any,
+      Resource.FinancialCategory,
     )
   }
 

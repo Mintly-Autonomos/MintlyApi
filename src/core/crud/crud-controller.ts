@@ -14,6 +14,9 @@ export class CrudController <T extends Record<string, any>, ID = any> {
     private readonly repository: CrudRepository<T, ID>,
     private readonly orm: Field,
     private readonly ormPartial: Field = orm,
+    // Recurso deste controller — usado nas mensagens de 404. Sem injetar, o 404
+    // reportava "Person" p/ qualquer recurso (conta, categoria...).
+    private readonly resource: Resource = Resource.Person,
   ) {
     const useCase = new CrudUseCase<T, ID>(this.repository)
     this.useCase = useCase
@@ -32,7 +35,7 @@ export class CrudController <T extends Record<string, any>, ID = any> {
     const ctx = buildRequestContext(source)
     const result = await this.useCase.findById(id, ctx)
     if (!result) {
-      throw new NotFoundError(Resource.Person, id)
+      throw new NotFoundError(this.resource, id)
     }
     return new ResponseBuilder().payload(result).build() as ResponseStructure
   }
