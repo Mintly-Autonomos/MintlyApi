@@ -1,6 +1,6 @@
 export enum Resource {
   Person = 'Person',
-  Restaurante = 'Restaurant',
+  Restaurant = 'Restaurant',
   FinancialAccount = 'FinancialAccount',
   FinancialCategory = 'FinancialCategory',
   FinancialMovement = 'FinancialMovement'

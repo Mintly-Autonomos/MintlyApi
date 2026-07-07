@@ -61,8 +61,8 @@ describe('POST /auth/login — lockout atômico (integração)', () => {
     const after = await users.findOne({ email: SIGNUP_BODY.email })
     // Ao bloquear, o contador é zerado (evita re-bloqueio imediato ao expirar).
     expect(after?.loginAttempts).toBe(0)
-    expect(typeof after?.blockedUntil).toBe('string')
-    expect(new Date(after!.blockedUntil as string).getTime()).toBeGreaterThan(Date.now())
+    expect(after?.blockedUntil).toBeInstanceOf(Date)
+    expect((after!.blockedUntil as Date).getTime()).toBeGreaterThan(Date.now())
 
     // Auditoria do bloqueio foi registrada.
     const blockLog = await mongoConnection

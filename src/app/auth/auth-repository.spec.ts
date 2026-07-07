@@ -14,7 +14,6 @@ function mockCollection (findOneAndUpdateResult: unknown) {
 describe('AuthRepository.registerFailedAttempt', () => {
   const ID = '507f1f77bcf86cd799439011'
   const BLOCK_AT = new Date('2026-01-01T00:00:00.000Z')
-  const BLOCK_ISO = BLOCK_AT.toISOString()
   let repo: AuthRepository
 
   beforeEach(() => {
@@ -44,8 +43,8 @@ describe('AuthRepository.registerFailedAttempt', () => {
 
   it('ao cruzar o teto: doc volta com o blockedUntil gravado e contador zerado → blocked=true, attempts=max', async () => {
     // O pipeline zera loginAttempts ao bloquear; a detecção de "bloqueou agora" é
-    // pelo blockedUntil == o ISO que passamos.
-    const col = mockCollection({ loginAttempts: 0, blockedUntil: BLOCK_ISO })
+    // pelo blockedUntil == o instante (Date) que passamos.
+    const col = mockCollection({ loginAttempts: 0, blockedUntil: BLOCK_AT })
     vi.spyOn(repo as any, 'getCollection').mockReturnValue(col as any)
 
     const res = await repo.registerFailedAttempt(ID, 5, BLOCK_AT, CTX)

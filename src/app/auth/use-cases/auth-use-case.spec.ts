@@ -140,7 +140,7 @@ describe('AuthUseCase', () => {
     })
 
     it('bloqueio temporário ativo lança TooManyRequestsError', async () => {
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, blockedUntil: new Date(Date.now() + 600_000).toISOString() })
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, blockedUntil: new Date(Date.now() + 600_000) })
       await expect(useCase.login('joao@restaurante.com', 'Senha123', CTX)).rejects.toBeInstanceOf(TooManyRequestsError)
     })
 

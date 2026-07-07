@@ -9,7 +9,7 @@ import { RequestContext } from '../../core/context/request-context'
  */
 export type UserRecord = User & {
   loginAttempts?: number
-  blockedUntil?: string | null
+  blockedUntil?: Date | null
 }
 
 export class AuthRepository {
@@ -53,7 +53,6 @@ export class AuthRepository {
     blockedUntil: Date,
     ctx: RequestContext,
   ): Promise<{ attempts: number; blocked: boolean }> {
-    const blockedUntilIso = blockedUntil.toISOString()
     const result = await this.getCollection(ctx).findOneAndUpdate(
       { _id: new ObjectId(userId) },
       [
@@ -65,9 +64,10 @@ export class AuthRepository {
         },
         {
           // `$loginAttempts` aqui já é o valor incrementado (estágio anterior).
+          // `blockedUntil` é gravado como Date (BSON), consistente com as demais datas.
           $set: {
             blockedUntil: {
-              $cond: [{ $gte: ['$loginAttempts', maxAttempts] }, blockedUntilIso, '$blockedUntil'],
+              $cond: [{ $gte: ['$loginAttempts', maxAttempts] }, blockedUntil, '$blockedUntil'],
             },
             loginAttempts: {
               $cond: [{ $gte: ['$loginAttempts', maxAttempts] }, 0, '$loginAttempts'],
@@ -79,8 +79,9 @@ export class AuthRepository {
     )
     const doc = result as UserRecord | null
     // Antes deste attempt a conta não estava bloqueada-no-futuro (o gate garante):
-    // se `blockedUntil` agora é o ISO que passamos, foi este attempt que bloqueou.
-    const blocked = doc?.blockedUntil === blockedUntilIso
+    // se `blockedUntil` agora é o instante que passamos, foi este attempt que bloqueou.
+    const stored = doc?.blockedUntil != null ? new Date(doc.blockedUntil).getTime() : null
+    const blocked = stored === blockedUntil.getTime()
     const attempts = blocked ? maxAttempts : (doc?.loginAttempts ?? 1)
     return { attempts, blocked }
   }
