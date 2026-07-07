@@ -49,7 +49,7 @@ describe('FinancialCategoryController (MIN-71)', () => {
   it('deve bloquear edição de qualquer campo quando a categoria é isSystem', async () => {
     mockRepository.find.mockResolvedValue({ _id: 'cat-1', isSystem: true })
 
-    await expect(controller.update('cat-1', { name: 'Novo nome' }))
+    await expect(controller.update('cat-1', { name: 'Novo nome' }, { env: 'test' } as any))
       .rejects
       .toThrow('Categorias do sistema não podem ser editadas')
   })
@@ -59,7 +59,7 @@ describe('FinancialCategoryController (MIN-71)', () => {
     const superUpdateSpy = vi.spyOn(CrudController.prototype, 'update')
       .mockResolvedValue({ payload: { success: true } } as any)
 
-    await controller.update('cat-1', { name: 'Novo nome' })
+    await controller.update('cat-1', { name: 'Novo nome' }, { env: 'test' } as any)
 
     expect(superUpdateSpy).toHaveBeenCalled()
     superUpdateSpy.mockRestore()
@@ -80,7 +80,7 @@ describe('FinancialCategoryController (MIN-71)', () => {
   })
 
   it('inactivate delega para o use-case e responde 200 com mensagem', async () => {
-    const request: any = { params: { id: 'cat-1' }, headers: {} }
+    const request: any = { params: { id: 'cat-1' }, headers: { env: 'test' } }
     const reply = mockReply()
 
     await controller.inactivate(request, reply)
@@ -90,7 +90,7 @@ describe('FinancialCategoryController (MIN-71)', () => {
   })
 
   it('reactivate delega para o use-case e responde 200 com mensagem', async () => {
-    const request: any = { params: { id: 'cat-1' }, headers: {} }
+    const request: any = { params: { id: 'cat-1' }, headers: { env: 'test' } }
     const reply = mockReply()
 
     await controller.reactivate(request, reply)
@@ -101,7 +101,7 @@ describe('FinancialCategoryController (MIN-71)', () => {
 
   it('suggestions valida direction e delega para a query', async () => {
     mockSuggestQuery.execute.mockResolvedValue([])
-    const request: any = { query: { direction: 'in' }, headers: {} }
+    const request: any = { query: { direction: 'in' }, headers: { env: 'test' } }
     const reply = mockReply()
 
     await controller.suggestions(request, reply)
@@ -111,7 +111,7 @@ describe('FinancialCategoryController (MIN-71)', () => {
   })
 
   it('suggestions rejeita direction inválida com erro de validação', async () => {
-    const request: any = { query: { direction: 'sideways' }, headers: {} }
+    const request: any = { query: { direction: 'sideways' }, headers: { env: 'test' } }
     const reply = mockReply()
 
     await expect(controller.suggestions(request, reply)).rejects.toThrow()

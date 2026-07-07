@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildRequestContext } from './build-request-context'
+import { MissingEnvError } from '../errors/core/missing-env-error'
 
 describe('buildRequestContext', () => {
   it('extrai env do header "env"', () => {
@@ -7,14 +8,16 @@ describe('buildRequestContext', () => {
     expect(ctx.env).toBe('staging')
   })
 
-  it('default para "default" quando o header está ausente', () => {
-    const ctx = buildRequestContext(undefined)
-    expect(ctx.env).toBe('default')
+  it('lança MissingEnvError quando não há source', () => {
+    expect(() => buildRequestContext(undefined)).toThrow(MissingEnvError)
   })
 
-  it('default para "default" quando o header existe mas não tem env', () => {
-    const ctx = buildRequestContext({ 'content-type': 'application/json' })
-    expect(ctx.env).toBe('default')
+  it('lança MissingEnvError quando o header existe mas não tem env', () => {
+    expect(() => buildRequestContext({ 'content-type': 'application/json' })).toThrow(MissingEnvError)
+  })
+
+  it('lança MissingEnvError quando env é string vazia', () => {
+    expect(() => buildRequestContext({ env: '  ' })).toThrow(MissingEnvError)
   })
 
   it('coage env não-string pra string', () => {

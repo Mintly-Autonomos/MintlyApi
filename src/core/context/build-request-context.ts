@@ -1,5 +1,6 @@
 import { IncomingHttpHeaders } from 'http'
 import { RequestContext } from './request-context'
+import { MissingEnvError } from '../errors/core/missing-env-error'
 
 /**
  * Forma estrutural mínima de um FastifyRequest: headers + os claims que o
@@ -24,9 +25,15 @@ export function buildRequestContext (source?: ContextSource): RequestContext {
   const isRequest = !!source && typeof (source as RequestWithContext).headers === 'object'
   const headers = isRequest ? (source as RequestWithContext).headers : source as IncomingHttpHeaders | undefined
 
-  const env = headers?.env ?? 'default'
+  // `env` é obrigatório: roteia a requisição para o banco do tenant. Sem ele,
+  // um default silencioso grava no banco errado e mascara erro de configuração.
+  const rawEnv = headers?.env
+  const env = Array.isArray(rawEnv) ? rawEnv[0] : rawEnv
+  if (!env || String(env).trim() === '') {
+    throw new MissingEnvError()
+  }
   const ctx: RequestContext = {
-    env: Array.isArray(env) ? String(env[0]) : String(env),
+    env: String(env),
   }
 
   const jwt = isRequest ? (source as RequestWithContext).jwtClaims : undefined
