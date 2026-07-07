@@ -20,6 +20,11 @@ export const errorGlossary: ErrorEntry = {
     apiMessage: 'The "env" header is required to resolve the tenant database.',
     code: 'APP-0003',
   },
+  invalidEnv: {
+    message: 'Ambiente ("env") inválido. Use um ambiente permitido.',
+    apiMessage: 'The provided "env" is not an allowed environment.',
+    code: 'APP-0004',
+  },
   // Auth — fonte única dos códigos (antes definidos inline em cada erro).
   unauthorized: {
     message: 'Credenciais inválidas ou token expirado.',

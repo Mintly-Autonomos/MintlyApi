@@ -11,6 +11,7 @@ import { healthRoutes } from '../../app/health/health-routes'
 import { authRoutes } from '../../app/auth/auth-routes'
 import { verifyJwt } from '../../core/hooks/verify-jwt'
 import { BaseError } from '../../core/errors/core/base-error'
+import { assertValidEnv } from '../../app/environment/env-allowlist'
 
 export async function buildServer (server: FastifyInstance = Fastify()): Promise<FastifyInstance> {
   await server.register(cors, { origin: true })
@@ -47,6 +48,18 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
       },
     })
   }
+
+  // Valida o header `env` contra a allowlist (app.valid_environments) quando
+  // presente — rotas sem env (ex.: /health) passam direto; env ausente segue
+  // tratado pelo MissingEnvError na montagem do contexto. Permissivo quando a
+  // allowlist está vazia (dev/testes). Ver env-allowlist.ts.
+  server.addHook('onRequest', async (request) => {
+    const rawEnv = request.headers.env
+    const env = Array.isArray(rawEnv) ? rawEnv[0] : rawEnv
+    if (env && String(env).trim() !== '') {
+      await assertValidEnv(String(env))
+    }
+  })
 
   server.addHook('onSend', async (_request, reply, payload) => {
     reply.header('Content-Security-Policy', `default-src 'self'; connect-src 'self' ${process.env.API_URL ?? 'http://localhost:3000'};`)
