@@ -83,15 +83,26 @@ describe('MongodbCrudRepository (integration)', () => {
     expect(desc.map(p => p.name)).toEqual(['C', 'B', 'A'])
   })
 
-  it('findAll com createdAtDirection aplica sort em createdAt', async () => {
-    await repo.insert({ name: 'A', age: 1, createdAt: new Date('2024-01-01') } as any, ctx)
-    await repo.insert({ name: 'B', age: 2, createdAt: new Date('2024-02-01') } as any, ctx)
+  it('findAll com createdAtDirection ordena por audit.createdAt', async () => {
+    await repo.insert({ name: 'A', age: 1, audit: { createdAt: new Date('2024-01-01') } } as any, ctx)
+    await repo.insert({ name: 'B', age: 2, audit: { createdAt: new Date('2024-02-01') } } as any, ctx)
 
     const desc = await repo.findAll({ page: 1, size: 10, createdAtDirection: 'desc' }, ctx)
     expect(desc[0].name).toBe('B')
 
     const asc = await repo.findAll({ page: 1, size: 10, createdAtDirection: 'asc' }, ctx)
     expect(asc[0].name).toBe('A')
+  })
+
+  it('findAll ignora isMultipleResponse e chaves com operador ($) no filtro', async () => {
+    await repo.insert({ name: 'Ada', age: 30 } as any, ctx)
+    // isMultipleResponse (flag do client) e $where (injeção) não podem virar filtro
+    const result = await repo.findAll({ page: 1, size: 10, isMultipleResponse: true, $where: 'return false' } as any, ctx)
+    expect(result).toHaveLength(1)
+  })
+
+  it('findById com id malformado devolve null (não 500)', async () => {
+    expect(await repo.findById('nao-e-objectid', ctx)).toBeNull()
   })
 
   it('update com id inexistente lança Error', async () => {

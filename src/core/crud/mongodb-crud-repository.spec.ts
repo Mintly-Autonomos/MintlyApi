@@ -127,7 +127,7 @@ describe('MongodbCrudRepository (CRUD)', () => {
       CTX,
     )
 
-    expect(c.sort).toHaveBeenCalledWith({ name: 1, createdAt: -1 })
+    expect(c.sort).toHaveBeenCalledWith({ name: 1, 'audit.createdAt': -1 })
   })
 
   it('findAll usa page=1/size=10 quando page/size não coercem para número válido', async () => {

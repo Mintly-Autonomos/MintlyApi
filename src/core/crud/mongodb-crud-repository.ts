@@ -41,6 +41,19 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     return { ...filter, restaurantId: ctx.restaurantId }
   }
 
+  /**
+   * Remove chaves com operadores Mongo (`$gt`, `$where`, ...) do filtro — esses
+   * viriam de query params controlados pelo cliente e permitiriam NoSQL
+   * injection no `findAll` genérico.
+   */
+  private sanitizeFilter (filter: Record<string, any>): Record<string, any> {
+    const clean: Record<string, any> = {}
+    for (const [key, value] of Object.entries(filter)) {
+      if (!key.startsWith('$')) clean[key] = value
+    }
+    return clean
+  }
+
   async insert (item: T, ctx: RequestContext): Promise<T> {
     const collection = this.getCollection(ctx)
     // O doc SEMPRE pertence ao restaurante do contexto: o `restaurantId` do ctx
@@ -51,6 +64,8 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
   }
 
   async findById (id: ID, ctx: RequestContext): Promise<T | null> {
+    // _id malformado não é 500: simplesmente não existe.
+    if (!ObjectId.isValid(id as string)) return null
     const collection = this.getCollection(ctx)
     const filter = this.withTenant({ _id: new ObjectId(id as string) }, ctx) as Filter<T>
     const result = await collection.findOne(filter)
@@ -63,7 +78,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     // _id chega como string nos use cases; normaliza p/ ObjectId (igual a findById/update/delete).
     // Não toca em _id quando é operador (ex.: { $ne: ObjectId }).
     const normalized: any = { ...filter }
-    if (typeof normalized._id === 'string') {
+    if (typeof normalized._id === 'string' && ObjectId.isValid(normalized._id)) {
       normalized._id = new ObjectId(normalized._id)
     }
 
@@ -73,11 +88,12 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
 
   async findAll (filter: Partial<T> & PaginationDto, ctx: RequestContext): Promise<Array<T>> {
     const collection = this.getCollection(ctx)
-    const { page = 1, size = 10, orderBy, orderDirection = 'asc', createdAtDirection, ...queryFilter } = filter
+    // `isMultipleResponse` é um flag do client (mintly-lib) — nunca vira filtro Mongo.
+    const { page = 1, size = 10, orderBy, orderDirection = 'asc', createdAtDirection, isMultipleResponse, ...queryFilter } = filter as any
 
-    // query params chegam como string — coerciona para number antes de skip/limit
-    const pageNum = Number(page) || 1
-    const sizeNum = Number(size) || 10
+    // Coerção + clamp: page >= 1 (evita skip negativo), size entre 1 e 100 (evita página gigante).
+    const pageNum = Math.max(1, Math.floor(Number(page) || 1))
+    const sizeNum = Math.min(100, Math.max(1, Math.floor(Number(size) || 10)))
     const skip = (pageNum - 1) * sizeNum
     const sort: any = {}
 
@@ -86,11 +102,12 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     }
 
     if (createdAtDirection) {
-      sort.createdAt = createdAtDirection === 'asc' ? 1 : -1
+      // A auditoria é gravada em `audit.createdAt`, não `createdAt` de topo.
+      sort['audit.createdAt'] = createdAtDirection === 'asc' ? 1 : -1
     }
 
     const result = await collection
-      .find(this.withTenant(queryFilter, ctx) as Filter<T>)
+      .find(this.withTenant(this.sanitizeFilter(queryFilter), ctx) as Filter<T>)
       .sort(sort)
       .skip(skip)
       .limit(sizeNum)
@@ -100,6 +117,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
   }
 
   async update (id: ID, item: Partial<T>, ctx: RequestContext, options?: { session?: ClientSession }): Promise<T> {
+    if (!ObjectId.isValid(id as string)) throw new NotFoundError(this.collectionName, id)
     const collection = this.getCollection(ctx)
     const filter = this.withTenant({ _id: new ObjectId(id as string) }, ctx) as Filter<T>
     const updateDoc = { $set: item }
@@ -118,6 +136,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
   }
 
   async delete (id: ID, ctx: RequestContext): Promise<void> {
+    if (!ObjectId.isValid(id as string)) throw new NotFoundError(this.collectionName, id)
     const collection = this.getCollection(ctx)
     const filter = this.withTenant({ _id: new ObjectId(id as string) }, ctx) as Filter<T>
     const result = await collection.deleteOne(filter)

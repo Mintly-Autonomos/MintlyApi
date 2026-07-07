@@ -21,8 +21,10 @@ export class CrudController <T extends Record<string, any>, ID = any> {
 
   async insert (item: T, source?: ContextSource): Promise<ResponseStructure> {
     const ctx = buildRequestContext(source)
-    this.orm.parse(item)
-    const result = await this.useCase.insert(item, ctx)
+    // Usa o valor COAGIDO/sanitizado do parse (não o body cru): descarta chaves
+    // desconhecidas (mass assignment) e aplica coerção do schema.
+    const parsed = this.orm.parse(item) as T
+    const result = await this.useCase.insert(parsed, ctx)
     return new ResponseBuilder().payload(result).build() as ResponseStructure
   }
 
@@ -56,8 +58,8 @@ export class CrudController <T extends Record<string, any>, ID = any> {
 
   async update (id: ID, item: Partial<T>, source?: ContextSource): Promise<ResponseStructure> {
     const ctx = buildRequestContext(source)
-    this.ormPartial.parse(item)
-    const result = await this.useCase.update(id, item, ctx)
+    const parsed = this.ormPartial.parse(item) as Partial<T>
+    const result = await this.useCase.update(id, parsed, ctx)
     return new ResponseBuilder().payload(result).build() as ResponseStructure
   }
 

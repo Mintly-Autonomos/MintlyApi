@@ -140,8 +140,13 @@ describe('/people (integração, protegida por JWT)', () => {
     expect(gone.statusCode).toBe(404)
   })
 
-  it('DELETE de id inexistente devolve 500 (comportamento atual do repo)', async () => {
+  it('DELETE de id inexistente devolve 404', async () => {
     const res = await server.inject({ method: 'DELETE', url: '/people/507f1f77bcf86cd799439011', headers: auth })
-    expect(res.statusCode).toBe(500)
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('DELETE de id malformado devolve 404 (não 500)', async () => {
+    const res = await server.inject({ method: 'DELETE', url: '/people/nao-e-objectid', headers: auth })
+    expect(res.statusCode).toBe(404)
   })
 })
