@@ -77,8 +77,9 @@ describe('Financial Account (Integration)', () => {
         name: 'Caixa Integração',
         type: 'cash',
         status: 'active',
-        isDefault: true,
-        restaurantId: fakeRestaurantId, // O validador pede no body também
+        // isDefault/saldos NÃO são enviados: o servidor os força (A3) e o schema
+        // de insert da lib passará a rejeitá-los (forward-compat com o bump).
+        restaurantId: fakeRestaurantId,
         audit: {
           createdAt: new Date(),
           updatedAt: new Date(),
