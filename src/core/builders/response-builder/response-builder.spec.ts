@@ -34,7 +34,7 @@ describe('ResponseBuilder', () => {
     })
   })
 
-  describe('com reply', () => {
+  describe('send(reply)', () => {
     function mockReply (): FastifyReply {
       const reply = {
         status: vi.fn().mockReturnThis(),
@@ -46,9 +46,8 @@ describe('ResponseBuilder', () => {
     it('chama reply.status(200).send(envelope) por padrão', () => {
       const reply = mockReply()
       new ResponseBuilder()
-        .response(reply)
         .payload({ id: '1' })
-        .build()
+        .send(reply)
 
       expect(reply.status).toHaveBeenCalledWith(StatusCodes.OK)
       expect(reply.send).toHaveBeenCalledWith({ payload: { id: '1' } })
@@ -57,10 +56,9 @@ describe('ResponseBuilder', () => {
     it('respeita status customizado', () => {
       const reply = mockReply()
       new ResponseBuilder()
-        .response(reply)
         .status(StatusCodes.CREATED)
         .payload({ id: '1' })
-        .build()
+        .send(reply)
 
       expect(reply.status).toHaveBeenCalledWith(StatusCodes.CREATED)
     })
@@ -68,10 +66,9 @@ describe('ResponseBuilder', () => {
     it('inclui pagination via reply', () => {
       const reply = mockReply()
       new ResponseBuilder()
-        .response(reply)
         .payload([{ id: '1' }])
         .pagination({ page: 1, size: 10, totalItems: 1, totalPages: 1 })
-        .build()
+        .send(reply)
 
       expect(reply.send).toHaveBeenCalledWith({
         payload: [{ id: '1' }],

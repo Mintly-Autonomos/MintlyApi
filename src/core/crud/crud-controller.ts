@@ -28,7 +28,7 @@ export class CrudController <T extends Record<string, any>, ID = any> {
     // desconhecidas (mass assignment) e aplica coerção do schema.
     const parsed = this.orm.parse(item) as T
     const result = await this.useCase.insert(parsed, ctx)
-    return new ResponseBuilder().payload(result).build() as ResponseStructure
+    return new ResponseBuilder().payload(result).build()
   }
 
   async findById (id: ID, source?: ContextSource): Promise<ResponseStructure> {
@@ -37,13 +37,13 @@ export class CrudController <T extends Record<string, any>, ID = any> {
     if (!result) {
       throw new NotFoundError(this.resource, id)
     }
-    return new ResponseBuilder().payload(result).build() as ResponseStructure
+    return new ResponseBuilder().payload(result).build()
   }
 
   async find (filter: Partial<T>, source?: ContextSource): Promise<ResponseStructure> {
     const ctx = buildRequestContext(source)
     const result = await this.useCase.find(filter, ctx)
-    return new ResponseBuilder().payload(result).build() as ResponseStructure
+    return new ResponseBuilder().payload(result).build()
   }
 
   async findAll (filter: Partial<T> & PaginationDto, source?: ContextSource): Promise<ResponseStructure> {
@@ -62,14 +62,14 @@ export class CrudController <T extends Record<string, any>, ID = any> {
         totalItems,
         totalPages: Math.ceil(totalItems / size),
       })
-      .build() as ResponseStructure
+      .build()
   }
 
   async update (id: ID, item: Partial<T>, source?: ContextSource): Promise<ResponseStructure> {
     const ctx = buildRequestContext(source)
     const parsed = this.ormPartial.parse(item) as Partial<T>
     const result = await this.useCase.update(id, parsed, ctx)
-    return new ResponseBuilder().payload(result).build() as ResponseStructure
+    return new ResponseBuilder().payload(result).build()
   }
 
   async delete (id: ID, source?: ContextSource): Promise<void> {

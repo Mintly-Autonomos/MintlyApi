@@ -62,10 +62,9 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
     await this.setDefaultUseCase.execute(id, ctx)
 
     return new ResponseBuilder()
-      .response(reply)
       .status(StatusCodes.OK)
       .payload({ message: 'Conta definida como padrão com sucesso.' })
-      .build()
+      .send(reply)
   }
 
   /**
@@ -81,9 +80,8 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
     await this.inactivateUseCase.execute(id, ctx, replacementDefaultId)
 
     return new ResponseBuilder()
-      .response(reply)
       .status(StatusCodes.OK)
       .payload({ message: 'Conta inativada com sucesso.' })
-      .build()
+      .send(reply)
   }
 }

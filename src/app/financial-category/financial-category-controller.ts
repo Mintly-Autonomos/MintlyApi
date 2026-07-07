@@ -63,9 +63,9 @@ export class FinancialCategoryController extends CrudController<FinancialCategor
     const ctx = buildRequestContext(request)
     await this.inactivateUseCase.inactivate(id, ctx)
     return new ResponseBuilder()
-      .response(reply).status(StatusCodes.OK)
+      .status(StatusCodes.OK)
       .payload({ message: 'Categoria inativada com sucesso.' })
-      .build()
+      .send(reply)
   }
 
   async reactivate (request: any, reply: any) {
@@ -73,9 +73,9 @@ export class FinancialCategoryController extends CrudController<FinancialCategor
     const ctx = buildRequestContext(request)
     await this.inactivateUseCase.reactivate(id, ctx)
     return new ResponseBuilder()
-      .response(reply).status(StatusCodes.OK)
+      .status(StatusCodes.OK)
       .payload({ message: 'Categoria reativada com sucesso.' })
-      .build()
+      .send(reply)
   }
 
   async suggestions (request: any, reply: any) {
@@ -83,8 +83,8 @@ export class FinancialCategoryController extends CrudController<FinancialCategor
     const direction = directionSchema.parse((request.query as any)?.direction)
     const result = await this.suggestQuery.execute(ctx, direction)
     return new ResponseBuilder()
-      .response(reply).status(StatusCodes.OK)
+      .status(StatusCodes.OK)
       .payload(result)
-      .build()
+      .send(reply)
   }
 }

@@ -14,7 +14,7 @@ const recoveryUseCase = new PasswordRecoveryUseCase()
 export async function signupController (request: FastifyRequest, reply: FastifyReply) {
   const ctx = buildRequestContext(request)
   const result = await registerUseCase.execute(request.body, ctx)
-  return new ResponseBuilder().response(reply).status(StatusCodes.CREATED).payload(result).build()
+  return new ResponseBuilder().status(StatusCodes.CREATED).payload(result).send(reply)
 }
 
 export async function loginController (
@@ -27,7 +27,7 @@ export async function loginController (
     ip: request.ip,
     userAgent: request.headers['user-agent'],
   })
-  return new ResponseBuilder().response(reply).payload(result).build()
+  return new ResponseBuilder().payload(result).send(reply)
 }
 
 export async function refreshController (
@@ -36,7 +36,7 @@ export async function refreshController (
 ) {
   const ctx = buildRequestContext(request)
   const result = await authUseCase.refresh(request.body.refreshToken, ctx)
-  return new ResponseBuilder().response(reply).payload(result).build()
+  return new ResponseBuilder().payload(result).send(reply)
 }
 
 export async function logoutController (
@@ -56,10 +56,9 @@ export async function requestRecoveryController (
   const ctx = buildRequestContext(request)
   await recoveryUseCase.requestRecovery(request.body, ctx)
   return new ResponseBuilder()
-    .response(reply)
     .status(StatusCodes.ACCEPTED)
     .payload({ message: 'Se o e-mail estiver cadastrado, você receberá as instruções em breve.' })
-    .build()
+    .send(reply)
 }
 
 export async function resetPasswordController (
@@ -68,5 +67,5 @@ export async function resetPasswordController (
 ) {
   const ctx = buildRequestContext(request)
   await recoveryUseCase.resetPassword(request.body, ctx)
-  return new ResponseBuilder().response(reply).payload({ message: 'Senha redefinida com sucesso.' }).build()
+  return new ResponseBuilder().payload({ message: 'Senha redefinida com sucesso.' }).send(reply)
 }
