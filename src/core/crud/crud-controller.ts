@@ -48,13 +48,19 @@ export class CrudController <T extends Record<string, any>, ID = any> {
 
   async findAll (filter: Partial<T> & PaginationDto, source?: ContextSource): Promise<ResponseStructure> {
     const ctx = buildRequestContext(source)
-    const result = await this.useCase.findAll(filter, ctx)
+    // `totalItems` é o total de documentos que casam o filtro (via countDocuments),
+    // não o tamanho da página — senão `totalPages` fica sempre 1 e o front não pagina.
+    const [result, totalItems] = await Promise.all([
+      this.useCase.findAll(filter, ctx),
+      this.useCase.count(filter, ctx),
+    ])
+    const size = Number(filter.size) || 10
     return new ResponseBuilder()
       .payload(result)
       .pagination({
         ...filter,
-        totalItems: result.length,
-        totalPages: Math.ceil(result.length / (filter.size || 10)),
+        totalItems,
+        totalPages: Math.ceil(totalItems / size),
       })
       .build() as ResponseStructure
   }

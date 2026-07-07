@@ -116,6 +116,18 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     return result as T[]
   }
 
+  /**
+   * Conta o total de documentos que casam o filtro (ignorando paginação) — para
+   * a paginação reportar `totalItems`/`totalPages` corretos. Usa EXATAMENTE o
+   * mesmo filtro-de-consulta do `findAll` (mesmo strip + sanitize + escopo de
+   * tenant), garantindo que a contagem corresponde à listagem.
+   */
+  async count (filter: Partial<T> & PaginationDto, ctx: RequestContext): Promise<number> {
+    const collection = this.getCollection(ctx)
+    const { page, size, orderBy, orderDirection, createdAtDirection, isMultipleResponse, ...queryFilter } = filter as any
+    return await collection.countDocuments(this.withTenant(this.sanitizeFilter(queryFilter), ctx) as Filter<T>)
+  }
+
   async update (id: ID, item: Partial<T>, ctx: RequestContext, options?: { session?: ClientSession }): Promise<T> {
     if (!ObjectId.isValid(id as string)) throw new NotFoundError(this.collectionName, id)
     const collection = this.getCollection(ctx)

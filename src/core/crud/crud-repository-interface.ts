@@ -7,6 +7,7 @@ export interface CrudRepository<T, ID> {
   findById(id: ID, ctx: RequestContext): Promise<T | null>
   find(filter: Partial<T>, ctx: RequestContext): Promise<T | null>
   findAll(filter: Partial<T> & PaginationDto, ctx: RequestContext): Promise<Array<T>>
+  count(filter: Partial<T> & PaginationDto, ctx: RequestContext): Promise<number>
   update(id: ID, item: Partial<T>, ctx: RequestContext): Promise<T>
   delete(id: ID, ctx: RequestContext): Promise<void>
   query<Q>(q: Query, ctx: RequestContext): Promise<Q>

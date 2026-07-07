@@ -36,6 +36,10 @@ export class CrudUseCase<T, ID> {
     return response
   }
 
+  async count (filter: Partial<T> & PaginationDto, ctx: RequestContext): Promise<number> {
+    return await this.repository.count(filter, ctx)
+  }
+
   async update (id: ID, item: Partial<T>, ctx: RequestContext): Promise<T> {
     // Campos autoritativos do servidor: nunca vêm do client no update. `audit`,
     // `restaurantId` e `_id` são descartados (senão o PATCH poderia forjar o

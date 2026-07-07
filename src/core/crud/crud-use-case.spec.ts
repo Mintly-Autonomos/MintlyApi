@@ -12,6 +12,7 @@ describe('CrudUseCase', () => {
       findById: vi.fn().mockResolvedValue({ ok: 'findById' }),
       find: vi.fn().mockResolvedValue({ ok: 'find' }),
       findAll: vi.fn().mockResolvedValue([{ ok: 'findAll' }]),
+      count: vi.fn().mockResolvedValue(42),
       update: vi.fn().mockResolvedValue({ ok: 'update' }),
       delete: vi.fn().mockResolvedValue(undefined),
       query: vi.fn().mockResolvedValue([{ ok: 'query' }]),
@@ -55,6 +56,14 @@ describe('CrudUseCase', () => {
     const useCase = new CrudUseCase(repo)
     await useCase.findAll({ page: 1, size: 10 } as any, ctx)
     expect(repo.findAll).toHaveBeenCalledWith({ page: 1, size: 10 }, ctx)
+  })
+
+  it('count delega pro repository', async () => {
+    const repo = mockRepo()
+    const useCase = new CrudUseCase(repo)
+    const total = await useCase.count({ page: 1, size: 10 } as any, ctx)
+    expect(repo.count).toHaveBeenCalledWith({ page: 1, size: 10 }, ctx)
+    expect(total).toBe(42)
   })
 
   it('update renova a auditoria (dot-notation) e delega pro repository', async () => {

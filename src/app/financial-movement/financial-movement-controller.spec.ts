@@ -20,7 +20,7 @@ describe('FinancialMovementController', () => {
   })
 
   beforeEach(() => {
-    repo = { findAll: vi.fn().mockResolvedValue([]) }
+    repo = { findAll: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) }
     registerUseCase = { execute: vi.fn().mockResolvedValue({ _id: 'm1' }) }
     changeStatusUseCase = { execute: vi.fn().mockResolvedValue({ _id: 'm1', status: 'settled' }) }
     updateUseCase = { execute: vi.fn().mockResolvedValue({ _id: 'm1' }) }
@@ -47,25 +47,31 @@ describe('FinancialMovementController', () => {
     expect(reply.send).toHaveBeenCalled()
   })
 
-  it('list delega ao repository e responde 200 com paginação', async () => {
+  it('list delega ao repository e responde 200 com paginação vinda do count (não do length)', async () => {
+    // Página traz 2 itens, mas o total (count) é 25 → totalPages = ceil(25/10) = 3.
     repo.findAll.mockResolvedValue([{ _id: 'a' }, { _id: 'b' }])
+    repo.count.mockResolvedValue(25)
     await controller.list(makeRequest({ query: { size: '10' } }), reply)
 
     expect(repo.findAll).toHaveBeenCalled()
+    expect(repo.count).toHaveBeenCalled()
     expect(reply.status).toHaveBeenCalledWith(200)
     const sent = reply.send.mock.calls[0][0]
     expect(sent.payload).toHaveLength(2)
-    expect(sent.pagination.totalItems).toBe(2)
+    expect(sent.pagination.totalItems).toBe(25)
+    expect(sent.pagination.totalPages).toBe(3)
   })
 
   it('list sem query (undefined) usa filtro vazio e default de size 10', async () => {
     repo.findAll.mockResolvedValue([{ _id: 'a' }])
+    repo.count.mockResolvedValue(1)
     await controller.list(makeRequest({ query: undefined }), reply)
 
     expect(repo.findAll).toHaveBeenCalledWith({}, expect.anything())
+    expect(repo.count).toHaveBeenCalledWith({}, expect.anything())
     expect(reply.status).toHaveBeenCalledWith(200)
     const sent = reply.send.mock.calls[0][0]
-    // 1 item, size default 10 -> totalPages = ceil(1/10) = 1
+    // count=1, size default 10 -> totalPages = ceil(1/10) = 1
     expect(sent.pagination.totalItems).toBe(1)
     expect(sent.pagination.totalPages).toBe(1)
   })

@@ -32,7 +32,12 @@ export class FinancialMovementController {
   async list (request: any, reply: any) {
     const ctx = buildRequestContext(request)
     const filter = (request.query ?? {}) as MovementListFilter
-    const result = await this.movementRepo.findAll(filter, ctx)
+    // `totalItems` = total que casa o filtro (countDocuments), não o tamanho da
+    // página — senão `totalPages` fica sempre 1 e o front não pagina.
+    const [result, totalItems] = await Promise.all([
+      this.movementRepo.findAll(filter, ctx),
+      this.movementRepo.count(filter, ctx),
+    ])
     const size = Number(filter.size) || 10
 
     return new ResponseBuilder()
@@ -41,8 +46,8 @@ export class FinancialMovementController {
       .payload(result)
       .pagination({
         ...filter,
-        totalItems: result.length,
-        totalPages: Math.ceil(result.length / size),
+        totalItems,
+        totalPages: Math.ceil(totalItems / size),
       } as any)
       .build()
   }

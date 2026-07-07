@@ -144,6 +144,17 @@ describe('MongodbCrudRepository (CRUD)', () => {
     expect(c.limit).toHaveBeenCalledWith(10)
   })
 
+  it('count usa countDocuments com o filtro (strip de paginação + tenant)', async () => {
+    const col = mockCollection({ countDocuments: vi.fn().mockResolvedValue(7) })
+    const total = await repo.count({ page: 2, size: 5, orderBy: 'name', name: 'Ada' } as any, CTX)
+    expect(total).toBe(7)
+    const passedFilter = col.countDocuments.mock.calls[0][0]
+    // paginação/orderBy fora; filtro real dentro.
+    expect(passedFilter).toMatchObject({ name: 'Ada' })
+    expect(passedFilter.page).toBeUndefined()
+    expect(passedFilter.orderBy).toBeUndefined()
+  })
+
   it('update retorna o doc atualizado', async () => {
     mockCollection()
     expect(await repo.update(OID, { name: 'y' } as any, CTX)).toEqual({ _id: OID, name: 'y' })
