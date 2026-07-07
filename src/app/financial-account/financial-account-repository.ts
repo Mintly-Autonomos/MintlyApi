@@ -40,12 +40,16 @@ export class FinancialAccountRepository extends MongodbCrudRepository<FinancialA
    */
   async insert (item: FinancialAccount, ctx: RequestContext): Promise<FinancialAccount> {
     // A conta SEMPRE pertence ao restaurante do contexto, nunca ao restaurantId do payload.
-    // Saldos persistidos como Decimal128 (dinheiro exato; movimentações ajustam via $inc).
     const scopedItem = {
       ...item,
       restaurantId: ctx.restaurantId,
-      availableBalance: toDecimal128((item as any).availableBalance ?? 0),
-      predictedBalance: toDecimal128((item as any).predictedBalance ?? 0),
+      // Saldos iniciam SEMPRE em zero — o valor do body é ignorado (senão o client
+      // "criaria dinheiro" abrindo conta com saldo). Movimentações ajustam via $inc.
+      availableBalance: toDecimal128(0),
+      predictedBalance: toDecimal128(0),
+      // Conta nova nunca nasce como padrão: o padrão único do restaurante é gerido
+      // exclusivamente pelo /:id/set-default (senão o body criaria um 2º default).
+      isDefault: false,
     }
 
     try {
