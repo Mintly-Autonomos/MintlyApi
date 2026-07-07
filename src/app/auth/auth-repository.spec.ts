@@ -40,3 +40,23 @@ describe('AuthRepository.incrementLoginAttempts', () => {
     expect(attempts).toBe(1)
   })
 })
+
+describe('AuthRepository.setTemporaryBlock', () => {
+  let repo: AuthRepository
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    repo = new AuthRepository()
+  })
+
+  it('zera loginAttempts junto com o bloqueio (evita re-bloqueio ao expirar a janela)', async () => {
+    const updateOne = vi.fn(async () => ({}))
+    vi.spyOn(repo as any, 'getCollection').mockReturnValue({ updateOne } as any)
+
+    await repo.setTemporaryBlock('507f1f77bcf86cd799439011', new Date('2026-01-01T00:00:00.000Z'), CTX)
+
+    const setDoc = (updateOne.mock.calls[0][1] as any).$set
+    expect(setDoc.loginAttempts).toBe(0)
+    expect(setDoc.blockedUntil).toBe('2026-01-01T00:00:00.000Z')
+  })
+})

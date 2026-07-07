@@ -53,9 +53,12 @@ export class AuthRepository {
   }
 
   async setTemporaryBlock (userId: string, blockedUntil: Date, ctx: RequestContext): Promise<void> {
+    // Zera loginAttempts junto com o bloqueio: senão, ao expirar a janela, o
+    // contador continua em MAX e a próxima tentativa errada re-bloqueia na hora
+    // (a conta legítima ficaria presa indefinidamente — DoS).
     await this.getCollection(ctx).updateOne(
       { _id: new ObjectId(userId) },
-      { $set: { blockedUntil: blockedUntil.toISOString(), 'audit.updatedAt': new Date() } },
+      { $set: { blockedUntil: blockedUntil.toISOString(), loginAttempts: 0, 'audit.updatedAt': new Date() } },
     )
   }
 
