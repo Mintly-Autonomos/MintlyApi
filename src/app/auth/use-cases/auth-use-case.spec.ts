@@ -121,6 +121,12 @@ describe('AuthUseCase', () => {
       await expect(useCase.login('x@x.com', 'Senha123', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
     })
 
+    it('normaliza o e-mail (trim + lowercase) antes de buscar', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+      await useCase.login('  JOAO@Restaurante.COM ', 'Senha123', CTX)
+      expect(mockFindByEmail).toHaveBeenCalledWith('joao@restaurante.com', CTX)
+    })
+
     it('conta inativa lança ForbiddenError', async () => {
       mockFindByEmail.mockResolvedValue({ ...MOCK_USER, status: 'inactive' })
       await expect(useCase.login('joao@restaurante.com', 'Senha123', CTX)).rejects.toBeInstanceOf(ForbiddenError)

@@ -1,4 +1,4 @@
-import { scryptSync, timingSafeEqual } from 'crypto'
+import { scryptSync, timingSafeEqual, randomBytes } from 'crypto'
 import type { User, LoginResult, RefreshResult, AuthUser } from 'mintly-lib'
 import { getJwtService } from '../../../infrastructure/jwt/jwt-service'
 import { AuthRepository, UserRecord } from '../auth-repository'
@@ -7,11 +7,20 @@ import { ForbiddenError } from '../../../core/errors/auth/forbidden-error'
 import { TooManyRequestsError } from '../../../core/errors/auth/too-many-requests-error'
 import { RequestContext } from '../../../core/context/request-context'
 import { logAudit } from '../../audit/audit-service'
+import { normalizeEmail } from '../normalize-email'
 import type { MintlyClaims } from '../jwt-claims'
 
 const TENANT = 'mintly'
 const MAX_LOGIN_ATTEMPTS = Number(process.env.MAX_LOGIN_ATTEMPTS ?? 5)
 const BLOCK_DURATION_MINUTES = Number(process.env.BLOCK_DURATION_MINUTES ?? 15)
+
+// Hash dummy (válido) usado para equalizar o tempo do login quando o e-mail não
+// existe: rodamos o mesmo scrypt do caminho de senha errada, evitando o oráculo
+// de timing que revelaria quais e-mails estão cadastrados.
+const DUMMY_PASSWORD_HASH = ((): string => {
+  const salt = randomBytes(16).toString('hex')
+  return `${salt}:${scryptSync('timing-equalizer', salt, 64).toString('hex')}`
+})()
 
 export interface LoginMeta {
   ip?: string
@@ -22,8 +31,11 @@ export class AuthUseCase {
   private readonly repo = new AuthRepository()
 
   async login (email: string, password: string, ctx: RequestContext, meta: LoginMeta = {}): Promise<LoginResult> {
-    const user = await this.repo.findByEmail(email, ctx)
+    const user = await this.repo.findByEmail(normalizeEmail(email), ctx)
     if (!user) {
+      // Roda o scrypt mesmo sem usuário: o 401 de e-mail inexistente custa ~o
+      // mesmo que o de senha errada (anti-enumeração por timing).
+      this.verifyPassword(password, DUMMY_PASSWORD_HASH)
       throw new UnauthorizedError('Credenciais inválidas')
     }
 

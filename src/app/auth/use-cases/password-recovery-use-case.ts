@@ -5,6 +5,7 @@ import { getEmailService } from '../../../infrastructure/email/email-service'
 import { logAudit } from '../../audit/audit-service'
 import { UnauthorizedError } from '../../../core/errors/auth/unauthorized-error'
 import { RequestContext } from '../../../core/context/request-context'
+import { normalizeEmail } from '../normalize-email'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import {
   requestRecoverySchema,
@@ -26,10 +27,10 @@ export class PasswordRecoveryUseCase {
   async requestRecovery (input: RequestRecoveryInput, ctx: RequestContext): Promise<void> {
     requestRecoverySchema.parse(input)
 
-    const user = await this.authRepo.findByEmail(input.email, ctx)
+    const user = await this.authRepo.findByEmail(normalizeEmail(input.email), ctx)
 
-    // Não revela se o e-mail existe
-    if (!user || user.status === 'inactive') return
+    // Não revela se o e-mail existe; usuário não-ativo (inativo/bloqueado) não recupera.
+    if (!user || user.status !== 'active') return
 
     // O token em claro só viaja no e-mail; no banco fica apenas o sha256,
     // para que um vazamento de leitura do banco não permita tomar contas.

@@ -17,6 +17,7 @@ import { getJwtService } from '../../../infrastructure/jwt/jwt-service'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { RequestContext } from '../../../core/context/request-context'
 import { AuditLog } from '../../audit/audit-log'
+import { normalizeEmail } from '../normalize-email'
 
 const TENANT = 'mintly'
 
@@ -62,9 +63,10 @@ export class RegisterUseCase {
       await session.withTransaction(async () => {
         const now = new Date()
         const audit = { createdAt: now, updatedAt: now }
+        const email = normalizeEmail(data.email)
 
         // ── e-mail único ──────────────────────────────────────────────────────
-        const existing = await db.collection('users').findOne({ email: data.email }, { session })
+        const existing = await db.collection('users').findOne({ email }, { session })
         if (existing) throw new ConflictError('Este e-mail já está cadastrado.')
 
         // ── person ────────────────────────────────────────────────────────────
@@ -86,7 +88,7 @@ export class RegisterUseCase {
         const userInsert = await db.collection('users').insertOne(
           {
             person: { _id: personId, name: data.person.name },
-            email: data.email,
+            email,
             passwordHash,
             role: UserRole.Owner,
             status: UserStatus.Active,
@@ -132,7 +134,7 @@ export class RegisterUseCase {
 
         // ── auditoria de eventos ──────────────────────────────────────────────
         const auditLogs: Array<Omit<AuditLog, '_id'>> = [
-          { event: 'account_created', userId, restaurantId, data: { email: data.email, name: data.person.name }, createdAt: now },
+          { event: 'account_created', userId, restaurantId, data: { email, name: data.person.name }, createdAt: now },
           { event: 'restaurant_created', userId, restaurantId, data: { restaurantName: data.restaurantName }, createdAt: now },
           { event: 'terms_accepted', userId, restaurantId, data: { termsAccepted: true }, createdAt: now },
           { event: 'onboarding_completed', userId, restaurantId, data: { defaultAccounts: 1, defaultCategories: DEFAULT_CATEGORIES.length }, createdAt: now },
@@ -144,7 +146,7 @@ export class RegisterUseCase {
         const tokens = await jwt.generate({
           tenantId: TENANT,
           subject: userId,
-          claims: { name: data.person.name, email: data.email, role: UserRole.Owner, status: UserStatus.Active, restaurantId },
+          claims: { name: data.person.name, email, role: UserRole.Owner, status: UserStatus.Active, restaurantId },
         })
 
         result = {
@@ -153,7 +155,7 @@ export class RegisterUseCase {
           user: {
             _id: userId,
             person: { _id: personId, name: data.person.name },
-            email: data.email,
+            email,
             role: UserRole.Owner,
             status: UserStatus.Active,
             restaurantId,
