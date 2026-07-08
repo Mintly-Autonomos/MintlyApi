@@ -71,13 +71,20 @@ export class PasswordRecoveryUseCase {
       throw new UnauthorizedError('Token inválido ou expirado.')
     }
 
+    // Não redefine senha de conta não-ativa (inativa/bloqueada) mesmo com token
+    // válido — a conta pode ter sido bloqueada DEPOIS de o link ter sido emitido.
+    // Mensagem genérica (não revela o bloqueio). O token já foi queimado (fail-closed).
+    const user = await this.authRepo.findById(record.userId, ctx).catch(() => null)
+    if (!user || user.status !== 'active') {
+      throw new UnauthorizedError('Token inválido ou expirado.')
+    }
+
     const passwordHash = hashPassword(input.newPassword)
 
     await this.authRepo.updatePassword(record.userId, passwordHash, ctx)
     await this.revokeAllSessions(record.userId, ctx)
 
-    const user = await this.authRepo.findById(record.userId, ctx).catch(() => null)
-    await logAudit('password_reset', record.userId, ctx.env, user?.restaurantId, {}).catch(() => null)
+    await logAudit('password_reset', record.userId, ctx.env, user.restaurantId, {}).catch(() => null)
   }
 
   private async revokeAllSessions (userId: string, ctx: RequestContext): Promise<void> {

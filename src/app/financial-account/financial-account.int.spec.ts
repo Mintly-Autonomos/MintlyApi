@@ -136,6 +136,25 @@ describe('Financial Account (Integration)', () => {
     expect(body.payload.length).toBeGreaterThan(0)
   })
 
+  it('page negativo é clampado (não estoura 500 por skip negativo)', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/financial-accounts?page=-1&size=10',
+      headers: { 'x-restaurant-id': fakeRestaurantId, authorization: `Bearer ${testToken}`, env: 'test' },
+    })
+    expect(response.statusCode).toBe(200)
+  })
+
+  it('operador Mongo na query ($where) é removido (anti-injeção)', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/financial-accounts?$where=sleep(100)',
+      headers: { 'x-restaurant-id': fakeRestaurantId, authorization: `Bearer ${testToken}`, env: 'test' },
+    })
+    // sanitizeFilter descarta a chave $where → lista normalmente, sem executar JS server-side.
+    expect(response.statusCode).toBe(200)
+  })
+
   // ---------------------------------------------------------
   // TESTE 3: ATUALIZAÇÃO PROIBIDA (Regra de Negócio)
   // ---------------------------------------------------------

@@ -46,7 +46,7 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
    * viriam de query params controlados pelo cliente e permitiriam NoSQL
    * injection no `findAll` genérico.
    */
-  private sanitizeFilter (filter: Record<string, any>): Record<string, any> {
+  protected sanitizeFilter (filter: Record<string, any>): Record<string, any> {
     const clean: Record<string, any> = {}
     for (const [key, value] of Object.entries(filter)) {
       if (!key.startsWith('$')) clean[key] = value
@@ -163,7 +163,12 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
 
     switch (q.kind) {
       case 'mongo:pipeline': {
-        const result = await collection.aggregate(q.pipeline).toArray()
+        // Escopo de tenant também no pipeline: prepend de um $match por
+        // restaurantId (senão um pipeline com input do cliente vazaria cross-tenant).
+        const pipeline = ctx.restaurantId == null
+          ? q.pipeline
+          : [{ $match: { restaurantId: ctx.restaurantId } }, ...q.pipeline]
+        const result = await collection.aggregate(pipeline).toArray()
         return result as Q
       }
       case 'mongo:filter': {

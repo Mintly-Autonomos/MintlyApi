@@ -73,12 +73,16 @@ export class FinancialAccountRepository extends MongodbCrudRepository<FinancialA
     // vazasse pro filtro do Mongo, a listagem via client oficial sempre voltaria vazia.
     const { page = 1, size = 10, orderBy, orderDirection, createdAtDirection, isMultipleResponse, ...queryFilter } = filter
 
-    const pageNum = Number(page) || 1
-    const sizeNum = Number(size) || 10
+    // Clamp (igual à base): page >= 1 evita skip negativo (que estoura 500);
+    // size entre 1 e 100 evita página gigante.
+    const pageNum = Math.max(1, Math.floor(Number(page) || 1))
+    const sizeNum = Math.min(100, Math.max(1, Math.floor(Number(size) || 10)))
     const skip = (pageNum - 1) * sizeNum
 
-    // FIX (tenant scoping): nunca lista contas de outro restaurante.
-    const scopedFilter = { ...queryFilter, restaurantId: ctx.restaurantId }
+    // FIX (tenant scoping): nunca lista contas de outro restaurante. sanitizeFilter
+    // remove chaves com operador Mongo ($where, $gt…) vindas de query param — sem
+    // isso o override furava a proteção anti-NoSQL-injection da base (e divergia do count).
+    const scopedFilter = { ...this.sanitizeFilter(queryFilter), restaurantId: ctx.restaurantId }
 
     // Sort duplo: status:1 agrupa "active" antes de "inactive"; name:1 desempata.
     const customSort = { status: 1, name: 1 }
