@@ -60,7 +60,6 @@ describe('PATCH /financial-accounts/:id/inactivate', () => {
         name: `Conta ${Math.random().toString(36).slice(2, 8)}`,
         type: 'cash',
         status: 'active',
-        isDefault: false,
         audit: { createdAt: new Date(), updatedAt: new Date() },
         ...overrides,
       },

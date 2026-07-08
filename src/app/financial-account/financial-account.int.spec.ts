@@ -173,7 +173,6 @@ describe('Financial Account (Integration)', () => {
         name: 'Caixa Integração',
         type: 'cash',
         status: 'active',
-        isDefault: false,
         restaurantId: fakeRestaurantId,
         audit: { createdAt: new Date(), updatedAt: new Date() },
       },

@@ -66,7 +66,7 @@ describe('Financial Movement lifecycle (Integration)', () => {
       method: 'POST',
       url: '/financial-accounts',
       headers: auth,
-      payload: { restaurantId, name: `iFood ${Math.random().toString(36).slice(2, 6)}`, type: 'platform', status: 'active', isDefault: false, feePercent: 10, settlementDays: 14, audit: { createdAt: new Date(), updatedAt: new Date() } },
+      payload: { restaurantId, name: `iFood ${Math.random().toString(36).slice(2, 6)}`, type: 'platform', status: 'active', feePercent: 10, settlementDays: 14, audit: { createdAt: new Date(), updatedAt: new Date() } },
     })
     expect(res.statusCode).toBe(201)
     return res.json().payload._id as string
