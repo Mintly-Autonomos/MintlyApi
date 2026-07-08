@@ -4,16 +4,11 @@ import { ResponseBuilder, ResponseStructure } from '../../core/builders/response
 import { financialAccountInsertSchema, financialAccountUpdateSchema, FinancialAccount } from 'mintly-lib'
 import { FinancialAccountRepository } from './financial-account-repository'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
+import { Resource } from '../../core/types/resource'
 import { SetDefaultAccountUseCase } from './use-cases/set-default-account.use-case'
 import { InactivateAccountUseCase } from './use-cases/inactivate-account.use-case'
+import { escapeRegex } from '../../core/util/escape-regex'
 import { StatusCodes } from 'http-status-codes'
-
-/**
- * Escapa metacaracteres de regex no input do cliente.
- * Sem isso, o termo de busca vai direto para o $regex → regex injection / ReDoS.
- */
-const escapeRegex = (value: string): string =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 export class FinancialAccountController extends CrudController<FinancialAccount, string> {
   constructor (
@@ -30,6 +25,7 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
       financialAccountRepo,
       financialAccountInsertSchema as any,
       financialAccountUpdateSchema as any,
+      Resource.FinancialAccount,
     )
   }
 
@@ -66,10 +62,9 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
     await this.setDefaultUseCase.execute(id, ctx)
 
     return new ResponseBuilder()
-      .response(reply)
       .status(StatusCodes.OK)
       .payload({ message: 'Conta definida como padrão com sucesso.' })
-      .build()
+      .send(reply)
   }
 
   /**
@@ -85,9 +80,8 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
     await this.inactivateUseCase.execute(id, ctx, replacementDefaultId)
 
     return new ResponseBuilder()
-      .response(reply)
       .status(StatusCodes.OK)
       .payload({ message: 'Conta inativada com sucesso.' })
-      .build()
+      .send(reply)
   }
 }

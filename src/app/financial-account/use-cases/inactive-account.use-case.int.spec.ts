@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MongoMemoryReplSet } from 'mongodb-memory-server'
 import { FastifyInstance } from 'fastify'
+import { ObjectId, Decimal128 } from 'mongodb'
 import { mongoConnection } from '../../../infrastructure/db/mongodb'
 import { buildServer } from '../../../infrastructure/server/build-server'
 import { FinancialAccountRepository } from '../financial-account-repository'
@@ -59,7 +60,6 @@ describe('PATCH /financial-accounts/:id/inactivate', () => {
         name: `Conta ${Math.random().toString(36).slice(2, 8)}`,
         type: 'cash',
         status: 'active',
-        isDefault: false,
         audit: { createdAt: new Date(), updatedAt: new Date() },
         ...overrides,
       },
@@ -108,10 +108,14 @@ describe('PATCH /financial-accounts/:id/inactivate', () => {
     const { auth, restaurantId } = await setup(env)
     // Cria uma conta extra para garantir que não é a única ativa.
     await createAccount(auth, restaurantId, { name: 'Outra Ativa' })
-    const comSaldoId = await createAccount(auth, restaurantId, {
-      name: 'Com Saldo',
-      availableBalance: 100,
-    })
+    const comSaldoId = await createAccount(auth, restaurantId, { name: 'Com Saldo' })
+
+    // O POST não permite abrir conta com saldo (A3): saldo real só vem de
+    // movimentação. Aqui setamos direto no banco p/ montar o cenário.
+    await mongoConnection.getDatabase(env).collection('financial_accounts').updateOne(
+      { _id: new ObjectId(comSaldoId) },
+      { $set: { availableBalance: Decimal128.fromString('100.00') } },
+    )
 
     const res = await inactivate(auth, comSaldoId)
     expect(res.statusCode).toBe(409)

@@ -111,6 +111,17 @@ describe('/people (integração, protegida por JWT)', () => {
     expect(res.json().pagination).toMatchObject({ totalItems: 2, totalPages: 1 })
   })
 
+  it('GET paginado: totalItems é o total (countDocuments), não o tamanho da página', async () => {
+    await create('P1')
+    await create('P2')
+    await create('P3')
+    const res = await server.inject({ method: 'GET', url: '/people?page=1&size=2', headers: auth })
+    expect(res.statusCode).toBe(200)
+    // Página traz 2, mas o total é 3 → totalPages = ceil(3/2) = 2.
+    expect(res.json().payload).toHaveLength(2)
+    expect(res.json().pagination).toMatchObject({ totalItems: 3, totalPages: 2 })
+  })
+
   it('GET lista sem size usa o padrão de paginação', async () => {
     await create('Paginado')
     const res = await server.inject({ method: 'GET', url: '/people', headers: auth })
@@ -140,8 +151,13 @@ describe('/people (integração, protegida por JWT)', () => {
     expect(gone.statusCode).toBe(404)
   })
 
-  it('DELETE de id inexistente devolve 500 (comportamento atual do repo)', async () => {
+  it('DELETE de id inexistente devolve 404', async () => {
     const res = await server.inject({ method: 'DELETE', url: '/people/507f1f77bcf86cd799439011', headers: auth })
-    expect(res.statusCode).toBe(500)
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('DELETE de id malformado devolve 404 (não 500)', async () => {
+    const res = await server.inject({ method: 'DELETE', url: '/people/nao-e-objectid', headers: auth })
+    expect(res.statusCode).toBe(404)
   })
 })

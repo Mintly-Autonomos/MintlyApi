@@ -10,25 +10,26 @@ import * as jwtModule from '../../../infrastructure/jwt/jwt-service'
 const mockFindByEmail = vi.hoisted(() => vi.fn())
 const mockUpdateLastAccess = vi.hoisted(() => vi.fn())
 const mockResetAttempts = vi.hoisted(() => vi.fn())
-const mockIncrementAttempts = vi.hoisted(() => vi.fn())
-const mockSetBlock = vi.hoisted(() => vi.fn())
+const mockRegisterFailedAttempt = vi.hoisted(() => vi.fn())
 const mockGenerate = vi.hoisted(() => vi.fn())
 const mockRefresh = vi.hoisted(() => vi.fn())
 const mockRevoke = vi.hoisted(() => vi.fn())
+const mockValidate = vi.hoisted(() => vi.fn())
+const mockFindById = vi.hoisted(() => vi.fn())
 const mockLogAudit = vi.hoisted(() => vi.fn())
 
 vi.mock('../auth-repository', () => ({
   AuthRepository: class {
     findByEmail = mockFindByEmail
+    findById = mockFindById
     updateLastAccess = mockUpdateLastAccess
     resetLoginAttempts = mockResetAttempts
-    incrementLoginAttempts = mockIncrementAttempts
-    setTemporaryBlock = mockSetBlock
+    registerFailedAttempt = mockRegisterFailedAttempt
   },
 }))
 
 vi.mock('../../../infrastructure/jwt/jwt-service', () => ({
-  getJwtService: vi.fn(() => ({ generate: mockGenerate, refresh: mockRefresh, revokeRefreshToken: mockRevoke })),
+  getJwtService: vi.fn(() => ({ generate: mockGenerate, refresh: mockRefresh, revokeRefreshToken: mockRevoke, validate: mockValidate })),
 }))
 
 vi.mock('../../audit/audit-service', () => ({ logAudit: mockLogAudit }))
@@ -63,10 +64,12 @@ describe('AuthUseCase', () => {
     vi.clearAllMocks()
     mockUpdateLastAccess.mockResolvedValue(undefined)
     mockResetAttempts.mockResolvedValue(undefined)
-    mockIncrementAttempts.mockResolvedValue(1)
-    mockSetBlock.mockResolvedValue(undefined)
+    mockRegisterFailedAttempt.mockResolvedValue({ attempts: 1, blocked: false })
     mockLogAudit.mockResolvedValue(undefined)
     mockGenerate.mockResolvedValue(MOCK_TOKENS)
+    mockRevoke.mockResolvedValue(undefined)
+    mockValidate.mockResolvedValue({ succeeded: true, subject: 'user-id-123' })
+    mockFindById.mockResolvedValue(MOCK_USER)
     useCase = new AuthUseCase()
   })
 
@@ -107,12 +110,18 @@ describe('AuthUseCase', () => {
     it('registra auditoria de login com ip/userAgent', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
       await useCase.login('joao@restaurante.com', 'Senha123', CTX, { ip: '1.2.3.4', userAgent: 'jest' })
-      expect(mockLogAudit).toHaveBeenCalledWith('login', 'user-id-123', expect.objectContaining({ ip: '1.2.3.4' }), 'rest-1', 'default')
+      expect(mockLogAudit).toHaveBeenCalledWith('login', 'user-id-123', 'default', 'rest-1', expect.objectContaining({ ip: '1.2.3.4' }))
     })
 
     it('lança UnauthorizedError quando o usuário não existe', async () => {
       mockFindByEmail.mockResolvedValue(null)
       await expect(useCase.login('x@x.com', 'Senha123', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
+    })
+
+    it('normaliza o e-mail (trim + lowercase) antes de buscar', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+      await useCase.login('  JOAO@Restaurante.COM ', 'Senha123', CTX)
+      expect(mockFindByEmail).toHaveBeenCalledWith('joao@restaurante.com', CTX)
     })
 
     it('conta inativa lança ForbiddenError', async () => {
@@ -131,23 +140,22 @@ describe('AuthUseCase', () => {
     })
 
     it('bloqueio temporário ativo lança TooManyRequestsError', async () => {
-      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, blockedUntil: new Date(Date.now() + 600_000).toISOString() })
+      mockFindByEmail.mockResolvedValue({ ...MOCK_USER, blockedUntil: new Date(Date.now() + 600_000) })
       await expect(useCase.login('joao@restaurante.com', 'Senha123', CTX)).rejects.toBeInstanceOf(TooManyRequestsError)
     })
 
-    it('senha errada incrementa tentativas, audita e lança UnauthorizedError', async () => {
+    it('senha errada registra a tentativa (atômico), audita e lança UnauthorizedError', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
       await expect(useCase.login('joao@restaurante.com', 'Errada1', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
-      expect(mockIncrementAttempts).toHaveBeenCalledWith('user-id-123', CTX)
-      expect(mockLogAudit).toHaveBeenCalledWith('login_failed', 'user-id-123', expect.anything(), 'rest-1', 'default')
+      expect(mockRegisterFailedAttempt).toHaveBeenCalledWith('user-id-123', expect.any(Number), expect.any(Date), CTX)
+      expect(mockLogAudit).toHaveBeenCalledWith('login_failed', 'user-id-123', 'default', 'rest-1', expect.anything())
     })
 
-    it('ao atingir o limite de tentativas, bloqueia temporariamente', async () => {
+    it('ao atingir o limite de tentativas (blocked=true), audita o bloqueio', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
-      mockIncrementAttempts.mockResolvedValue(5)
+      mockRegisterFailedAttempt.mockResolvedValue({ attempts: 5, blocked: true })
       await useCase.login('joao@restaurante.com', 'Errada1', CTX).catch(() => null)
-      expect(mockSetBlock).toHaveBeenCalled()
-      expect(mockLogAudit).toHaveBeenCalledWith('account_temporarily_blocked', 'user-id-123', expect.anything(), 'rest-1', 'default')
+      expect(mockLogAudit).toHaveBeenCalledWith('account_temporarily_blocked', 'user-id-123', 'default', 'rest-1', expect.anything())
     })
 
     it('não vaza qual campo está errado (email vs senha)', async () => {
@@ -182,15 +190,15 @@ describe('AuthUseCase', () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
       mockLogAudit.mockRejectedValue(new Error('audit indisponível'))
       await expect(useCase.login('joao@restaurante.com', 'Errada1', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
-      expect(mockIncrementAttempts).toHaveBeenCalledWith('user-id-123', CTX)
+      expect(mockRegisterFailedAttempt).toHaveBeenCalledWith('user-id-123', expect.any(Number), expect.any(Date), CTX)
     })
 
-    it('bloqueio temporário é aplicado mesmo se a auditoria de bloqueio falhar', async () => {
+    it('bloqueio temporário é aplicado (registerFailedAttempt) mesmo se a auditoria de bloqueio falhar', async () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
-      mockIncrementAttempts.mockResolvedValue(5)
+      mockRegisterFailedAttempt.mockResolvedValue({ attempts: 5, blocked: true })
       mockLogAudit.mockRejectedValue(new Error('audit indisponível'))
       await expect(useCase.login('joao@restaurante.com', 'Errada1', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
-      expect(mockSetBlock).toHaveBeenCalled()
+      expect(mockRegisterFailedAttempt).toHaveBeenCalled()
     })
 
     it('lança UnauthorizedError quando o passwordHash está malformado (sem separador)', async () => {
@@ -218,13 +226,27 @@ describe('AuthUseCase', () => {
       expect(err).toBeInstanceOf(UnauthorizedError)
       expect(err.message).toBe('Token inválido')
     })
+
+    it('nega refresh de usuário desativado e revoga o refresh token', async () => {
+      mockRefresh.mockResolvedValue({ succeeded: true, tokens: { accessToken: 'na', refreshToken: 'nr' } })
+      mockFindById.mockResolvedValue({ ...MOCK_USER, status: 'inactive' })
+      await expect(useCase.refresh('valid', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
+      expect(mockRevoke).toHaveBeenCalledWith('nr')
+    })
+
+    it('nega refresh quando o usuário não existe mais', async () => {
+      mockRefresh.mockResolvedValue({ succeeded: true, tokens: { accessToken: 'na', refreshToken: 'nr' } })
+      mockFindById.mockResolvedValue(null)
+      await expect(useCase.refresh('valid', CTX)).rejects.toBeInstanceOf(UnauthorizedError)
+      expect(mockRevoke).toHaveBeenCalledWith('nr')
+    })
   })
 
   describe('logout', () => {
     it('revoga o refresh token e audita com restaurantId quando há userId', async () => {
       await useCase.logout('rt', CTX, 'user-id-123', 'rest-1')
       expect(mockRevoke).toHaveBeenCalledWith('rt')
-      expect(mockLogAudit).toHaveBeenCalledWith('logout', 'user-id-123', {}, 'rest-1', 'default')
+      expect(mockLogAudit).toHaveBeenCalledWith('logout', 'user-id-123', 'default', 'rest-1', {})
     })
 
     it('revoga sem auditar quando não há userId', async () => {

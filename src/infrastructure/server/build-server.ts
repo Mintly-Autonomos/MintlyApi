@@ -11,37 +11,54 @@ import { healthRoutes } from '../../app/health/health-routes'
 import { authRoutes } from '../../app/auth/auth-routes'
 import { verifyJwt } from '../../core/hooks/verify-jwt'
 import { BaseError } from '../../core/errors/core/base-error'
+import { assertValidEnv } from '../../app/environment/env-allowlist'
 
 export async function buildServer (server: FastifyInstance = Fastify()): Promise<FastifyInstance> {
   await server.register(cors, { origin: true })
 
-  await server.register(swagger, {
-    openapi: {
-      openapi: '3.0.3',
-      info: {
-        title: 'Mintly API',
-        description: 'Mintly backend API documentation',
-        version: '1.0.0',
-      },
-      servers: [
-        {
-          url: process.env.API_URL ?? 'http://localhost:3000',
-          description: 'Current environment',
+  // Documentação (Swagger) só fora de produção: em prod, /documentation exporia
+  // publicamente todo o mapa de rotas/contratos da API.
+  if (process.env.NODE_ENV !== 'production') {
+    await server.register(swagger, {
+      openapi: {
+        openapi: '3.0.3',
+        info: {
+          title: 'Mintly API',
+          description: 'Mintly backend API documentation',
+          version: '1.0.0',
         },
-      ],
-      tags: [
-        { name: 'people', description: 'People endpoints' },
-        { name: 'system', description: 'System endpoints' },
-      ],
-    },
-  })
+        servers: [
+          {
+            url: process.env.API_URL ?? 'http://localhost:3000',
+            description: 'Current environment',
+          },
+        ],
+        tags: [
+          { name: 'people', description: 'People endpoints' },
+          { name: 'system', description: 'System endpoints' },
+        ],
+      },
+    })
 
-  await server.register(swaggerUi, {
-    routePrefix: '/documentation',
-    uiConfig: {
-      docExpansion: 'list',
-      deepLinking: false,
-    },
+    await server.register(swaggerUi, {
+      routePrefix: '/documentation',
+      uiConfig: {
+        docExpansion: 'list',
+        deepLinking: false,
+      },
+    })
+  }
+
+  // Valida o header `env` contra a allowlist (app.valid_environments) quando
+  // presente — rotas sem env (ex.: /health) passam direto; env ausente segue
+  // tratado pelo MissingEnvError na montagem do contexto. Permissivo quando a
+  // allowlist está vazia (dev/testes). Ver env-allowlist.ts.
+  server.addHook('onRequest', async (request) => {
+    const rawEnv = request.headers.env
+    const env = Array.isArray(rawEnv) ? rawEnv[0] : rawEnv
+    if (env && String(env).trim() !== '') {
+      await assertValidEnv(String(env))
+    }
   })
 
   server.addHook('onSend', async (_request, reply, payload) => {
@@ -50,6 +67,16 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
   })
 
   server.setErrorHandler((error, _request, reply) => {
+    // Erro de validação de schema do Fastify (body/params/query): 400 no mesmo
+    // envelope de validação, senão cairia no 500 genérico abaixo.
+    if ((error as { validation?: unknown }).validation) {
+      return reply.status(400).send({
+        code: 'VALIDATION_ERROR',
+        message: 'Validation failed',
+        details: (error as { validation?: unknown }).validation,
+      })
+    }
+
     if (error instanceof BaseError) {
       return reply.status(error.statusCode).send({
         code: error.code,

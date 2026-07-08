@@ -56,8 +56,8 @@ export class ChangeMovementStatusUseCase {
         // Reverte o efeito do status atual e aplica o do novo status.
         const oldImpact = balanceImpact({ direction: mov.direction, status: oldStatus as any, grossValue: gross, netValue: net })
         const newImpact = balanceImpact({ direction: mov.direction, status: newStatus as any, grossValue: gross, netValue: net })
-        await applyBalanceImpact(accounts, accountId, oldImpact, -1, session, now)
-        await applyBalanceImpact(accounts, accountId, newImpact, 1, session, now)
+        await applyBalanceImpact(accounts, accountId, ctx.restaurantId, oldImpact, -1, session, now)
+        await applyBalanceImpact(accounts, accountId, ctx.restaurantId, newImpact, 1, session, now)
 
         const historyEntry = { at: now, by: ctx.userId ?? 'system', action: `status:${oldStatus}->${newStatus}` }
 

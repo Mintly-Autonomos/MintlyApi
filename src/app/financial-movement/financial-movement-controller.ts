@@ -22,29 +22,32 @@ export class FinancialMovementController {
     const result = await this.registerUseCase.execute(request.body as RegisterMovementInput, ctx)
 
     return new ResponseBuilder()
-      .response(reply)
       .status(StatusCodes.CREATED)
       .payload(result)
-      .build()
+      .send(reply)
   }
 
   /** GET /financial-movements — listagem (recente→antiga, busca/filtro). */
   async list (request: any, reply: any) {
     const ctx = buildRequestContext(request)
     const filter = (request.query ?? {}) as MovementListFilter
-    const result = await this.movementRepo.findAll(filter, ctx)
+    // `totalItems` = total que casa o filtro (countDocuments), não o tamanho da
+    // página — senão `totalPages` fica sempre 1 e o front não pagina.
+    const [result, totalItems] = await Promise.all([
+      this.movementRepo.findAll(filter, ctx),
+      this.movementRepo.count(filter, ctx),
+    ])
     const size = Number(filter.size) || 10
 
     return new ResponseBuilder()
-      .response(reply)
       .status(StatusCodes.OK)
       .payload(result)
       .pagination({
         ...filter,
-        totalItems: result.length,
-        totalPages: Math.ceil(result.length / size),
+        totalItems,
+        totalPages: Math.ceil(totalItems / size),
       } as any)
-      .build()
+      .send(reply)
   }
 
   /** PATCH /financial-movements/:id/status — muda status (corrige saldo). */
@@ -54,7 +57,7 @@ export class FinancialMovementController {
     const { status } = (request.body ?? {}) as { status: string }
     const result = await this.changeStatusUseCase.execute(id, status, ctx)
 
-    return new ResponseBuilder().response(reply).status(StatusCodes.OK).payload(result).build()
+    return new ResponseBuilder().status(StatusCodes.OK).payload(result).send(reply)
   }
 
   /** PATCH /financial-movements/:id — edita (reverte+aplica saldo). */
@@ -63,7 +66,7 @@ export class FinancialMovementController {
     const { id } = request.params
     const result = await this.updateUseCase.execute(id, request.body as UpdateMovementInput, ctx)
 
-    return new ResponseBuilder().response(reply).status(StatusCodes.OK).payload(result).build()
+    return new ResponseBuilder().status(StatusCodes.OK).payload(result).send(reply)
   }
 
   /** POST /financial-movements/recompute-balances — reconcilia o saldo da conta. */
@@ -72,6 +75,6 @@ export class FinancialMovementController {
     const { accountId } = (request.body ?? {}) as { accountId: string }
     const result = await this.recomputeUseCase.execute(accountId, ctx)
 
-    return new ResponseBuilder().response(reply).status(StatusCodes.OK).payload(result).build()
+    return new ResponseBuilder().status(StatusCodes.OK).payload(result).send(reply)
   }
 }

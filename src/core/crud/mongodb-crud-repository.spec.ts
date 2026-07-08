@@ -127,7 +127,7 @@ describe('MongodbCrudRepository (CRUD)', () => {
       CTX,
     )
 
-    expect(c.sort).toHaveBeenCalledWith({ name: 1, createdAt: -1 })
+    expect(c.sort).toHaveBeenCalledWith({ name: 1, 'audit.createdAt': -1 })
   })
 
   it('findAll usa page=1/size=10 quando page/size não coercem para número válido', async () => {
@@ -142,6 +142,17 @@ describe('MongodbCrudRepository (CRUD)', () => {
     // skip = (1 - 1) * 10 = 0 ; limit = 10
     expect(c.skip).toHaveBeenCalledWith(0)
     expect(c.limit).toHaveBeenCalledWith(10)
+  })
+
+  it('count usa countDocuments com o filtro (strip de paginação + tenant)', async () => {
+    const col = mockCollection({ countDocuments: vi.fn().mockResolvedValue(7) })
+    const total = await repo.count({ page: 2, size: 5, orderBy: 'name', name: 'Ada' } as any, CTX)
+    expect(total).toBe(7)
+    const passedFilter = col.countDocuments.mock.calls[0][0]
+    // paginação/orderBy fora; filtro real dentro.
+    expect(passedFilter).toMatchObject({ name: 'Ada' })
+    expect(passedFilter.page).toBeUndefined()
+    expect(passedFilter.orderBy).toBeUndefined()
   })
 
   it('update retorna o doc atualizado', async () => {

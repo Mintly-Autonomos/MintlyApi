@@ -9,7 +9,7 @@ import { RequestContext } from '../../core/context/request-context'
  */
 export type UserRecord = User & {
   loginAttempts?: number
-  blockedUntil?: string | null
+  blockedUntil?: Date | null
 }
 
 export class AuthRepository {
@@ -36,26 +36,60 @@ export class AuthRepository {
     )
   }
 
-  async incrementLoginAttempts (userId: string, ctx: RequestContext): Promise<number> {
+  /**
+   * Registra uma tentativa de login falha de forma ATÔMICA: incrementa
+   * `loginAttempts` e, se o novo valor cruzar `maxAttempts`, grava o bloqueio e
+   * zera o contador na MESMA operação (update com pipeline de agregação). Assim
+   * não há corrida entre "incrementar" e "bloquear" (o gate não-atômico deixava
+   * o lockout ser burlado sob concorrência). Zerar o contador ao bloquear evita
+   * o re-bloqueio imediato quando a janela expira (DoS da conta legítima).
+   *
+   * @returns `attempts` (contagem que disparou o evento) e `blocked` (se este
+   *   attempt cruzou o teto e bloqueou a conta agora).
+   */
+  async registerFailedAttempt (
+    userId: string,
+    maxAttempts: number,
+    blockedUntil: Date,
+    ctx: RequestContext,
+  ): Promise<{ attempts: number; blocked: boolean }> {
     const result = await this.getCollection(ctx).findOneAndUpdate(
       { _id: new ObjectId(userId) },
-      { $inc: { loginAttempts: 1 }, $set: { 'audit.updatedAt': new Date() } },
+      [
+        {
+          $set: {
+            loginAttempts: { $add: [{ $ifNull: ['$loginAttempts', 0] }, 1] },
+            'audit.updatedAt': '$$NOW',
+          },
+        },
+        {
+          // `$loginAttempts` aqui já é o valor incrementado (estágio anterior).
+          // `blockedUntil` é gravado como Date (BSON), consistente com as demais datas.
+          $set: {
+            blockedUntil: {
+              $cond: [{ $gte: ['$loginAttempts', maxAttempts] }, blockedUntil, '$blockedUntil'],
+            },
+            loginAttempts: {
+              $cond: [{ $gte: ['$loginAttempts', maxAttempts] }, 0, '$loginAttempts'],
+            },
+          },
+        },
+      ],
       { returnDocument: 'after' },
     )
-    return (result as UserRecord | null)?.loginAttempts ?? 1
+    const doc = result as UserRecord | null
+    // Antes deste attempt a conta não estava bloqueada-no-futuro (o gate garante):
+    // se `blockedUntil` agora é o instante que passamos, foi este attempt que bloqueou.
+    const stored = doc?.blockedUntil != null ? new Date(doc.blockedUntil).getTime() : null
+    const blocked = stored === blockedUntil.getTime()
+    const attempts = blocked ? maxAttempts : (doc?.loginAttempts ?? 1)
+    return { attempts, blocked }
   }
 
   async resetLoginAttempts (userId: string, ctx: RequestContext): Promise<void> {
     await this.getCollection(ctx).updateOne(
       { _id: new ObjectId(userId) },
       { $set: { loginAttempts: 0, blockedUntil: null, 'audit.updatedAt': new Date() } },
-    )
-  }
-
-  async setTemporaryBlock (userId: string, blockedUntil: Date, ctx: RequestContext): Promise<void> {
-    await this.getCollection(ctx).updateOne(
-      { _id: new ObjectId(userId) },
-      { $set: { blockedUntil: blockedUntil.toISOString(), 'audit.updatedAt': new Date() } },
     )
   }
 

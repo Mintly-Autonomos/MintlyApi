@@ -1,3 +1,5 @@
+import { escapeRegex } from '../../util/escape-regex'
+
 export class FilterBuilder {
   protected filter: any = {}
 
@@ -14,8 +16,9 @@ export class FilterBuilder {
   }
 
   regex (value: string, matchField: string, options: string | null = 'i'): this {
+    // Escapa o input: busca literal segura (sem ReDoS/injeção de padrão).
     this.filter[matchField] = {
-      $regex: value,
+      $regex: escapeRegex(value),
       $options: options,
     }
 
@@ -36,10 +39,11 @@ export class FilterBuilder {
   }
 
   exists (value: boolean, matchField: string, notEquals: any = null): this {
-    this.filter[matchField] = {
-      $exists: value,
-      $ne: notEquals,
-    }
+    // exists(false) com `$ne: null` nunca casa (campo ausente é tratado como
+    // null pelo `$ne`). Só combina o `$ne` quando exige que o campo EXISTA.
+    this.filter[matchField] = value
+      ? { $exists: true, $ne: notEquals }
+      : { $exists: false }
 
     return this
   }

@@ -64,11 +64,14 @@ export class FinancialCategoryRepository extends MongodbCrudRepository<Financial
     const collection = this.getCollection(ctx)
     const { page = 1, size = 10, orderBy, orderDirection, createdAtDirection, isMultipleResponse, ...queryFilter } = filter
 
-    const pageNum = Number(page) || 1
-    const sizeNum = Number(size) || 10
+    // Clamp (igual à base): page >= 1 evita skip negativo (500); size 1..100.
+    const pageNum = Math.max(1, Math.floor(Number(page) || 1))
+    const sizeNum = Math.min(100, Math.max(1, Math.floor(Number(size) || 10)))
     const skip = (pageNum - 1) * sizeNum
 
-    const scopedFilter = { ...queryFilter, restaurantId: ctx.restaurantId }
+    // sanitizeFilter: remove operadores Mongo ($…) de query param (anti-injeção;
+    // sem isso o override furava a proteção da base e divergia do count).
+    const scopedFilter = { ...this.sanitizeFilter(queryFilter), restaurantId: ctx.restaurantId }
     const customSort = { status: 1, name: 1 }
 
     const result = await collection

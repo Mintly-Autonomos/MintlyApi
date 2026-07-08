@@ -1,10 +1,12 @@
-import { createHash, randomBytes, scryptSync } from 'crypto'
+import { createHash, randomBytes } from 'crypto'
 import { AuthRepository } from '../auth-repository'
 import { PasswordResetRepository } from '../password-reset-repository'
 import { getEmailService } from '../../../infrastructure/email/email-service'
 import { logAudit } from '../../audit/audit-service'
 import { UnauthorizedError } from '../../../core/errors/auth/unauthorized-error'
 import { RequestContext } from '../../../core/context/request-context'
+import { normalizeEmail } from '../normalize-email'
+import { hashPassword } from '../password-hash'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import {
   requestRecoverySchema,
@@ -26,10 +28,10 @@ export class PasswordRecoveryUseCase {
   async requestRecovery (input: RequestRecoveryInput, ctx: RequestContext): Promise<void> {
     requestRecoverySchema.parse(input)
 
-    const user = await this.authRepo.findByEmail(input.email, ctx)
+    const user = await this.authRepo.findByEmail(normalizeEmail(input.email), ctx)
 
-    // Não revela se o e-mail existe
-    if (!user || user.status === 'inactive') return
+    // Não revela se o e-mail existe; usuário não-ativo (inativo/bloqueado) não recupera.
+    if (!user || user.status !== 'active') return
 
     // O token em claro só viaja no e-mail; no banco fica apenas o sha256,
     // para que um vazamento de leitura do banco não permita tomar contas.
@@ -51,7 +53,7 @@ export class PasswordRecoveryUseCase {
     getEmailService().sendPasswordRecovery(user.email, token)
       .catch(err => console.error('[RECOVERY] Falha ao enviar e-mail:', err))
 
-    await logAudit('password_recovery_requested', String(user._id), { email: user.email }, user.restaurantId, ctx.env).catch(() => null)
+    await logAudit('password_recovery_requested', String(user._id), ctx.env, user.restaurantId, { email: user.email }).catch(() => null)
   }
 
   async resetPassword (input: ResetPasswordInput, ctx: RequestContext): Promise<void> {
@@ -69,15 +71,20 @@ export class PasswordRecoveryUseCase {
       throw new UnauthorizedError('Token inválido ou expirado.')
     }
 
-    const salt = randomBytes(16).toString('hex')
-    const hash = scryptSync(input.newPassword, salt, 64).toString('hex')
-    const passwordHash = `${salt}:${hash}`
+    // Não redefine senha de conta não-ativa (inativa/bloqueada) mesmo com token
+    // válido — a conta pode ter sido bloqueada DEPOIS de o link ter sido emitido.
+    // Mensagem genérica (não revela o bloqueio). O token já foi queimado (fail-closed).
+    const user = await this.authRepo.findById(record.userId, ctx).catch(() => null)
+    if (!user || user.status !== 'active') {
+      throw new UnauthorizedError('Token inválido ou expirado.')
+    }
+
+    const passwordHash = hashPassword(input.newPassword)
 
     await this.authRepo.updatePassword(record.userId, passwordHash, ctx)
     await this.revokeAllSessions(record.userId, ctx)
 
-    const user = await this.authRepo.findById(record.userId, ctx).catch(() => null)
-    await logAudit('password_reset', record.userId, {}, user?.restaurantId, ctx.env).catch(() => null)
+    await logAudit('password_reset', record.userId, ctx.env, user.restaurantId, {}).catch(() => null)
   }
 
   private async revokeAllSessions (userId: string, ctx: RequestContext): Promise<void> {

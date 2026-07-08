@@ -14,5 +14,6 @@ export async function ensure (col: Collection<Document>): Promise<void> {
   await col.createIndex({ restaurantId: 1, status: 1 })
 
   // Detecção de duplicidade (mesmo restaurante/conta/título/valor em janela curta).
-  await col.createIndex({ restaurantId: 1, 'account._id': 1, title: 1, createdAt: -1 })
+  // A query de duplicidade filtra por `audit.createdAt` (não `createdAt` de topo).
+  await col.createIndex({ restaurantId: 1, 'account._id': 1, title: 1, 'audit.createdAt': -1 })
 }

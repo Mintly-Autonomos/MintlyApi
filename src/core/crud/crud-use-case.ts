@@ -27,7 +27,7 @@ export class CrudUseCase<T, ID> {
     return await this.repository.findById(id, ctx)
   }
 
-  async find (filter: Partial<T>, ctx: RequestContext): Promise<T> {
+  async find (filter: Partial<T>, ctx: RequestContext): Promise<T | null> {
     return await this.repository.find(filter, ctx)
   }
 
@@ -36,8 +36,22 @@ export class CrudUseCase<T, ID> {
     return response
   }
 
+  async count (filter: Partial<T> & PaginationDto, ctx: RequestContext): Promise<number> {
+    return await this.repository.count(filter, ctx)
+  }
+
   async update (id: ID, item: Partial<T>, ctx: RequestContext): Promise<T> {
-    return await this.repository.update(id, item, ctx)
+    // Campos autoritativos do servidor: nunca vêm do client no update. `audit`,
+    // `restaurantId` e `_id` são descartados (senão o PATCH poderia forjar o
+    // dono do tenant ou sobrescrever a auditoria). A auditoria é renovada aqui,
+    // via dot-notation, p/ não clobbar `createdAt/By` no `$set`.
+    const { audit, restaurantId, _id, ...safe } = item as Record<string, unknown>
+    const withAudit = {
+      ...safe,
+      'audit.updatedAt': new Date(),
+      'audit.updatedBy': ctx.userId,
+    } as unknown as Partial<T>
+    return await this.repository.update(id, withAudit, ctx)
   }
 
   async delete (id: ID, ctx: RequestContext): Promise<void> {

@@ -36,7 +36,7 @@ function makeMov (over: Record<string, any> = {}) {
 function wire (opts: { mov?: any } = {}) {
   const mov = 'mov' in opts ? opts.mov : makeMov()
   const movements = { findOne: vi.fn().mockResolvedValue(mov), updateOne: vi.fn().mockResolvedValue({}) }
-  const accounts = { updateOne: vi.fn().mockResolvedValue({}) }
+  const accounts = { updateOne: vi.fn().mockResolvedValue({ matchedCount: 1 }) }
   const map: Record<string, any> = { financial_movements: movements, financial_accounts: accounts }
   mockGetDatabase.mockReturnValue({ collection: (n: string) => map[n] })
   return { movements, accounts }

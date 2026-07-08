@@ -103,7 +103,6 @@ describe('Financial Movement (Integration)', () => {
         name: `iFood ${Math.random().toString(36).slice(2, 6)}`,
         type: 'platform',
         status: 'active',
-        isDefault: false,
         feePercent: 12,
         settlementDays: 30,
         audit: { createdAt: new Date(), updatedAt: new Date() },

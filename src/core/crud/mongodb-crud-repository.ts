@@ -5,6 +5,7 @@ import { PaginationDto } from 'mintly-lib'
 import { RequestContext } from '../context/request-context'
 import { Query } from './query'
 import { UnsupportedQueryKindError } from '../errors/core/unsupported-query-kind-error'
+import { NotFoundError } from '../errors/core/not-found-error'
 
 /**
  * Repositório CRUD com backend MongoDB.
@@ -25,40 +26,74 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     return db.collection<T>(this.collectionName)
   }
 
+  /**
+   * Escopo multi-tenant: limita TODA operação da base ao `restaurantId` do
+   * contexto (que vem do JWT validado, nunca de header). Sem isto, o filtro
+   * só-por-`_id` de findById/update/delete permite ler/alterar/apagar docs de
+   * outro restaurante no mesmo banco (IDOR), e findAll/find listam sem tenant.
+   * Quando o contexto não tem `restaurantId` (fluxos internos sem tenant), não
+   * adiciona nada — preserva o comportamento anterior.
+   */
+  protected withTenant (filter: Record<string, any>, ctx: RequestContext): Record<string, any> {
+    if (ctx.restaurantId == null) {
+      return filter
+    }
+    return { ...filter, restaurantId: ctx.restaurantId }
+  }
+
+  /**
+   * Remove chaves com operadores Mongo (`$gt`, `$where`, ...) do filtro — esses
+   * viriam de query params controlados pelo cliente e permitiriam NoSQL
+   * injection no `findAll` genérico.
+   */
+  protected sanitizeFilter (filter: Record<string, any>): Record<string, any> {
+    const clean: Record<string, any> = {}
+    for (const [key, value] of Object.entries(filter)) {
+      if (!key.startsWith('$')) clean[key] = value
+    }
+    return clean
+  }
+
   async insert (item: T, ctx: RequestContext): Promise<T> {
     const collection = this.getCollection(ctx)
-    const result = await collection.insertOne(item as any)
-    return { ...item, _id: result.insertedId } as T
+    // O doc SEMPRE pertence ao restaurante do contexto: o `restaurantId` do ctx
+    // prevalece sobre qualquer valor vindo do body (anti-injeção de tenant).
+    const doc = ctx.restaurantId == null ? item : { ...item, restaurantId: ctx.restaurantId }
+    const result = await collection.insertOne(doc as any)
+    return { ...doc, _id: result.insertedId } as T
   }
 
   async findById (id: ID, ctx: RequestContext): Promise<T | null> {
+    // _id malformado não é 500: simplesmente não existe.
+    if (!ObjectId.isValid(id as string)) return null
     const collection = this.getCollection(ctx)
-    const filter = { _id: new ObjectId(id as string) } as Filter<T>
+    const filter = this.withTenant({ _id: new ObjectId(id as string) }, ctx) as Filter<T>
     const result = await collection.findOne(filter)
     return result as T | null
   }
 
-  async find (filter: Partial<T>, ctx: RequestContext, options?: { session?: ClientSession }): Promise<T> {
+  async find (filter: Partial<T>, ctx: RequestContext, options?: { session?: ClientSession }): Promise<T | null> {
     const collection = this.getCollection(ctx)
 
     // _id chega como string nos use cases; normaliza p/ ObjectId (igual a findById/update/delete).
     // Não toca em _id quando é operador (ex.: { $ne: ObjectId }).
     const normalized: any = { ...filter }
-    if (typeof normalized._id === 'string') {
+    if (typeof normalized._id === 'string' && ObjectId.isValid(normalized._id)) {
       normalized._id = new ObjectId(normalized._id)
     }
 
-    const result = await collection.findOne(normalized as Filter<T>, { session: options?.session })
-    return result as T
+    const result = await collection.findOne(this.withTenant(normalized, ctx) as Filter<T>, { session: options?.session })
+    return result as T | null
   }
 
   async findAll (filter: Partial<T> & PaginationDto, ctx: RequestContext): Promise<Array<T>> {
     const collection = this.getCollection(ctx)
-    const { page = 1, size = 10, orderBy, orderDirection = 'asc', createdAtDirection, ...queryFilter } = filter
+    // `isMultipleResponse` é um flag do client (mintly-lib) — nunca vira filtro Mongo.
+    const { page = 1, size = 10, orderBy, orderDirection = 'asc', createdAtDirection, isMultipleResponse, ...queryFilter } = filter as any
 
-    // query params chegam como string — coerciona para number antes de skip/limit
-    const pageNum = Number(page) || 1
-    const sizeNum = Number(size) || 10
+    // Coerção + clamp: page >= 1 (evita skip negativo), size entre 1 e 100 (evita página gigante).
+    const pageNum = Math.max(1, Math.floor(Number(page) || 1))
+    const sizeNum = Math.min(100, Math.max(1, Math.floor(Number(size) || 10)))
     const skip = (pageNum - 1) * sizeNum
     const sort: any = {}
 
@@ -67,11 +102,12 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     }
 
     if (createdAtDirection) {
-      sort.createdAt = createdAtDirection === 'asc' ? 1 : -1
+      // A auditoria é gravada em `audit.createdAt`, não `createdAt` de topo.
+      sort['audit.createdAt'] = createdAtDirection === 'asc' ? 1 : -1
     }
 
     const result = await collection
-      .find(queryFilter as Filter<T>)
+      .find(this.withTenant(this.sanitizeFilter(queryFilter), ctx) as Filter<T>)
       .sort(sort)
       .skip(skip)
       .limit(sizeNum)
@@ -80,9 +116,22 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     return result as T[]
   }
 
-  async update (id: ID, item: Partial<T>, ctx: RequestContext, options?: { session?: ClientSession }): Promise<T> {
+  /**
+   * Conta o total de documentos que casam o filtro (ignorando paginação) — para
+   * a paginação reportar `totalItems`/`totalPages` corretos. Usa EXATAMENTE o
+   * mesmo filtro-de-consulta do `findAll` (mesmo strip + sanitize + escopo de
+   * tenant), garantindo que a contagem corresponde à listagem.
+   */
+  async count (filter: Partial<T> & PaginationDto, ctx: RequestContext): Promise<number> {
     const collection = this.getCollection(ctx)
-    const filter = { _id: new ObjectId(id as string) } as Filter<T>
+    const { page, size, orderBy, orderDirection, createdAtDirection, isMultipleResponse, ...queryFilter } = filter as any
+    return await collection.countDocuments(this.withTenant(this.sanitizeFilter(queryFilter), ctx) as Filter<T>)
+  }
+
+  async update (id: ID, item: Partial<T>, ctx: RequestContext, options?: { session?: ClientSession }): Promise<T> {
+    if (!ObjectId.isValid(id as string)) throw new NotFoundError(this.collectionName, id)
+    const collection = this.getCollection(ctx)
+    const filter = this.withTenant({ _id: new ObjectId(id as string) }, ctx) as Filter<T>
     const updateDoc = { $set: item }
 
     const result = await collection.findOneAndUpdate(
@@ -92,19 +141,20 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
     )
 
     if (!result) {
-      throw new Error(`Item com id ${id} não encontrado`)
+      throw new NotFoundError(this.collectionName, id)
     }
 
     return result as T
   }
 
   async delete (id: ID, ctx: RequestContext): Promise<void> {
+    if (!ObjectId.isValid(id as string)) throw new NotFoundError(this.collectionName, id)
     const collection = this.getCollection(ctx)
-    const filter = { _id: new ObjectId(id as string) } as Filter<T>
+    const filter = this.withTenant({ _id: new ObjectId(id as string) }, ctx) as Filter<T>
     const result = await collection.deleteOne(filter)
 
     if (result.deletedCount === 0) {
-      throw new Error(`Item com id ${id} não encontrado`)
+      throw new NotFoundError(this.collectionName, id)
     }
   }
 
@@ -113,11 +163,16 @@ export class MongodbCrudRepository<T extends Document, ID> implements CrudReposi
 
     switch (q.kind) {
       case 'mongo:pipeline': {
-        const result = await collection.aggregate(q.pipeline).toArray()
+        // Escopo de tenant também no pipeline: prepend de um $match por
+        // restaurantId (senão um pipeline com input do cliente vazaria cross-tenant).
+        const pipeline = ctx.restaurantId == null
+          ? q.pipeline
+          : [{ $match: { restaurantId: ctx.restaurantId } }, ...q.pipeline]
+        const result = await collection.aggregate(pipeline).toArray()
         return result as Q
       }
       case 'mongo:filter': {
-        const result = await collection.find(q.filter as Filter<T>).toArray()
+        const result = await collection.find(this.withTenant(q.filter as Record<string, any>, ctx) as Filter<T>).toArray()
         return result as Q
       }
       default:

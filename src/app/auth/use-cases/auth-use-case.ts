@@ -1,17 +1,23 @@
-import { scryptSync, timingSafeEqual } from 'crypto'
 import type { User, LoginResult, RefreshResult, AuthUser } from 'mintly-lib'
 import { getJwtService } from '../../../infrastructure/jwt/jwt-service'
 import { AuthRepository, UserRecord } from '../auth-repository'
+import { hashPassword, verifyPassword } from '../password-hash'
 import { UnauthorizedError } from '../../../core/errors/auth/unauthorized-error'
 import { ForbiddenError } from '../../../core/errors/auth/forbidden-error'
 import { TooManyRequestsError } from '../../../core/errors/auth/too-many-requests-error'
 import { RequestContext } from '../../../core/context/request-context'
 import { logAudit } from '../../audit/audit-service'
+import { normalizeEmail } from '../normalize-email'
 import type { MintlyClaims } from '../jwt-claims'
 
 const TENANT = 'mintly'
 const MAX_LOGIN_ATTEMPTS = Number(process.env.MAX_LOGIN_ATTEMPTS ?? 5)
 const BLOCK_DURATION_MINUTES = Number(process.env.BLOCK_DURATION_MINUTES ?? 15)
+
+// Hash dummy (válido) usado para equalizar o tempo do login quando o e-mail não
+// existe: rodamos o mesmo scrypt do caminho de senha errada, evitando o oráculo
+// de timing que revelaria quais e-mails estão cadastrados.
+const DUMMY_PASSWORD_HASH = hashPassword('timing-equalizer')
 
 export interface LoginMeta {
   ip?: string
@@ -22,8 +28,11 @@ export class AuthUseCase {
   private readonly repo = new AuthRepository()
 
   async login (email: string, password: string, ctx: RequestContext, meta: LoginMeta = {}): Promise<LoginResult> {
-    const user = await this.repo.findByEmail(email, ctx)
+    const user = await this.repo.findByEmail(normalizeEmail(email), ctx)
     if (!user) {
+      // Roda o scrypt mesmo sem usuário: o 401 de e-mail inexistente custa ~o
+      // mesmo que o de senha errada (anti-enumeração por timing).
+      verifyPassword(password, DUMMY_PASSWORD_HASH)
       throw new UnauthorizedError('Credenciais inválidas')
     }
 
@@ -32,7 +41,7 @@ export class AuthUseCase {
       throw new TooManyRequestsError(`Conta temporariamente bloqueada. Tente novamente em ${minutesLeft} minuto(s).`)
     }
 
-    if (!this.verifyPassword(password, user.passwordHash)) {
+    if (!verifyPassword(password, user.passwordHash)) {
       await this.handleFailedAttempt(user, ctx, meta)
       throw new UnauthorizedError('Credenciais inválidas')
     }
@@ -60,7 +69,7 @@ export class AuthUseCase {
     }
     const tokens = await jwt.generate({ tenantId: TENANT, subject: userId, claims })
 
-    await logAudit('login', userId, { ip: meta.ip ?? null, userAgent: meta.userAgent ?? null }, user.restaurantId, ctx.env).catch(() => null)
+    await logAudit('login', userId, ctx.env, user.restaurantId, { ip: meta.ip ?? null, userAgent: meta.userAgent ?? null }).catch(() => null)
 
     return {
       accessToken: tokens.accessToken,
@@ -75,6 +84,20 @@ export class AuthUseCase {
     if (!result.succeeded || !result.tokens) {
       throw new UnauthorizedError(result.failureReason ?? 'Token inválido')
     }
+
+    // Reconsulta o usuário: quem foi desativado/bloqueado/removido DEPOIS do login
+    // não pode renovar o acesso — senão manteria tokens válidos por todo o refresh
+    // lifetime (7 dias). O `subject` vem do access token recém-emitido.
+    const validation = await jwt.validate(result.tokens.accessToken)
+    const userId = validation.succeeded ? validation.subject : undefined
+    const user = typeof userId === 'string' ? await this.repo.findById(userId, ctx) : null
+    if (!user || user.status !== 'active') {
+      if (result.tokens.refreshToken != null) {
+        await jwt.revokeRefreshToken(result.tokens.refreshToken).catch(() => null)
+      }
+      throw new UnauthorizedError('Sessão inválida. Faça login novamente.')
+    }
+
     return {
       accessToken: result.tokens.accessToken,
       refreshToken: result.tokens.refreshToken,
@@ -85,19 +108,20 @@ export class AuthUseCase {
     const jwt = getJwtService(ctx.env)
     await jwt.revokeRefreshToken(refreshToken)
     if (userId) {
-      await logAudit('logout', userId, {}, restaurantId, ctx.env).catch(() => null)
+      await logAudit('logout', userId, ctx.env, restaurantId, {}).catch(() => null)
     }
   }
 
   private async handleFailedAttempt (user: UserRecord, ctx: RequestContext, meta: LoginMeta): Promise<void> {
     const userId = String(user._id)
-    const attempts = await this.repo.incrementLoginAttempts(userId, ctx)
-    await logAudit('login_failed', userId, { ip: meta.ip ?? null, userAgent: meta.userAgent ?? null, attempt: attempts }, user.restaurantId, ctx.env).catch(() => null)
+    // Incremento + bloqueio (ao cruzar o teto) numa única operação atômica —
+    // sem corrida entre contar e bloquear sob concorrência.
+    const blockedUntil = new Date(Date.now() + BLOCK_DURATION_MINUTES * 60_000)
+    const { attempts, blocked } = await this.repo.registerFailedAttempt(userId, MAX_LOGIN_ATTEMPTS, blockedUntil, ctx)
+    await logAudit('login_failed', userId, ctx.env, user.restaurantId, { ip: meta.ip ?? null, userAgent: meta.userAgent ?? null, attempt: attempts }).catch(() => null)
 
-    if (attempts >= MAX_LOGIN_ATTEMPTS) {
-      const blockedUntil = new Date(Date.now() + BLOCK_DURATION_MINUTES * 60_000)
-      await this.repo.setTemporaryBlock(userId, blockedUntil, ctx)
-      await logAudit('account_temporarily_blocked', userId, { blockedUntil: blockedUntil.toISOString(), attempts }, user.restaurantId, ctx.env).catch(() => null)
+    if (blocked) {
+      await logAudit('account_temporarily_blocked', userId, ctx.env, user.restaurantId, { blockedUntil: blockedUntil.toISOString(), attempts }).catch(() => null)
     }
   }
 
@@ -106,12 +130,5 @@ export class AuthUseCase {
     const copy: Partial<User> = { ...user }
     delete copy.passwordHash
     return copy as AuthUser
-  }
-
-  private verifyPassword (password: string, stored: string): boolean {
-    const [salt, hash] = stored.split(':')
-    if (!salt || !hash) return false
-    const incoming = scryptSync(password, salt, 64)
-    return timingSafeEqual(Buffer.from(hash, 'hex'), incoming)
   }
 }

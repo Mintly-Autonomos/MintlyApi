@@ -133,7 +133,7 @@ describe('PasswordRecoveryUseCase', () => {
       mockFindByEmail.mockResolvedValue(MOCK_USER)
       await useCase.requestRecovery({ email: 'joao@restaurante.com' }, CTX)
       expect(mockLogAudit).toHaveBeenCalledWith(
-        'password_recovery_requested', 'user-id-123', expect.objectContaining({ email: 'joao@restaurante.com' }), 'rest-1', 'default',
+        'password_recovery_requested', 'user-id-123', 'default', 'rest-1', expect.objectContaining({ email: 'joao@restaurante.com' }),
       )
     })
 
@@ -177,7 +177,7 @@ describe('PasswordRecoveryUseCase', () => {
     it('registra auditoria de password_reset com restaurantId', async () => {
       mockClaim.mockResolvedValue(VALID_TOKEN_RECORD)
       await useCase.resetPassword(resetInput, CTX)
-      expect(mockLogAudit).toHaveBeenCalledWith('password_reset', 'user-id-123', {}, 'rest-1', 'default')
+      expect(mockLogAudit).toHaveBeenCalledWith('password_reset', 'user-id-123', 'default', 'rest-1', {})
     })
 
     it('lança UnauthorizedError para token inválido, expirado ou já usado', async () => {
@@ -197,12 +197,18 @@ describe('PasswordRecoveryUseCase', () => {
       expect(err.name).toBe('SapphireValidationError')
     })
 
-    it('conclui e audita com restaurantId indefinido quando findById falha', async () => {
+    it('não redefine a senha de conta não-ativa (bloqueada/inativa) mesmo com token válido (M5)', async () => {
+      mockClaim.mockResolvedValue(VALID_TOKEN_RECORD)
+      mockFindById.mockResolvedValue({ ...MOCK_USER, status: 'blocked' })
+      await expect(useCase.resetPassword(resetInput, CTX)).rejects.toBeInstanceOf(UnauthorizedError)
+      expect(mockUpdatePassword).not.toHaveBeenCalled()
+    })
+
+    it('fail-closed: não redefine quando não consegue confirmar o status (findById falha)', async () => {
       mockClaim.mockResolvedValue(VALID_TOKEN_RECORD)
       mockFindById.mockRejectedValue(new Error('db indisponível'))
-      await expect(useCase.resetPassword(resetInput, CTX)).resolves.toBeUndefined()
-      expect(mockUpdatePassword).toHaveBeenCalled()
-      expect(mockLogAudit).toHaveBeenCalledWith('password_reset', 'user-id-123', {}, undefined, 'default')
+      await expect(useCase.resetPassword(resetInput, CTX)).rejects.toBeInstanceOf(UnauthorizedError)
+      expect(mockUpdatePassword).not.toHaveBeenCalled()
     })
 
     it('conclui a redefinição mesmo se a auditoria falhar', async () => {

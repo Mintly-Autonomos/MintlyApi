@@ -1,4 +1,3 @@
-import { randomBytes, scryptSync } from 'crypto'
 import { SapphireValidationError } from '@ascendance-hub/sapphire-core'
 import {
   signupRequestSchema,
@@ -17,6 +16,8 @@ import { getJwtService } from '../../../infrastructure/jwt/jwt-service'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { RequestContext } from '../../../core/context/request-context'
 import { AuditLog } from '../../audit/audit-log'
+import { normalizeEmail } from '../normalize-email'
+import { hashPassword } from '../password-hash'
 
 const TENANT = 'mintly'
 
@@ -55,8 +56,9 @@ export class RegisterUseCase {
     const db = connection.getDatabase(ctx.env)
     await this.ensureUserIndexes(ctx.env)
 
+    const email = normalizeEmail(data.email)
     const session = connection.getClient().startSession()
-    let result!: SignupResult
+    let created!: { userId: string; personId: string; restaurantId: string; now: Date; audit: { createdAt: Date; updatedAt: Date } }
 
     try {
       await session.withTransaction(async () => {
@@ -64,7 +66,7 @@ export class RegisterUseCase {
         const audit = { createdAt: now, updatedAt: now }
 
         // ── e-mail único ──────────────────────────────────────────────────────
-        const existing = await db.collection('users').findOne({ email: data.email }, { session })
+        const existing = await db.collection('users').findOne({ email }, { session })
         if (existing) throw new ConflictError('Este e-mail já está cadastrado.')
 
         // ── person ────────────────────────────────────────────────────────────
@@ -82,11 +84,11 @@ export class RegisterUseCase {
         const restaurantId = restaurantInsert.insertedId.toHexString()
 
         // ── user (person como Extended Reference) ─────────────────────────────
-        const passwordHash = this.hashPassword(data.password)
+        const passwordHash = hashPassword(data.password)
         const userInsert = await db.collection('users').insertOne(
           {
             person: { _id: personId, name: data.person.name },
-            email: data.email,
+            email,
             passwordHash,
             role: UserRole.Owner,
             status: UserStatus.Active,
@@ -132,43 +134,48 @@ export class RegisterUseCase {
 
         // ── auditoria de eventos ──────────────────────────────────────────────
         const auditLogs: Array<Omit<AuditLog, '_id'>> = [
-          { event: 'account_created', userId, restaurantId, data: { email: data.email, name: data.person.name }, createdAt: now },
+          { event: 'account_created', userId, restaurantId, data: { email, name: data.person.name }, createdAt: now },
           { event: 'restaurant_created', userId, restaurantId, data: { restaurantName: data.restaurantName }, createdAt: now },
           { event: 'terms_accepted', userId, restaurantId, data: { termsAccepted: true }, createdAt: now },
           { event: 'onboarding_completed', userId, restaurantId, data: { defaultAccounts: 1, defaultCategories: DEFAULT_CATEGORIES.length }, createdAt: now },
         ]
         await db.collection('audit_logs').insertMany(auditLogs, { session })
 
-        // ── JWT ───────────────────────────────────────────────────────────────
-        const jwt = getJwtService(ctx.env)
-        const tokens = await jwt.generate({
-          tenantId: TENANT,
-          subject: userId,
-          claims: { name: data.person.name, email: data.email, role: UserRole.Owner, restaurantId },
-        })
-
-        result = {
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          user: {
-            _id: userId,
-            person: { _id: personId, name: data.person.name },
-            email: data.email,
-            role: UserRole.Owner,
-            status: UserStatus.Active,
-            restaurantId,
-            termsAcceptedAt: now,
-            lastAccessAt: now,
-            audit,
-          },
-          restaurant: { _id: restaurantId, name: data.restaurantName, audit },
-        }
+        // Captura os IDs p/ emitir o JWT DEPOIS do commit (ver bloco abaixo).
+        created = { userId, personId, restaurantId, now, audit }
       })
     } finally {
       await session.endSession()
     }
 
-    return result
+    // ── JWT (fora da transação) ───────────────────────────────────────────────
+    // valkyrie-jwt persiste o refresh token no seu próprio store, fora do escopo
+    // transacional do Mongo. Gerar dentro do withTransaction deixaria um refresh
+    // token órfão a cada retry (erro transitório) da transação. Só emitimos após
+    // o commit — se a transação falhar, nenhum token é criado.
+    const jwt = getJwtService(ctx.env)
+    const tokens = await jwt.generate({
+      tenantId: TENANT,
+      subject: created.userId,
+      claims: { name: data.person.name, email, role: UserRole.Owner, status: UserStatus.Active, restaurantId: created.restaurantId },
+    })
+
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: {
+        _id: created.userId,
+        person: { _id: created.personId, name: data.person.name },
+        email,
+        role: UserRole.Owner,
+        status: UserStatus.Active,
+        restaurantId: created.restaurantId,
+        termsAcceptedAt: created.now,
+        lastAccessAt: created.now,
+        audit: created.audit,
+      },
+      restaurant: { _id: created.restaurantId, name: data.restaurantName, audit: created.audit },
+    }
   }
 
   private async ensureUserIndexes (env: string): Promise<void> {
@@ -176,11 +183,5 @@ export class RegisterUseCase {
     const db = MongoDBConnection.getInstance().getDatabase(env)
     await db.collection('users').createIndex({ email: 1 }, { unique: true })
     indexedEnvs.add(env)
-  }
-
-  private hashPassword (password: string): string {
-    const salt = randomBytes(16).toString('hex')
-    const hash = scryptSync(password, salt, 64).toString('hex')
-    return `${salt}:${hash}`
   }
 }

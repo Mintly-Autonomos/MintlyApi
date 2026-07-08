@@ -7,16 +7,21 @@ const platform = { type: 'platform', feePercent: 12, settlementDays: 30 }
 
 describe('movement-rules', () => {
   describe('defaultStatus', () => {
-    it('conta com prazo de recebimento (>0) → pending', () => {
-      expect(defaultStatus(platform)).toBe(MovementStatus.Pending)
+    it('entrada em conta platform com prazo (>0) → pending', () => {
+      expect(defaultStatus({ direction: MovementDirection.In, account: platform })).toBe(MovementStatus.Pending)
     })
 
-    it('conta sem prazo → settled', () => {
-      expect(defaultStatus(cash)).toBe(MovementStatus.Settled)
+    it('entrada em conta sem prazo → settled', () => {
+      expect(defaultStatus({ direction: MovementDirection.In, account: cash })).toBe(MovementStatus.Settled)
     })
 
-    it('prazo = 0 → settled (recebimento imediato)', () => {
-      expect(defaultStatus({ type: 'platform', feePercent: 5, settlementDays: 0 })).toBe(MovementStatus.Settled)
+    it('entrada com prazo = 0 → settled (recebimento imediato)', () => {
+      expect(defaultStatus({ direction: MovementDirection.In, account: { type: 'platform', feePercent: 5, settlementDays: 0 } }))
+        .toBe(MovementStatus.Settled)
+    })
+
+    it('saída em conta platform com prazo → settled (prazo só vale p/ entrada)', () => {
+      expect(defaultStatus({ direction: MovementDirection.Out, account: platform })).toBe(MovementStatus.Settled)
     })
   })
 

@@ -33,9 +33,14 @@ describe('FilterBuilder', () => {
     expect(result).toEqual({ email: { $exists: true, $ne: null } })
   })
 
-  it('exists aceita notEquals custom', () => {
+  it('exists(true) aceita notEquals custom', () => {
+    const result = new FilterBuilder().exists(true, 'email', '').build()
+    expect(result).toEqual({ email: { $exists: true, $ne: '' } })
+  })
+
+  it('exists(false) usa só $exists (com $ne nunca casaria)', () => {
     const result = new FilterBuilder().exists(false, 'email', '').build()
-    expect(result.email.$ne).toBe('')
+    expect(result).toEqual({ email: { $exists: false } })
   })
 
   it('month monta janela do mês inteiro em UTC', () => {

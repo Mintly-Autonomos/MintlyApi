@@ -78,19 +78,21 @@ describe('FinancialAccountRepository', () => {
       expect((result as any)._id).toBe('id-novo')
     })
 
-    it('converte saldos informados para Decimal128 e os devolve como number', async () => {
+    it('IGNORA saldos e isDefault do body: conta nasce zerada e não-padrão', async () => {
       h.insertOne.mockResolvedValue({ insertedId: 'id-2' })
 
+      // Client tenta abrir conta já com saldo (criar dinheiro) e como padrão.
       const result = await repo.insert(
-        { name: 'Banco', type: 'bank', availableBalance: 100.5, predictedBalance: 50 } as any,
+        { name: 'Banco', type: 'bank', availableBalance: 100.5, predictedBalance: 50, isDefault: true } as any,
         CTX,
       )
 
       const scoped = h.insertOne.mock.calls[0][0]
-      expect(scoped.availableBalance.toString()).toBe('100.50')
-      expect(scoped.predictedBalance.toString()).toBe('50.00')
-      expect(result.availableBalance).toBe(100.5)
-      expect(result.predictedBalance).toBe(50)
+      expect(scoped.availableBalance.toString()).toBe('0.00')
+      expect(scoped.predictedBalance.toString()).toBe('0.00')
+      expect(scoped.isDefault).toBe(false)
+      expect(result.availableBalance).toBe(0)
+      expect(result.predictedBalance).toBe(0)
     })
 
     it('traduz o erro 11000 (índice unique) em ConflictError', async () => {

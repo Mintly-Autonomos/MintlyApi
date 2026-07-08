@@ -61,7 +61,7 @@ function wire (opts: { mov?: any, account?: any, category?: any } = {}) {
   const account = 'account' in opts ? opts.account : makeAccount()
   const category = 'category' in opts ? opts.category : { _id: new ObjectId(CAT2_ID), name: 'Nova', type: 'revenue' }
   const movements = { findOne: vi.fn().mockResolvedValue(mov), replaceOne: vi.fn().mockResolvedValue({}) }
-  const accounts = { findOne: vi.fn().mockResolvedValue(account), updateOne: vi.fn().mockResolvedValue({}) }
+  const accounts = { findOne: vi.fn().mockResolvedValue(account), updateOne: vi.fn().mockResolvedValue({ matchedCount: 1 }) }
   const categories = { findOne: vi.fn().mockResolvedValue(category) }
   const map: Record<string, any> = { financial_movements: movements, financial_accounts: accounts, financial_categories: categories }
   mockGetDatabase.mockReturnValue({ collection: (n: string) => map[n] })
@@ -158,6 +158,11 @@ describe('UpdateMovementUseCase', () => {
     wire()
     const up2 = await useCase.execute(MOV_ID, {}, CTX)
     expect(up2.status).toBe('settled')
+  })
+
+  it('status fora do enum lança ConflictError (não persiste lixo)', async () => {
+    wire()
+    await expect(useCase.execute(MOV_ID, { status: 'garbage' }, CTX)).rejects.toBeInstanceOf(ConflictError)
   })
 
   it('history ausente (não-array) inicia um novo histórico', async () => {
