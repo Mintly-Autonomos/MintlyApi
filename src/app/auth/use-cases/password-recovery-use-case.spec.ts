@@ -197,12 +197,18 @@ describe('PasswordRecoveryUseCase', () => {
       expect(err.name).toBe('SapphireValidationError')
     })
 
-    it('conclui e audita com restaurantId indefinido quando findById falha', async () => {
+    it('não redefine a senha de conta não-ativa (bloqueada/inativa) mesmo com token válido (M5)', async () => {
+      mockClaim.mockResolvedValue(VALID_TOKEN_RECORD)
+      mockFindById.mockResolvedValue({ ...MOCK_USER, status: 'blocked' })
+      await expect(useCase.resetPassword(resetInput, CTX)).rejects.toBeInstanceOf(UnauthorizedError)
+      expect(mockUpdatePassword).not.toHaveBeenCalled()
+    })
+
+    it('fail-closed: não redefine quando não consegue confirmar o status (findById falha)', async () => {
       mockClaim.mockResolvedValue(VALID_TOKEN_RECORD)
       mockFindById.mockRejectedValue(new Error('db indisponível'))
-      await expect(useCase.resetPassword(resetInput, CTX)).resolves.toBeUndefined()
-      expect(mockUpdatePassword).toHaveBeenCalled()
-      expect(mockLogAudit).toHaveBeenCalledWith('password_reset', 'user-id-123', 'default', undefined, {})
+      await expect(useCase.resetPassword(resetInput, CTX)).rejects.toBeInstanceOf(UnauthorizedError)
+      expect(mockUpdatePassword).not.toHaveBeenCalled()
     })
 
     it('conclui a redefinição mesmo se a auditoria falhar', async () => {
