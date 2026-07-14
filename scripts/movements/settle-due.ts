@@ -15,31 +15,41 @@ import { SettleDueMovementsUseCase } from '../../src/app/financial-movement/use-
  * robô. O `db:indices` já roda assim no deploy; este segue o mesmo caminho.
  */
 async function main (): Promise<void> {
+  // Um ambiente por execução, vindo de SETTLE_ENV — NÃO varre todos os envs da
+  // tabela. O código que mexe no dinheiro de produção precisa passar pelo mesmo
+  // gate de release (staging → main) que o resto do sistema: varrendo tudo, um
+  // commit mergeado na staging moveria saldo real de produção na madrugada
+  // seguinte, sem promoção. O workflow amarra ambiente ⇄ branch (settle.yml).
+  const env = process.env.SETTLE_ENV?.trim()
+  if (!env) {
+    throw new Error('SETTLE_ENV é obrigatório (ex.: SETTLE_ENV=staging npm run db:settle).')
+  }
+
   const connection = MongoDBConnection.getInstance()
   await connection.connect()
 
   try {
-    const envs = await connection
+    // Guardrail: só liquida ambiente que existe na allowlist. Sem isso, um typo
+    // (`stagign`) criaria/leria um banco vazio e reportaria "0 liquidados" —
+    // sucesso silencioso, o pior tipo de falha num job noturno.
+    const known = await connection
       .getDatabase(APP_DB)
       .collection<{ name: string }>('valid_environments')
-      .find({}, { projection: { name: 1 } })
-      .toArray()
+      .findOne({ name: env }, { projection: { name: 1 } })
 
-    if (envs.length === 0) {
-      console.warn(`Nenhum ambiente em ${APP_DB}.valid_environments — nada a liquidar. Rode 'npm run db:seed-envs' primeiro.`)
-      return
+    if (!known) {
+      throw new Error(
+        `Ambiente '${env}' não está em ${APP_DB}.valid_environments. ` +
+        'Rode \'npm run db:seed-envs\' ou corrija o SETTLE_ENV.',
+      )
     }
 
-    const useCase = new SettleDueMovementsUseCase()
+    const result = await new SettleDueMovementsUseCase().execute({ env })
+    console.log(`[${env}] liquidados: ${result.settled} | falhas: ${result.failed}`)
 
-    for (const { name } of envs) {
-      const result = await useCase.execute({ env: name })
-      console.log(`[${name}] liquidados: ${result.settled} | falhas: ${result.failed}`)
-
-      // Falha em liquidar é anomalia (conta apagada, corrida) — o exit code != 0
-      // faz o workflow ficar vermelho em vez de sumir num log que ninguém lê.
-      if (result.failed > 0) process.exitCode = 1
-    }
+    // Falha em liquidar é anomalia (conta apagada, corrida) — o exit code != 0
+    // faz o workflow ficar vermelho em vez de sumir num log que ninguém lê.
+    if (result.failed > 0) process.exitCode = 1
   } finally {
     await connection.disconnect()
   }

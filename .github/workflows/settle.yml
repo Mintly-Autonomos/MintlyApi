@@ -1,26 +1,49 @@
 name: Settle Due Movements
 
-# Liquidação automática por data (P1). Roda 1x/dia às 06:00 UTC (03:00 BRT):
-# movimentos `pending` de conta plataforma cuja data prevista de recebimento
-# venceu passam a `settled`, migrando o dinheiro de predictedBalance para
-# availableBalance. Idempotente — rodar duas vezes não duplica saldo.
+# Liquidação automática por data (P1). Movimentos `pending` de conta plataforma
+# cuja data prevista de recebimento venceu passam a `settled`, migrando o dinheiro
+# de predictedBalance para availableBalance. Idempotente — rodar duas vezes não
+# duplica saldo.
 #
 # Script direto no banco (npm run db:settle), não rota HTTP: mesmo caminho do
 # db:indices no deploy.yml — evita um segundo mecanismo de auth p/ robô.
-
+#
+# AMBIENTE ⇄ BRANCH. Cada ambiente é liquidado pelo código da branch que o
+# deploya (staging ← staging, production ← main), espelhando o deploy.yml. Sem
+# esse amarre, um commit mergeado na staging moveria saldo REAL de produção na
+# madrugada seguinte, driblando o gate de release staging → main que existe
+# justamente para isso.
+#
+# NOTA: `on: schedule` só dispara a partir da branch DEFAULT do repositório —
+# este arquivo precisa chegar na default para o cron começar a rodar. Até lá,
+# use o workflow_dispatch.
 on:
   schedule:
+    # 06:00 UTC = 03:00 BRT. Depois da virada do dia no Brasil, então o que
+    # venceu "ontem" já está vencido em qualquer leitura de fuso.
     - cron: '0 6 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Ambiente a liquidar
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
 
 jobs:
-  settle:
-    name: Settle due movements
+  staging:
+    name: Settle staging
+    # No agendamento roda sempre; no disparo manual, só se o alvo for staging.
+    if: github.event_name == 'schedule' || inputs.environment == 'staging'
     runs-on: ubuntu-latest
+    environment: staging
 
     env:
-      # Conexão pelos MESMOS campos que o app usa (buildMongoUri monta a URI
-      # standard, sem SRV) — mesmos nomes de secrets do deploy.yml.
+      SETTLE_ENV: staging
+      # Conexão pelos MESMOS campos que o app usa (URI standard, sem SRV) —
+      # mesmos nomes de secrets do deploy.yml.
       MONGODB_HOSTS: ${{ secrets.MONGODB_HOSTS }}
       MONGODB_USER: ${{ secrets.MONGODB_USER }}
       MONGODB_PASSWORD: ${{ secrets.MONGODB_PASSWORD }}
@@ -40,11 +63,50 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Setup npm
-        run: npm install --global npm@11.11.0
+      - name: Install dependencies
+        run: npm ci
+
+      # Idempotente. Garante o índice { status, predictedReceiptDate } que a
+      # varredura do settler usa — sem ele a query vira collection scan.
+      - name: Ensure indexes
+        run: npm run db:indices
+
+      - name: Settle due movements
+        run: npm run db:settle
+
+  production:
+    name: Settle production
+    if: github.event_name == 'schedule' || inputs.environment == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      SETTLE_ENV: production
+      MONGODB_HOSTS: ${{ secrets.MONGODB_HOSTS }}
+      MONGODB_USER: ${{ secrets.MONGODB_USER }}
+      MONGODB_PASSWORD: ${{ secrets.MONGODB_PASSWORD }}
+      MONGODB_REPLICA_SET: ${{ secrets.MONGODB_REPLICA_SET }}
+      MONGODB_AUTH_SOURCE: ${{ secrets.MONGODB_AUTH_SOURCE }}
+      MONGODB_TLS: ${{ secrets.MONGODB_TLS }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Produção roda o código PROMOVIDO (main), nunca o da staging.
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Ensure indexes
+        run: npm run db:indices
 
       - name: Settle due movements
         run: npm run db:settle
