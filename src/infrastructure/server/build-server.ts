@@ -12,9 +12,17 @@ import { authRoutes } from '../../app/auth/auth-routes'
 import { verifyJwt } from '../../core/hooks/verify-jwt'
 import { BaseError } from '../../core/errors/core/base-error'
 import { assertValidEnv } from '../../app/environment/env-allowlist'
+import { buildCorsOriginChecker } from '../../core/config/cors-origins'
 
 export async function buildServer (server: FastifyInstance = Fastify()): Promise<FastifyInstance> {
-  await server.register(cors, { origin: true })
+  // Allowlist por CORS_ORIGINS (P4) — ver core/config/cors-origins.ts.
+  const isOriginAllowed = buildCorsOriginChecker()
+  await server.register(cors, {
+    origin: (origin, callback) => {
+      if (isOriginAllowed(origin)) return callback(null, true)
+      callback(new Error('Origem não permitida pelo CORS.'), false)
+    },
+  })
 
   // Documentação (Swagger) só fora de produção: em prod, /documentation exporia
   // publicamente todo o mapa de rotas/contratos da API.
