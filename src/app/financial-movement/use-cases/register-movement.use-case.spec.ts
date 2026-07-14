@@ -161,4 +161,10 @@ describe('RegisterMovementUseCase', () => {
     await expect(useCase.execute(makeInput(), CTX)).rejects.toThrow('schema invalido')
     expect(session.endSession).toHaveBeenCalled()
   })
+
+  it('grava statusSource auto no registro (P1)', async () => {
+    wire()
+    const created = await useCase.execute(makeInput(), CTX)
+    expect(created.statusSource).toBe('auto')
+  })
 })

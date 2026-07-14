@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb'
-import { financialMovementSchema, MovementDirection, MovementOrigin } from 'mintly-lib'
+import { financialMovementSchema, MovementDirection, MovementOrigin, MovementStatusSource } from 'mintly-lib'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import { RequestContext } from '../../../core/context/request-context'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
@@ -86,6 +86,9 @@ export class RegisterMovementUseCase {
           direction: input.direction,
           title: input.title,
           status,
+          // P1 — nasce `auto`: o settler pode liquidá-lo por data. Só vira `manual`
+          // se um humano mexer no status depois (PATCH /:id/status).
+          statusSource: MovementStatusSource.Auto,
           date,
           grossValue: input.grossValue,
           feeValue: snapshot.feeValue,
