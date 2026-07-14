@@ -67,6 +67,67 @@ describe('movement-rules', () => {
     })
   })
 
+  describe('computeSnapshot com taxa congelada (P3)', () => {
+    const platformAccount = { type: 'platform', feePercent: 20, settlementDays: 30 }
+
+    it('usa a taxa congelada em vez da taxa viva da conta', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: platformAccount,
+        fee: { percent: 10, settlementDays: 5 },
+      })
+
+      expect(snap.feeValue).toBe(10)
+      expect(snap.netValue).toBe(90)
+      expect(snap.feePercentApplied).toBe(10)
+      expect(snap.settlementDaysApplied).toBe(5)
+      expect(snap.predictedReceiptDate).toEqual(new Date('2026-01-15T00:00:00.000Z'))
+    })
+
+    it('sem fee congelado, deriva da conta viva (comportamento do registro)', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: platformAccount,
+      })
+
+      expect(snap.feeValue).toBe(20)
+      expect(snap.netValue).toBe(80)
+      expect(snap.feePercentApplied).toBe(20)
+      expect(snap.settlementDaysApplied).toBe(30)
+    })
+
+    it('taxa congelada não se aplica a saída', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.Out,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: platformAccount,
+        fee: { percent: 10, settlementDays: 5 },
+      })
+
+      expect(snap.feeValue).toBe(0)
+      expect(snap.netValue).toBe(100)
+      expect(snap.feePercentApplied).toBeUndefined()
+    })
+
+    it('taxa congelada não se aplica a conta não-platform', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: { type: 'bank' },
+        fee: { percent: 10, settlementDays: 5 },
+      })
+
+      expect(snap.feeValue).toBe(0)
+      expect(snap.netValue).toBe(100)
+    })
+  })
+
   describe('balanceImpact', () => {
     it('entrada settled → available += netValue', () => {
       expect(balanceImpact({ direction: MovementDirection.In, status: MovementStatus.Settled, grossValue: 100, netValue: 88 }))
