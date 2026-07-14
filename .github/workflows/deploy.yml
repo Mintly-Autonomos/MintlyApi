@@ -71,6 +71,17 @@ jobs:
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
       FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+      # Allowlist do CORS (P4): CSV com as origens do MintlyWeb. SEM ela a
+      # allowlist nasce vazia e o servidor NEGA toda origem de navegador — o
+      # front perde a API. Por isso é REQUIRED no sync abaixo: falhar o deploy
+      # é melhor do que derrubar o front silenciosamente.
+      #
+      # ATENÇÃO — a Vercel força NODE_ENV=production mesmo neste ambiente de
+      # staging. Logo o atalho de localhost do `cors-origins.ts` (liberado só
+      # fora de produção) NÃO vale contra a staging: para desenvolver o front
+      # local apontando pra API de staging, inclua `http://localhost:4200` na
+      # própria CORS_ORIGINS da staging.
+      CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
 
     steps:
       - name: Checkout
@@ -133,6 +144,7 @@ jobs:
 
           REQUIRED="MONGODB_HOSTS MONGODB_USER MONGODB_PASSWORD MONGODB_REPLICA_SET MONGODB_AUTH_SOURCE"
           REQUIRED="$REQUIRED MONGO_ENV API_URL GMAIL_USER GMAIL_APP_PASSWORD EMAIL_FROM FRONTEND_URL"
+          REQUIRED="$REQUIRED CORS_ORIGINS"
           OPTIONAL="MONGODB_TLS"
 
           MISSING=""
@@ -195,6 +207,10 @@ jobs:
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
       FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+      # Allowlist do CORS (P4): CSV com as origens do MintlyWeb. Sem ela o
+      # servidor nega toda origem de navegador e o front perde a API. No EC2 o
+      # processo herda o env do serviço (pm2/systemd) — mantenha o secret em dia.
+      CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
 
     steps:
       - name: Checkout

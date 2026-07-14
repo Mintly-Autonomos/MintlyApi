@@ -147,7 +147,7 @@ describe('Financial Movement lifecycle (Integration)', () => {
     expect((await register(auth, { direction: 'in', title: 'X', grossValue: 10, date: '2026-06-16T00:00:00.000Z', accountId: cashId, categoryId: new ObjectId().toHexString(), paymentMethod: 'cash' })).statusCode).toBe(404)
   })
 
-  it('change-status: status inválido → 409, id inexistente → 404, mesmo status → no-op', async () => {
+  it('change-status: status inválido → 409, id inexistente → 404, mesmo status → 200', async () => {
     const { auth, cashId, revenueCatId } = await setup()
     const movId = (await register(auth, { direction: 'in', title: 'V', grossValue: 20, date: '2026-06-16T00:00:00.000Z', accountId: cashId, categoryId: revenueCatId, paymentMethod: 'cash' })).json().payload._id
     expect((await app.inject({ method: 'PATCH', url: `/financial-movements/${movId}/status`, headers: auth, payload: { status: 'xpto' } })).statusCode).toBe(409)
@@ -320,6 +320,63 @@ describe('Financial Movement lifecycle (Integration)', () => {
     const res = await app.inject({ method: 'PATCH', url: `/financial-movements/${movId}/status`, headers: auth, payload: { status: 'settled' } })
     expect(res.statusCode).toBe(200)
     expect((await balances(db, cashId)).available).toBe(25)
+  })
+
+  it('P1: PATCH status com o MESMO status trava o movimento (statusSource=manual) sem mexer no saldo', async () => {
+    const { auth, db, restaurantId, revenueCatId } = await setup()
+    const platformId = await createPlatform(auth, restaurantId)
+    const movId = (await register(auth, { direction: 'in', title: 'Repasse duvidoso', grossValue: 100, date: '2026-06-16T00:00:00.000Z', accountId: platformId, categoryId: revenueCatId, paymentMethod: 'pix' })).json().payload._id
+    const before = await balances(db, platformId)
+    expect(before).toEqual({ available: 0, predicted: 90 })
+
+    // O dono já sabe que o repasse não vai cair: reafirma `pending` p/ travar o settler.
+    const res = await app.inject({ method: 'PATCH', url: `/financial-movements/${movId}/status`, headers: auth, payload: { status: 'pending' } })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().payload.statusSource).toBe('manual')
+
+    const doc = await db.collection('financial_movements').findOne({ _id: new ObjectId(movId) })
+    expect(doc!.status).toBe('pending')
+    expect(doc!.statusSource).toBe('manual')
+    expect(doc!.audit.updatedBy).toBeTruthy()
+    expect(doc!.history.at(-1).action).toBe('status:lock:pending')
+
+    // Status não mudou → nada a reverter/aplicar: saldos idênticos.
+    expect(await balances(db, platformId)).toEqual(before)
+  })
+
+  it('P1: pendente de plataforma movido p/ conta bancária liquida e sai do "a receber"', async () => {
+    const { auth, db, restaurantId, revenueCatId } = await setup()
+    const platformId = await createPlatform(auth, restaurantId)
+    const bank = await db.collection('financial_accounts').insertOne({
+      restaurantId,
+      name: 'Banco',
+      type: 'bank',
+      status: 'active',
+      isDefault: false,
+      availableBalance: 0,
+      predictedBalance: 0,
+      audit: audit(),
+    })
+    const bankId = String(bank.insertedId)
+
+    const movId = (await register(auth, { direction: 'in', title: 'Repasse', grossValue: 100, date: '2026-06-16T00:00:00.000Z', accountId: platformId, categoryId: revenueCatId, paymentMethod: 'pix' })).json().payload._id
+    expect(await balances(db, platformId)).toEqual({ available: 0, predicted: 90 })
+
+    const res = await app.inject({ method: 'PATCH', url: `/financial-movements/${movId}`, headers: auth, payload: { accountId: bankId } })
+    expect(res.statusCode).toBe(200)
+
+    // Conta bancária não tem prazo: nada a aguardar → liquidado, sem data prevista.
+    // Antes disto o movimento continuava `pending` e SEM `predictedReceiptDate`,
+    // ficando invisível ao settler para sempre (dinheiro preso em "a receber").
+    expect(res.json().payload.status).toBe('settled')
+    expect(res.json().payload.predictedReceiptDate).toBeUndefined()
+
+    const doc = await db.collection('financial_movements').findOne({ _id: new ObjectId(movId) })
+    expect(doc!.status).toBe('settled')
+    expect(doc!.predictedReceiptDate).toBeUndefined()
+
+    expect(await balances(db, platformId)).toEqual({ available: 0, predicted: 0 })
+    expect(await balances(db, bankId)).toEqual({ available: 100, predicted: 0 })
   })
 
   it('recompute: conta inexistente (id válido) → 404', async () => {

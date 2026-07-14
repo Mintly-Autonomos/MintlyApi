@@ -16,4 +16,8 @@ export async function ensure (col: Collection<Document>): Promise<void> {
   // Detecção de duplicidade (mesmo restaurante/conta/título/valor em janela curta).
   // A query de duplicidade filtra por `audit.createdAt` (não `createdAt` de topo).
   await col.createIndex({ restaurantId: 1, 'account._id': 1, title: 1, 'audit.createdAt': -1 })
+
+  // Query do settler (P1): pendentes vencidos, CROSS-TENANT (sem restaurantId —
+  // o job varre todos os restaurantes do ambiente numa tacada).
+  await col.createIndex({ status: 1, predictedReceiptDate: 1 })
 }

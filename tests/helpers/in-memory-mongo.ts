@@ -1,16 +1,24 @@
-import { MongoMemoryServer } from 'mongodb-memory-server'
+import { MongoMemoryServer, MongoMemoryReplSet } from 'mongodb-memory-server'
 import { MongoClient } from 'mongodb'
 import MongoDBConnection from '../../src/infrastructure/db/mongodb/mongodb-connection'
 
-let memoryServer: MongoMemoryServer | undefined
+interface InMemoryServer { getUri: () => string, stop: () => Promise<unknown> }
+
+let memoryServer: InMemoryServer | undefined
 let client: MongoClient | undefined
 
 /**
  * Boota um Mongo in-memory e injeta o client no singleton MongoDBConnection.
  * Use no beforeAll do suite de integration.
+ *
+ * `replSet: true` sobe um replica set de 1 nó: é o ÚNICO modo em que o Mongo
+ * aceita transação (`session.withTransaction`). Suites que só leem/escrevem
+ * documento a documento continuam no standalone (boota mais rápido).
  */
-export async function startInMemoryMongo (): Promise<void> {
-  memoryServer = await MongoMemoryServer.create()
+export async function startInMemoryMongo (options?: { replSet?: boolean }): Promise<void> {
+  memoryServer = options?.replSet
+    ? await MongoMemoryReplSet.create({ replSet: { count: 1 } })
+    : await MongoMemoryServer.create()
   const uri = memoryServer.getUri()
   client = new MongoClient(uri)
   await client.connect()

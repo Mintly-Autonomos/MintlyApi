@@ -1,12 +1,12 @@
 import { ObjectId } from 'mongodb'
-import { financialMovementSchema, MovementDirection, MovementOrigin } from 'mintly-lib'
+import { financialMovementSchema, MovementDirection, MovementOrigin, MovementStatusSource } from 'mintly-lib'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import { RequestContext } from '../../../core/context/request-context'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { Resource } from '../../../core/types/resource'
 import { FinancialMovementRepository, movementToStorage, movementFromStorage } from '../financial-movement-repository'
-import { computeSnapshot, defaultStatus, balanceImpact } from '../movement-rules'
+import { computeSnapshot, defaultStatus, balanceImpact, resolveStatusSource } from '../movement-rules'
 import { applyBalanceImpact } from '../movement-balance'
 
 export interface RegisterMovementInput {
@@ -80,12 +80,24 @@ export class RegisterMovementUseCase {
         const status = input.status ?? defaultStatus({ direction: input.direction, account: account as any })
         const now = new Date()
 
+        // P1 — nasce `auto` (o settler pode liquidá-lo por data); só vira `manual`
+        // se um humano mexer no status depois (PATCH /:id/status). EXCEÇÃO — a
+        // invariante de domínio: um `pending` SEM data prevista (ex.: POST com
+        // `status: 'pending'` numa conta não-platform, ou uma saída) é inalcançável
+        // pelo settler; chamá-lo de `auto` seria condená-lo a "a receber" eterno.
+        const statusSource = resolveStatusSource({
+          status,
+          predictedReceiptDate: snapshot.predictedReceiptDate,
+          statusSource: MovementStatusSource.Auto,
+        })
+
         // 4. Documento (snapshots de account/category; campos computados).
         const doc: Record<string, any> = {
           restaurantId: ctx.restaurantId,
           direction: input.direction,
           title: input.title,
           status,
+          statusSource,
           date,
           grossValue: input.grossValue,
           feeValue: snapshot.feeValue,

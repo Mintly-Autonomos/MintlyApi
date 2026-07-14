@@ -12,9 +12,22 @@ import { authRoutes } from '../../app/auth/auth-routes'
 import { verifyJwt } from '../../core/hooks/verify-jwt'
 import { BaseError } from '../../core/errors/core/base-error'
 import { assertValidEnv } from '../../app/environment/env-allowlist'
+import { buildCorsOriginChecker } from '../../core/config/cors-origins'
 
 export async function buildServer (server: FastifyInstance = Fastify()): Promise<FastifyInstance> {
-  await server.register(cors, { origin: true })
+  // Allowlist por CORS_ORIGINS (P4) — ver core/config/cors-origins.ts.
+  // Negar CORS NÃO é bloquear a requisição no servidor: é só omitir o header
+  // `Access-Control-Allow-Origin` na resposta. Quem recusa é o navegador, do lado
+  // do cliente — a API responde normalmente. Por isso o callback recebe `false`
+  // sem erro; passar um `Error` faria o @fastify/cors chamar `next(error)`, que cairia
+  // no setErrorHandler genérico abaixo e devolveria 500, poluindo logs/alertas como
+  // se fosse bug real a cada origem não cadastrada (esperado em produção).
+  const isOriginAllowed = buildCorsOriginChecker()
+  await server.register(cors, {
+    origin: (origin, callback) => {
+      callback(null, isOriginAllowed(origin))
+    },
+  })
 
   // Documentação (Swagger) só fora de produção: em prod, /documentation exporia
   // publicamente todo o mapa de rotas/contratos da API.
