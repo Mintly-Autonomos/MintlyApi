@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ObjectId } from 'mongodb'
+import { MovementStatusSource } from 'mintly-lib'
 import { UpdateMovementUseCase } from './update-movement.use-case'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
@@ -197,13 +198,47 @@ describe('UpdateMovementUseCase', () => {
     expect(audit.createdBy).toBeUndefined()
   })
 
-  it('conta platform recalcula fee/net e grava snapshot de taxa/prazo', async () => {
-    const { movements } = wire({ account: makeAccount({ _id: new ObjectId(ACC_ID), type: 'platform', feePercent: 10, settlementDays: 14 }) })
-    const updated = await useCase.execute(MOV_ID, { grossValue: 200 }, CTX)
-    expect(updated.netValue).toBe(180)
+  it('editar só o título NÃO re-precifica quando a taxa da conta mudou (P3 — snapshot congelado)', async () => {
+    // Movimento lançado com feePercentApplied=10 (líquido 90 sobre bruto 100).
+    // A conta HOJE cobra 20% — editar só o título não pode reescrever o líquido.
+    const mov = makeMov({
+      account: { _id: ACC_ID, name: 'iFood', type: 'platform' },
+      grossValue: 100,
+      feeValue: 10,
+      netValue: 90,
+      feePercentApplied: 10,
+      settlementDaysApplied: 5,
+    })
+    const { movements } = wire({ mov, account: makeAccount({ _id: new ObjectId(ACC_ID), type: 'platform', feePercent: 20, settlementDays: 5 }) })
+
+    const updated = await useCase.execute(MOV_ID, { title: 'Novo' }, CTX)
+
+    expect(updated.title).toBe('Novo')
+    expect(updated.netValue).toBe(90) // NÃO 80 (20% sobre 100)
+    expect(updated.feeValue).toBe(10) // NÃO 20
+    const doc = storedDoc(movements)
+    expect(Number(doc.feePercentApplied)).toBe(10) // snapshot preservado
+    expect(doc.settlementDaysApplied).toBe(5)
+  })
+
+  it('trocar a conta do movimento re-precifica com a taxa da conta nova (P3 — exceção)', async () => {
+    const mov = makeMov({
+      account: { _id: ACC_ID, name: 'iFood', type: 'platform' },
+      grossValue: 100,
+      feeValue: 10,
+      netValue: 90,
+      feePercentApplied: 10,
+      settlementDaysApplied: 5,
+    })
+    const novaConta = makeAccount({ _id: new ObjectId(ACC2_ID), name: 'Outra Plataforma', type: 'platform', feePercent: 20, settlementDays: 14 })
+    const { movements } = wire({ mov, account: novaConta })
+
+    const updated = await useCase.execute(MOV_ID, { accountId: ACC2_ID }, CTX)
+
+    expect(updated.netValue).toBe(80)
     expect(updated.feeValue).toBe(20)
     const doc = storedDoc(movements)
-    expect(Number(doc.feePercentApplied)).toBe(10)
+    expect(Number(doc.feePercentApplied)).toBe(20)
     expect(doc.settlementDaysApplied).toBe(14)
     expect(doc.predictedReceiptDate).toBeInstanceOf(Date)
   })
@@ -254,5 +289,31 @@ describe('UpdateMovementUseCase', () => {
     mockSchemaParse.mockImplementation(() => { throw new Error('schema invalido') })
     await expect(useCase.execute(MOV_ID, {}, CTX)).rejects.toThrow('schema invalido')
     expect(session.endSession).toHaveBeenCalled()
+  })
+
+  it('editar campo inócuo preserva o statusSource já gravado (P1)', async () => {
+    const { movements } = wire({ mov: makeMov({ statusSource: MovementStatusSource.Manual }) })
+    const updated = await useCase.execute(MOV_ID, { title: 'Novo' }, CTX)
+    expect(updated.statusSource).toBe(MovementStatusSource.Manual)
+    expect(storedDoc(movements).statusSource).toBe(MovementStatusSource.Manual)
+  })
+
+  it('statusSource ausente na mov vira "auto" quando a edição não mexe no status (P1)', async () => {
+    const { movements } = wire({ mov: makeMov({ statusSource: undefined }) })
+    await useCase.execute(MOV_ID, { title: 'Novo' }, CTX)
+    expect(storedDoc(movements).statusSource).toBe(MovementStatusSource.Auto)
+  })
+
+  it('mudar o status carimba statusSource=manual (P1 — tira do alcance do settler)', async () => {
+    const { movements } = wire({ mov: makeMov({ status: 'settled', statusSource: undefined }) })
+    const updated = await useCase.execute(MOV_ID, { status: 'pending' }, CTX)
+    expect(updated.statusSource).toBe(MovementStatusSource.Manual)
+    expect(storedDoc(movements).statusSource).toBe(MovementStatusSource.Manual)
+  })
+
+  it('enviar o MESMO status atual não carimba manual (não houve mudança real)', async () => {
+    const { movements } = wire({ mov: makeMov({ status: 'settled', statusSource: MovementStatusSource.Auto }) })
+    await useCase.execute(MOV_ID, { status: 'settled' }, CTX)
+    expect(storedDoc(movements).statusSource).toBe(MovementStatusSource.Auto)
   })
 })

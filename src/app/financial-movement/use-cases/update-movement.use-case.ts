@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb'
-import { financialMovementSchema, MovementStatus } from 'mintly-lib'
+import { financialMovementSchema, MovementStatus, MovementStatusSource } from 'mintly-lib'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import { RequestContext } from '../../../core/context/request-context'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
@@ -82,7 +82,26 @@ export class UpdateMovementUseCase {
         const newGross = changes.grossValue ?? num(mov.grossValue)
         const newDate = changes.date ? new Date(changes.date) : new Date(mov.date)
         const newStatus = changes.status ?? mov.status
-        const snapshot = computeSnapshot({ direction: direction as any, grossValue: newGross, date: newDate, account: account as any })
+
+        // P3 — snapshot congelado: a edição reaproveita a taxa/prazo gravados no
+        // movimento, para que editar um campo inócuo (ex.: título) não re-precifique
+        // o líquido com a taxa ATUAL da conta. EXCEÇÃO: se o usuário TROCOU a conta,
+        // não existe snapshot aplicável à conta nova — vale a taxa/prazo vivos dela.
+        const accountChanged = changes.accountId != null && changes.accountId !== oldAccountId
+        const frozenFee = accountChanged
+          ? undefined
+          : {
+              percent: mov.feePercentApplied != null ? num(mov.feePercentApplied) : undefined,
+              settlementDays: mov.settlementDaysApplied != null ? Number(mov.settlementDaysApplied) : undefined,
+            }
+
+        const snapshot = computeSnapshot({
+          direction: direction as any,
+          grossValue: newGross,
+          date: newDate,
+          account: account as any,
+          fee: frozenFee,
+        })
 
         const now = new Date()
         const history = Array.isArray(mov.history) ? [...mov.history] : []
@@ -94,6 +113,13 @@ export class UpdateMovementUseCase {
           direction,
           title: changes.title ?? mov.title,
           status: newStatus,
+          // P1 — statusSource: editar um campo inócuo NÃO tira o movimento do
+          // alcance do settler. Só carimba `manual` se ESTA edição mexeu no
+          // status (ação humana explícita); caso contrário preserva a origem
+          // já gravada (ausente = `auto`, docs anteriores a este campo).
+          statusSource: (changes.status != null && changes.status !== mov.status)
+            ? MovementStatusSource.Manual
+            : (mov.statusSource ?? MovementStatusSource.Auto),
           date: newDate,
           grossValue: newGross,
           feeValue: snapshot.feeValue,
