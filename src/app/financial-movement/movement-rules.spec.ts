@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { MovementDirection, MovementStatus } from 'mintly-lib'
-import { defaultStatus, computeSnapshot, balanceImpact, addDays } from './movement-rules'
+import { MovementDirection, MovementStatus, MovementStatusSource } from 'mintly-lib'
+import { defaultStatus, computeSnapshot, balanceImpact, addDays, resolveStatusSource } from './movement-rules'
 
 const cash = { type: 'cash' }
 const platform = { type: 'platform', feePercent: 12, settlementDays: 30 }
@@ -210,6 +210,27 @@ describe('movement-rules', () => {
     it('cancelled → sem impacto', () => {
       expect(balanceImpact({ direction: MovementDirection.In, status: MovementStatus.Cancelled, grossValue: 100, netValue: 88 }))
         .toEqual({ bucket: null, delta: 0 })
+    })
+  })
+  describe('resolveStatusSource', () => {
+    it('pending SEM data prevista é manual (inalcançável pelo settler)', () => {
+      expect(resolveStatusSource({ status: MovementStatus.Pending, statusSource: MovementStatusSource.Auto }))
+        .toBe(MovementStatusSource.Manual)
+    })
+
+    it('pending COM data prevista preserva a origem informada', () => {
+      expect(resolveStatusSource({
+        status: MovementStatus.Pending,
+        predictedReceiptDate: new Date('2026-07-30T00:00:00.000Z'),
+        statusSource: MovementStatusSource.Auto,
+      })).toBe(MovementStatusSource.Auto)
+    })
+
+    it('settled/cancelled preservam a origem informada (a invariante só vale p/ pending)', () => {
+      expect(resolveStatusSource({ status: MovementStatus.Settled, statusSource: MovementStatusSource.Auto }))
+        .toBe(MovementStatusSource.Auto)
+      expect(resolveStatusSource({ status: MovementStatus.Cancelled, statusSource: MovementStatusSource.Manual }))
+        .toBe(MovementStatusSource.Manual)
     })
   })
 })

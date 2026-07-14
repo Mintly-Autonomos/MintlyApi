@@ -1,4 +1,4 @@
-import { FinancialAccountType, MovementDirection, MovementStatus } from 'mintly-lib'
+import { FinancialAccountType, MovementDirection, MovementStatus, MovementStatusSource } from 'mintly-lib'
 import { computeFeeNet } from '../../core/money/money'
 
 /**
@@ -47,6 +47,31 @@ export function defaultStatus (params: {
     account.settlementDays > 0
 
   return platformInflowWithDelay ? MovementStatus.Pending : MovementStatus.Settled
+}
+
+/**
+ * Invariante de honestidade do `statusSource` (P1): o settler só enxerga
+ * `pending` com `predictedReceiptDate: { $lte: now }` — e **campo ausente nunca
+ * casa esse filtro**. Logo, um `pending` SEM data prevista é inalcançável pelo
+ * job: chamá-lo de `auto` é mentira, nada automático vai acontecer com ele (ele
+ * ficaria "a receber" para sempre). Nesse caso o `statusSource` é `manual`: só
+ * o dono tira aquele movimento de "a receber", porque nenhum robô consegue.
+ *
+ * Regra pura, aplicada nos DOIS use-cases (registro e edição) depois de decidir
+ * status + snapshot.
+ */
+export function resolveStatusSource (params: {
+  status: MovementStatus | string
+  predictedReceiptDate?: Date | null
+  statusSource: MovementStatusSource
+}): MovementStatusSource {
+  const { status, predictedReceiptDate, statusSource } = params
+
+  if (status === MovementStatus.Pending && predictedReceiptDate == null) {
+    return MovementStatusSource.Manual
+  }
+
+  return statusSource
 }
 
 export interface MovementSnapshot {
