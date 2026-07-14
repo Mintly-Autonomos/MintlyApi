@@ -68,12 +68,30 @@ describe('ChangeMovementStatusUseCase', () => {
     expect(session.endSession).toHaveBeenCalled()
   })
 
-  it('mesmo status é no-op: não atualiza saldo nem movimentação', async () => {
-    const { movements, accounts } = wire({ mov: makeMov({ status: 'settled' }) })
-    const updated = await useCase.execute(MOV_ID, 'settled', CTX)
-    expect(updated.status).toBe('settled')
-    expect(movements.updateOne).not.toHaveBeenCalled()
+  it('mesmo status carimba manual + auditoria e NÃO toca no saldo (P1 — o dono trava o settler)', async () => {
+    const { movements, accounts } = wire({ mov: makeMov({ status: 'pending' }) })
+
+    const updated = await useCase.execute(MOV_ID, 'pending', CTX)
+
+    expect(updated.status).toBe('pending')
+    expect(updated.statusSource).toBe('manual')
+
+    const [filter, update] = movements.updateOne.mock.calls[0]
+    expect(filter).toMatchObject({ restaurantId: 'r1' })
+    expect(update.$set.statusSource).toBe('manual')
+    expect(update.$set['audit.updatedAt']).toBeInstanceOf(Date)
+    expect(update.$set['audit.updatedBy']).toBe('u1')
+    expect(update.$push.history).toMatchObject({ by: 'u1', action: 'status:lock:pending' })
+    // Sem mudança de status não há impacto a reverter/aplicar: saldo intacto.
     expect(accounts.updateOne).not.toHaveBeenCalled()
+  })
+
+  it('mesmo status sem userId no contexto registra o carimbo por "system"', async () => {
+    const { movements } = wire({ mov: makeMov({ status: 'settled' }) })
+    await useCase.execute(MOV_ID, 'settled', { env: 'test', restaurantId: 'r1' } as any)
+    const [, update] = movements.updateOne.mock.calls[0]
+    expect(update.$set['audit.updatedBy']).toBe('system')
+    expect(update.$push.history.by).toBe('system')
   })
 
   it('transição pending→settled reverte previsto e aplica disponível (saldo x2)', async () => {

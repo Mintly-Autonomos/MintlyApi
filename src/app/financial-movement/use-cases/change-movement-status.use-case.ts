@@ -15,6 +15,10 @@ const VALID = new Set<string>([MovementStatus.Pending, MovementStatus.Settled, M
  * MESMA transação: **reverte o efeito do status antigo + aplica o novo**.
  * Ex.: pending→settled move do saldo previsto p/ o disponível; →cancelled
  * reverte tudo. Registra em `history[]`.
+ *
+ * QUALQUER chamada aqui carimba `statusSource: 'manual'` — inclusive a que
+ * reafirma o status atual (trava contra o settler). Quem tem a palavra final é
+ * o dono.
  */
 export class ChangeMovementStatusUseCase {
   async execute (movementId: string, newStatus: string, ctx: RequestContext): Promise<any> {
@@ -41,8 +45,30 @@ export class ChangeMovementStatusUseCase {
         )
         if (!mov) throw new NotFoundError(Resource.FinancialMovement, movementId)
 
+        // P1 — reafirmar o status ATUAL também é ação humana: é assim que o dono
+        // TRAVA o movimento (ex.: sabe que o repasse do iFood não vai cair na data
+        // e faz PATCH { status: 'pending' } para o settler não liquidá-lo). Antes
+        // isto era um no-op silencioso: 200, `statusSource` continuava `auto` e o
+        // settler liquidava na data assim mesmo. Carimba `manual` + auditoria, mas
+        // NÃO toca no saldo — o status não mudou, não há impacto a reverter/aplicar.
         if (String(mov.status) === newStatus) {
-          updated = movementFromStorage(mov as any)
+          const now = new Date()
+          const actor = ctx.userId ?? 'system'
+          await movements.updateOne(
+            { _id: mov._id, restaurantId: ctx.restaurantId },
+            {
+              $set: {
+                statusSource: MovementStatusSource.Manual,
+                'audit.updatedAt': now,
+                'audit.updatedBy': actor,
+              },
+              $push: {
+                history: { at: now, by: actor, action: `status:lock:${newStatus}` },
+              } as any,
+            },
+            { session },
+          )
+          updated = movementFromStorage({ ...mov, statusSource: MovementStatusSource.Manual } as any)
           return
         }
 
