@@ -73,7 +73,14 @@ export interface AppliedFee {
  *
  * `fee` (P3): quando informado, é a taxa/prazo CONGELADOS no lançamento — usados
  * na edição para que editar um campo inócuo (ex.: título) não re-precifique o
- * movimento com a taxa ATUAL da conta. Ausente: deriva da conta viva (registro).
+ * movimento com a taxa ATUAL da conta. Ausente (`undefined`): deriva da conta
+ * viva (registro).
+ *
+ * IMPORTANTE — `fee` é tudo-ou-nada: quando `fee` vem, ele é o snapshot
+ * completo; ausência de um campo DENTRO dele significa "não havia" (ex.:
+ * movimento antigo sem prazo registrado), não "busque na conta". Nenhum campo
+ * de `fee` cai individualmente de volta na conta viva — o fallback para a
+ * conta só acontece quando `fee` inteiro é `undefined`.
  */
 export function computeSnapshot (params: {
   direction: MovementDirection
@@ -86,8 +93,8 @@ export function computeSnapshot (params: {
   const isPlatform = isPlatformAccount(account)
 
   if (direction === MovementDirection.In && isPlatform) {
-    const percent = fee?.percent ?? account.feePercent
-    const settlementDays = fee?.settlementDays ?? account.settlementDays
+    const percent = fee != null ? fee.percent : account.feePercent
+    const settlementDays = fee != null ? fee.settlementDays : account.settlementDays
 
     const { feeValue, netValue } = computeFeeNet(grossValue, percent)
     const snapshot: MovementSnapshot = {

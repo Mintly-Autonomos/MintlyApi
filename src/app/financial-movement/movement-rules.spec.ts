@@ -126,6 +126,64 @@ describe('movement-rules', () => {
       expect(snap.feeValue).toBe(0)
       expect(snap.netValue).toBe(100)
     })
+
+    it('fee: { percent: 0 } → taxa zero é respeitada, não cai na taxa da conta', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: platformAccount,
+        fee: { percent: 0 },
+      })
+
+      expect(snap.feeValue).toBe(0)
+      expect(snap.netValue).toBe(100)
+      expect(snap.feePercentApplied).toBe(0)
+    })
+
+    it('fee: { percent: 10 } sem settlementDays, conta com settlementDays: não deriva prazo da conta', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: platformAccount,
+        fee: { percent: 10 },
+      })
+
+      expect(snap.feePercentApplied).toBe(10)
+      expect(snap.settlementDaysApplied).toBeUndefined()
+      expect(snap.predictedReceiptDate).toBeUndefined()
+    })
+
+    it('fee: { settlementDays: 0 } → prazo zero é respeitado, data prevista = data do movimento', () => {
+      const date = new Date('2026-01-10T00:00:00.000Z')
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date,
+        account: platformAccount,
+        fee: { settlementDays: 0 },
+      })
+
+      expect(snap.settlementDaysApplied).toBe(0)
+      expect(snap.predictedReceiptDate).toEqual(date)
+    })
+
+    it('fee: {} (objeto vazio) → sem taxa e sem prazo; nada da conta viva vaza', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: platformAccount,
+        fee: {},
+      })
+
+      expect(snap.feeValue).toBe(0)
+      expect(snap.netValue).toBe(100)
+      expect(snap.feePercentApplied).toBeUndefined()
+      expect(snap.settlementDaysApplied).toBeUndefined()
+      expect(snap.predictedReceiptDate).toBeUndefined()
+    })
   })
 
   describe('balanceImpact', () => {
