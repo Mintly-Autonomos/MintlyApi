@@ -11,8 +11,17 @@ const LOCALHOST = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
  *  - **Sem** header `Origin` (curl, o cron, testes com `fastify.inject`) → passa.
  *    CORS é proteção de navegador, não firewall: bloquear aqui não protegeria nada
  *    e quebraria todo cliente não-browser.
- *  - `localhost`/`127.0.0.1` fora de produção → passa (desenvolver o front contra a
- *    staging não pode exigir mexer em config). Em produção, não.
+ *  - `localhost`/`127.0.0.1` fora de produção → passa (dev local roda com
+ *    `NODE_ENV` de desenvolvimento). Em produção, não.
+ *
+ * ATENÇÃO — o atalho de `localhost` NÃO vale contra a staging: a Vercel força
+ * `NODE_ENV=production` mesmo no ambiente de staging, então lá `isProduction` é
+ * `true`. Quem quiser desenvolver o front local apontando pra API de staging
+ * precisa incluir `http://localhost:4200` na `CORS_ORIGINS` da própria staging
+ * (ver `.github/workflows/deploy.yml`).
+ *
+ * `CORS_ORIGINS` é sincronizada pelo deploy (é `REQUIRED` lá): sem ela a
+ * allowlist nasce vazia e, em produção, TODA origem de navegador é negada.
  */
 export function buildCorsOriginChecker (
   // `Record` em vez de `NodeJS.ProcessEnv`: o namespace global NodeJS não é
