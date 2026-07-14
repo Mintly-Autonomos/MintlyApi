@@ -15,7 +15,9 @@ const LOCALHOST = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/
  *    staging não pode exigir mexer em config). Em produção, não.
  */
 export function buildCorsOriginChecker (
-  env: NodeJS.ProcessEnv = process.env,
+  // `Record` em vez de `NodeJS.ProcessEnv`: o namespace global NodeJS não é
+  // reconhecido pelo ESLint (no-undef) e o tipo estrutural aqui basta.
+  env: Record<string, string | undefined> = process.env,
 ): (origin?: string) => boolean {
   const allowlist = (env.CORS_ORIGINS ?? '')
     .split(',')

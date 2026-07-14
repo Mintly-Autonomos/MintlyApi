@@ -91,9 +91,9 @@ export class UpdateMovementUseCase {
         const frozenFee = accountChanged
           ? undefined
           : {
-              percent: mov.feePercentApplied != null ? num(mov.feePercentApplied) : undefined,
-              settlementDays: mov.settlementDaysApplied != null ? Number(mov.settlementDaysApplied) : undefined,
-            }
+            percent: mov.feePercentApplied != null ? num(mov.feePercentApplied) : undefined,
+            settlementDays: mov.settlementDaysApplied != null ? Number(mov.settlementDaysApplied) : undefined,
+          }
 
         const snapshot = computeSnapshot({
           direction: direction as any,
