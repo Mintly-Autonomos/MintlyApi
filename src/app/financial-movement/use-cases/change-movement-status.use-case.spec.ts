@@ -35,7 +35,7 @@ function makeMov (over: Record<string, any> = {}) {
 
 function wire (opts: { mov?: any } = {}) {
   const mov = 'mov' in opts ? opts.mov : makeMov()
-  const movements = { findOne: vi.fn().mockResolvedValue(mov), updateOne: vi.fn().mockResolvedValue({}) }
+  const movements = { findOne: vi.fn().mockResolvedValue(mov), updateOne: vi.fn().mockResolvedValue({ matchedCount: 1 }) }
   const accounts = { updateOne: vi.fn().mockResolvedValue({ matchedCount: 1 }) }
   const map: Record<string, any> = { financial_movements: movements, financial_accounts: accounts }
   mockGetDatabase.mockReturnValue({ collection: (n: string) => map[n] })
@@ -87,12 +87,28 @@ describe('ChangeMovementStatusUseCase', () => {
     expect(update.$push.history.by).toBe('u1')
   })
 
-  it('sem userId no contexto registra history por "system"', async () => {
+  it('sem userId no contexto registra history e auditoria por "system"', async () => {
     const { movements } = wire()
     await useCase.execute(MOV_ID, 'settled', { env: 'test', restaurantId: 'r1' } as any)
     const [, update] = movements.updateOne.mock.calls[0]
     expect(update.$push.history.by).toBe('system')
-    expect(update.$set['audit.updatedBy']).toBeUndefined()
+    expect(update.$set['audit.updatedBy']).toBe('system')
+  })
+
+  it('carimba statusSource manual (trava o settler) - P1', async () => {
+    const { movements } = wire()
+    const updated = await useCase.execute(MOV_ID, 'settled', CTX)
+    expect(updated.statusSource).toBe('manual')
+    const [, update] = movements.updateOne.mock.calls[0]
+    expect(update.$set.statusSource).toBe('manual')
+  })
+
+  it('status alterado concorrentemente (guard não casa) lança ConflictError', async () => {
+    const { movements, accounts } = wire()
+    movements.updateOne.mockResolvedValue({ matchedCount: 0 })
+    await expect(useCase.execute(MOV_ID, 'settled', CTX)).rejects.toBeInstanceOf(ConflictError)
+    // guard-first: abortou sem tocar no saldo.
+    expect(accounts.updateOne).not.toHaveBeenCalled()
   })
 
   it('valores nulos na movimentação são tratados como 0 (branch ?? 0)', async () => {

@@ -1,12 +1,11 @@
 import { ObjectId } from 'mongodb'
-import { MovementStatus } from 'mintly-lib'
+import { MovementStatus, MovementStatusSource } from 'mintly-lib'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import { RequestContext } from '../../../core/context/request-context'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { Resource } from '../../../core/types/resource'
-import { balanceImpact } from '../movement-rules'
-import { applyBalanceImpact } from '../movement-balance'
+import { applyStatusTransition } from '../movement-status'
 import { movementFromStorage } from '../financial-movement-repository'
 
 const VALID = new Set<string>([MovementStatus.Pending, MovementStatus.Settled, MovementStatus.Cancelled])
@@ -42,35 +41,25 @@ export class ChangeMovementStatusUseCase {
         )
         if (!mov) throw new NotFoundError(Resource.FinancialMovement, movementId)
 
-        const oldStatus = mov.status as string
-        if (oldStatus === newStatus) {
+        if (String(mov.status) === newStatus) {
           updated = movementFromStorage(mov as any)
           return
         }
 
-        const gross = Number((mov.grossValue ?? 0).toString())
-        const net = Number((mov.netValue ?? 0).toString())
-        const now = new Date()
-        const accountId = new ObjectId(String(mov.account._id))
+        // P1 — ação HUMANA carimba `manual`: trava permanente, o settler nunca mais
+        // reavalia este movimento por data. Quem tem a palavra final é o dono.
+        await applyStatusTransition({
+          movements,
+          accounts,
+          movement: mov,
+          newStatus,
+          actor: ctx.userId ?? 'system',
+          statusSource: MovementStatusSource.Manual,
+          session,
+          now: new Date(),
+        })
 
-        // Reverte o efeito do status atual e aplica o do novo status.
-        const oldImpact = balanceImpact({ direction: mov.direction, status: oldStatus as any, grossValue: gross, netValue: net })
-        const newImpact = balanceImpact({ direction: mov.direction, status: newStatus as any, grossValue: gross, netValue: net })
-        await applyBalanceImpact(accounts, accountId, ctx.restaurantId, oldImpact, -1, session, now)
-        await applyBalanceImpact(accounts, accountId, ctx.restaurantId, newImpact, 1, session, now)
-
-        const historyEntry = { at: now, by: ctx.userId ?? 'system', action: `status:${oldStatus}->${newStatus}` }
-
-        await movements.updateOne(
-          { _id: mov._id },
-          {
-            $set: { status: newStatus, 'audit.updatedAt': now, 'audit.updatedBy': ctx.userId },
-            $push: { history: historyEntry } as any,
-          },
-          { session },
-        )
-
-        updated = movementFromStorage({ ...mov, status: newStatus } as any)
+        updated = movementFromStorage({ ...mov, status: newStatus, statusSource: MovementStatusSource.Manual } as any)
       })
 
       return updated
