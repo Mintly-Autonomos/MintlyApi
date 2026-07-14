@@ -12,6 +12,7 @@ describe('Financial Account (Integration)', () => {
   let app: FastifyInstance
   const fakeRestaurantId = '507f1f77bcf86cd799439011'
   let createdAccountId: string
+  let platformAccountId: string
   let testToken: string
 
   let mongod: MongoMemoryServer // <-- Nossa variável do banco falso
@@ -199,5 +200,81 @@ describe('Financial Account (Integration)', () => {
 
     // O sistema DEVE barrar com status 409!
     expect(response.statusCode).toBe(409)
+  })
+
+  // ---------------------------------------------------------
+  // TESTE 4: TIPO IMUTÁVEL E TAXA SÓ EM CONTA PLATFORM (P5)
+  // ---------------------------------------------------------
+  it('cria uma conta platform (fixture para os testes de P5)', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/financial-accounts',
+      headers: {
+        'x-restaurant-id': fakeRestaurantId,
+        authorization: `Bearer ${testToken}`,
+        env: 'test',
+      },
+      payload: {
+        name: 'Maquininha Integração',
+        type: 'platform',
+        feePercent: 3,
+        settlementDays: 30,
+        status: 'active',
+        restaurantId: fakeRestaurantId,
+        audit: { createdAt: new Date(), updatedAt: new Date() },
+      },
+    })
+
+    expect(response.statusCode).toBe(201)
+
+    const body = JSON.parse(response.payload)
+    platformAccountId = body.payload._id
+  })
+
+  it('PATCH com type é rejeitado — tipo da conta é imutável (P5)', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/financial-accounts/${createdAccountId}`,
+      headers: {
+        'x-restaurant-id': fakeRestaurantId,
+        authorization: `Bearer ${testToken}`,
+        env: 'test',
+      },
+      payload: { type: 'platform' },
+    })
+
+    expect(response.statusCode).toBeGreaterThanOrEqual(400)
+    expect(response.statusCode).toBeLessThan(500)
+  })
+
+  it('PATCH com feePercent em conta não-platform (cash) é rejeitado (P5)', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/financial-accounts/${createdAccountId}`,
+      headers: {
+        'x-restaurant-id': fakeRestaurantId,
+        authorization: `Bearer ${testToken}`,
+        env: 'test',
+      },
+      payload: { feePercent: 5 },
+    })
+
+    expect(response.statusCode).toBeGreaterThanOrEqual(400)
+    expect(response.statusCode).toBeLessThan(500)
+  })
+
+  it('PATCH com feePercent em conta platform é aceito (P5)', async () => {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/financial-accounts/${platformAccountId}`,
+      headers: {
+        'x-restaurant-id': fakeRestaurantId,
+        authorization: `Bearer ${testToken}`,
+        env: 'test',
+      },
+      payload: { feePercent: 15 },
+    })
+
+    expect(response.statusCode).toBe(200)
   })
 })
