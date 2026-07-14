@@ -316,4 +316,88 @@ describe('UpdateMovementUseCase', () => {
     await useCase.execute(MOV_ID, { status: 'settled' }, CTX)
     expect(storedDoc(movements).statusSource).toBe(MovementStatusSource.Auto)
   })
+
+  // --- P1 (achado 2): trocar de conta recomputa o status -----------------
+  /** Pendente de plataforma (entrada), com prazo e data prevista gravados. */
+  function makePendingPlatformMov (over: Record<string, any> = {}) {
+    return makeMov({
+      status: 'pending',
+      account: { _id: ACC_ID, name: 'iFood', type: 'platform' },
+      grossValue: 100,
+      feeValue: 10,
+      netValue: 90,
+      feePercentApplied: 10,
+      settlementDaysApplied: 14,
+      predictedReceiptDate: new Date('2026-06-30T00:00:00.000Z'),
+      ...over,
+    })
+  }
+
+  const bankAccount = () => makeAccount({ _id: new ObjectId(ACC2_ID), name: 'Banco', type: 'bank' })
+
+  it('pendente de plataforma movido p/ conta bank vira settled e perde a data prevista (P1)', async () => {
+    const { movements } = wire({ mov: makePendingPlatformMov(), account: bankAccount() })
+
+    const updated = await useCase.execute(MOV_ID, { accountId: ACC2_ID }, CTX)
+
+    // Conta bancária não tem prazo: não há o que aguardar — o dinheiro é disponível.
+    expect(updated.status).toBe('settled')
+    const doc = storedDoc(movements)
+    expect(doc.status).toBe('settled')
+    expect(doc.predictedReceiptDate).toBeUndefined()
+    // Recomputado pela regra, não por ação humana: continua no alcance do settler.
+    expect(doc.statusSource).toBe(MovementStatusSource.Auto)
+  })
+
+  it('troca de conta com statusSource=manual NÃO recomputa o status (o dono trancou)', async () => {
+    const { movements } = wire({
+      mov: makePendingPlatformMov({ statusSource: MovementStatusSource.Manual }),
+      account: bankAccount(),
+    })
+
+    const updated = await useCase.execute(MOV_ID, { accountId: ACC2_ID }, CTX)
+
+    expect(updated.status).toBe('pending')
+    expect(storedDoc(movements).statusSource).toBe(MovementStatusSource.Manual)
+  })
+
+  it('status explícito no payload tem precedência sobre o recomputo da conta nova', async () => {
+    const { movements } = wire({ mov: makePendingPlatformMov(), account: bankAccount() })
+
+    const updated = await useCase.execute(MOV_ID, { accountId: ACC2_ID, status: 'cancelled' }, CTX)
+
+    expect(updated.status).toBe('cancelled')
+    expect(storedDoc(movements).statusSource).toBe(MovementStatusSource.Manual)
+  })
+
+  it('troca entre contas platform mantém pending (a conta nova também tem prazo)', async () => {
+    const outraPlataforma = makeAccount({ _id: new ObjectId(ACC2_ID), name: 'Rappi', type: 'platform', feePercent: 20, settlementDays: 30 })
+    const { movements } = wire({ mov: makePendingPlatformMov(), account: outraPlataforma })
+
+    const updated = await useCase.execute(MOV_ID, { accountId: ACC2_ID }, CTX)
+
+    expect(updated.status).toBe('pending')
+    expect(storedDoc(movements).predictedReceiptDate).toBeInstanceOf(Date)
+  })
+
+  // --- Blindagem: doc semeado com data prevista mas sem prazo aplicado ------
+  it('edição inócua preserva a predictedReceiptDate de doc sem settlementDaysApplied', async () => {
+    const mov = makePendingPlatformMov({ settlementDaysApplied: undefined })
+    const { movements } = wire({ mov, account: makeAccount({ _id: new ObjectId(ACC_ID), type: 'platform', feePercent: 10, settlementDays: 14 }) })
+
+    await useCase.execute(MOV_ID, { title: 'Novo título' }, CTX)
+
+    // Sem isto o replaceOne apagaria a data e o settler nunca mais veria o movimento.
+    expect(storedDoc(movements).predictedReceiptDate).toEqual(new Date('2026-06-30T00:00:00.000Z'))
+  })
+
+  it('mudar a DATA de doc sem settlementDaysApplied não ressuscita a data prevista antiga', async () => {
+    const mov = makePendingPlatformMov({ settlementDaysApplied: undefined })
+    const { movements } = wire({ mov, account: makeAccount({ _id: new ObjectId(ACC_ID), type: 'platform', feePercent: 10, settlementDays: 14 }) })
+
+    await useCase.execute(MOV_ID, { date: '2026-07-01T00:00:00.000Z' }, CTX)
+
+    // A data prevista antiga foi derivada da data ANTIGA: preservá-la seria mentira.
+    expect(storedDoc(movements).predictedReceiptDate).toBeUndefined()
+  })
 })

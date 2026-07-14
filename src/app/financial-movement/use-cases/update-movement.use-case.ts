@@ -5,7 +5,7 @@ import { RequestContext } from '../../../core/context/request-context'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { Resource } from '../../../core/types/resource'
-import { computeSnapshot, balanceImpact } from '../movement-rules'
+import { computeSnapshot, balanceImpact, defaultStatus } from '../movement-rules'
 import { applyBalanceImpact } from '../movement-balance'
 import { movementToStorage, movementFromStorage } from '../financial-movement-repository'
 
@@ -81,13 +81,29 @@ export class UpdateMovementUseCase {
 
         const newGross = changes.grossValue ?? num(mov.grossValue)
         const newDate = changes.date ? new Date(changes.date) : new Date(mov.date)
-        const newStatus = changes.status ?? mov.status
+        const dateChanged = newDate.getTime() !== new Date(mov.date).getTime()
 
         // P3 — snapshot congelado: a edição reaproveita a taxa/prazo gravados no
         // movimento, para que editar um campo inócuo (ex.: título) não re-precifique
         // o líquido com a taxa ATUAL da conta. EXCEÇÃO: se o usuário TROCOU a conta,
         // não existe snapshot aplicável à conta nova — vale a taxa/prazo vivos dela.
         const accountChanged = changes.accountId != null && changes.accountId !== oldAccountId
+
+        // P1 — trocar de conta RECOMPUTA o status pelas regras da conta NOVA (a
+        // mesma `defaultStatus` do registro). Arrastar o status antigo criava um
+        // beco sem saída: um `pending` de plataforma movido p/ conta bancária
+        // continuava `pending` (dinheiro em "a receber" numa conta que não tem "a
+        // receber") e, sem `predictedReceiptDate` — a conta nova não tem prazo —,
+        // ficava invisível ao settler PARA SEMPRE. `statusSource: 'manual'` (ação
+        // humana anterior) é soberano e trava o recálculo; um `changes.status`
+        // explícito neste payload continua tendo precedência sobre tudo.
+        const isManual = mov.statusSource === MovementStatusSource.Manual
+        const recomputeStatus = accountChanged && !isManual
+        const statusByRules = recomputeStatus
+          ? defaultStatus({ direction: direction as any, account: account as any })
+          : mov.status
+        const newStatus = changes.status ?? statusByRules
+
         const frozenFee = accountChanged
           ? undefined
           : {
@@ -138,7 +154,17 @@ export class UpdateMovementUseCase {
         }
         if (snapshot.feePercentApplied != null) newDoc.feePercentApplied = snapshot.feePercentApplied
         if (snapshot.settlementDaysApplied != null) newDoc.settlementDaysApplied = snapshot.settlementDaysApplied
-        if (snapshot.predictedReceiptDate != null) newDoc.predictedReceiptDate = snapshot.predictedReceiptDate
+        if (snapshot.predictedReceiptDate != null) {
+          newDoc.predictedReceiptDate = snapshot.predictedReceiptDate
+        } else if (!accountChanged && !dateChanged && mov.predictedReceiptDate != null) {
+          // Blindagem: um doc com `predictedReceiptDate` mas SEM
+          // `settlementDaysApplied` (semeado direto no banco, fora da API) não tem
+          // como recalcular a data prevista pelo snapshot congelado. Sem isto, o
+          // `replaceOne` APAGARIA a data prevista numa edição inócua (até de
+          // título) e o movimento sumiria do radar do settler. Só vale enquanto a
+          // data prevista continua fazendo sentido: conta e data de origem intactas.
+          newDoc.predictedReceiptDate = new Date(mov.predictedReceiptDate)
+        }
         const counterparty = changes.counterparty ?? mov.counterparty
         if (counterparty) newDoc.counterparty = counterparty
         const fiscalNote = changes.fiscalNote ?? mov.fiscalNote

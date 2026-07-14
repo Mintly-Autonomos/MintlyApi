@@ -322,6 +322,41 @@ describe('Financial Movement lifecycle (Integration)', () => {
     expect((await balances(db, cashId)).available).toBe(25)
   })
 
+  it('P1: pendente de plataforma movido p/ conta bancária liquida e sai do "a receber"', async () => {
+    const { auth, db, restaurantId, revenueCatId } = await setup()
+    const platformId = await createPlatform(auth, restaurantId)
+    const bank = await db.collection('financial_accounts').insertOne({
+      restaurantId,
+      name: 'Banco',
+      type: 'bank',
+      status: 'active',
+      isDefault: false,
+      availableBalance: 0,
+      predictedBalance: 0,
+      audit: audit(),
+    })
+    const bankId = String(bank.insertedId)
+
+    const movId = (await register(auth, { direction: 'in', title: 'Repasse', grossValue: 100, date: '2026-06-16T00:00:00.000Z', accountId: platformId, categoryId: revenueCatId, paymentMethod: 'pix' })).json().payload._id
+    expect(await balances(db, platformId)).toEqual({ available: 0, predicted: 90 })
+
+    const res = await app.inject({ method: 'PATCH', url: `/financial-movements/${movId}`, headers: auth, payload: { accountId: bankId } })
+    expect(res.statusCode).toBe(200)
+
+    // Conta bancária não tem prazo: nada a aguardar → liquidado, sem data prevista.
+    // Antes disto o movimento continuava `pending` e SEM `predictedReceiptDate`,
+    // ficando invisível ao settler para sempre (dinheiro preso em "a receber").
+    expect(res.json().payload.status).toBe('settled')
+    expect(res.json().payload.predictedReceiptDate).toBeUndefined()
+
+    const doc = await db.collection('financial_movements').findOne({ _id: new ObjectId(movId) })
+    expect(doc!.status).toBe('settled')
+    expect(doc!.predictedReceiptDate).toBeUndefined()
+
+    expect(await balances(db, platformId)).toEqual({ available: 0, predicted: 0 })
+    expect(await balances(db, bankId)).toEqual({ available: 100, predicted: 0 })
+  })
+
   it('recompute: conta inexistente (id válido) → 404', async () => {
     const { auth } = await setup()
     const res = await app.inject({ method: 'POST', url: '/financial-movements/recompute-balances', headers: auth, payload: { accountId: new ObjectId().toHexString() } })
