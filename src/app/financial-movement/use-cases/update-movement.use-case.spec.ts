@@ -72,6 +72,17 @@ function wire (opts: { mov?: any, account?: any, category?: any } = {}) {
 /** Extrai o storageDoc passado ao replaceOne (2º argumento). */
 const storedDoc = (movements: any) => movements.replaceOne.mock.calls[0][1]
 
+/**
+ * Ajustes de saldo emitidos (na ordem: reverte o antigo na conta ANTIGA, aplica
+ * o novo na NOVA). Dinheiro é Decimal128 na persistência — normaliza p/ number.
+ */
+function balanceCalls (accounts: any): Array<{ accountId: string, field: string, delta: number }> {
+  return accounts.updateOne.mock.calls.map(([filter, update]: any[]) => {
+    const [field, value] = Object.entries(update.$inc)[0] as [string, any]
+    return { accountId: String(filter._id), field, delta: Number(value.toString()) }
+  })
+}
+
 describe('UpdateMovementUseCase', () => {
   let useCase: UpdateMovementUseCase
   let session: any
@@ -378,6 +389,72 @@ describe('UpdateMovementUseCase', () => {
 
     expect(updated.status).toBe('pending')
     expect(storedDoc(movements).predictedReceiptDate).toBeInstanceOf(Date)
+  })
+
+  it('CANCELADA (auto) trocando de conta NÃO recomputa o status e NÃO cria dinheiro', async () => {
+    // Recomputar a partir de `cancelled` era criação de dinheiro do nada: a reversão
+    // do impacto de `cancelled` é no-op (nunca somou saldo) e a aplicação de
+    // `settled` creditaria +netValue na conta nova. Nenhuma das duas contas se mexe.
+    const mov = makePendingPlatformMov({ status: 'cancelled', statusSource: MovementStatusSource.Auto })
+    const { movements, accounts } = wire({ mov, account: bankAccount() })
+
+    const updated = await useCase.execute(MOV_ID, { accountId: ACC2_ID }, CTX)
+
+    expect(updated.status).toBe('cancelled')
+    expect(storedDoc(movements).status).toBe('cancelled')
+    expect(balanceCalls(accounts)).toEqual([]) // nem a conta antiga, nem a nova
+  })
+
+  it('LIQUIDADA pelo settler (auto) trocando de conta continua settled — o dinheiro migra de conta, não de bucket', async () => {
+    // Recomputar a partir de `settled` devolveria p/ "a receber" dinheiro que já
+    // entrou (o settler carimba `auto`, então TODO liquidado automático seria elegível).
+    const mov = makePendingPlatformMov({ status: 'settled', statusSource: MovementStatusSource.Auto })
+    const { movements, accounts } = wire({ mov, account: bankAccount() })
+
+    const updated = await useCase.execute(MOV_ID, { accountId: ACC2_ID }, CTX)
+
+    expect(updated.status).toBe('settled')
+    expect(storedDoc(movements).status).toBe('settled')
+    // Conta antiga devolve o líquido antigo (90); a nova (bank, sem taxa) recebe 100.
+    expect(balanceCalls(accounts)).toEqual([
+      { accountId: ACC_ID, field: 'availableBalance', delta: -90 },
+      { accountId: ACC2_ID, field: 'availableBalance', delta: 100 },
+    ])
+  })
+
+  it('PATCH { accountId, status: <o MESMO status atual> } não neutraliza o recomputo', async () => {
+    // É o payload de qualquer front que reenvia o formulário inteiro no save.
+    const { movements, accounts } = wire({ mov: makePendingPlatformMov(), account: bankAccount() })
+
+    const updated = await useCase.execute(MOV_ID, { accountId: ACC2_ID, status: 'pending' }, CTX)
+
+    expect(updated.status).toBe('settled')
+    const doc = storedDoc(movements)
+    expect(doc.status).toBe('settled')
+    expect(doc.predictedReceiptDate).toBeUndefined()
+    // Mesmo status ≠ ação humana: não carimba manual (senão travaria o settler).
+    expect(doc.statusSource).toBe(MovementStatusSource.Auto)
+    expect(balanceCalls(accounts)).toEqual([
+      { accountId: ACC_ID, field: 'predictedBalance', delta: -90 },
+      { accountId: ACC2_ID, field: 'availableBalance', delta: 100 },
+    ])
+  })
+
+  it('invariante: pendente que fica SEM data prevista é statusSource=manual (o settler nunca o alcança)', async () => {
+    // Doc legado: pending, `auto`, sem data prevista — inalcançável pelo settler.
+    const mov = makePendingPlatformMov({
+      statusSource: MovementStatusSource.Auto,
+      settlementDaysApplied: undefined,
+      predictedReceiptDate: undefined,
+    })
+    const { movements } = wire({ mov, account: makeAccount({ _id: new ObjectId(ACC_ID), type: 'platform', feePercent: 10, settlementDays: 14 }) })
+
+    await useCase.execute(MOV_ID, { title: 'Novo título' }, CTX)
+
+    const doc = storedDoc(movements)
+    expect(doc.status).toBe('pending')
+    expect(doc.predictedReceiptDate).toBeUndefined()
+    expect(doc.statusSource).toBe(MovementStatusSource.Manual)
   })
 
   // --- Blindagem: doc semeado com data prevista mas sem prazo aplicado ------
