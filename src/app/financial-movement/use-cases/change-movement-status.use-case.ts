@@ -54,6 +54,7 @@ export class ChangeMovementStatusUseCase {
         if (String(mov.status) === newStatus) {
           const now = new Date()
           const actor = ctx.userId ?? 'system'
+          const entry = { at: now, by: actor, action: `status:lock:${newStatus}` }
           await movements.updateOne(
             { _id: mov._id, restaurantId: ctx.restaurantId },
             {
@@ -62,13 +63,18 @@ export class ChangeMovementStatusUseCase {
                 'audit.updatedAt': now,
                 'audit.updatedBy': actor,
               },
-              $push: {
-                history: { at: now, by: actor, action: `status:lock:${newStatus}` },
-              } as any,
+              $push: { history: entry } as any,
             },
             { session },
           )
-          updated = movementFromStorage({ ...mov, statusSource: MovementStatusSource.Manual } as any)
+          // A resposta espelha o que ACABOU de ser gravado (history + audit), não o
+          // documento lido antes do updateOne — payload stale mente para o cliente.
+          updated = movementFromStorage({
+            ...mov,
+            statusSource: MovementStatusSource.Manual,
+            history: [...(Array.isArray(mov.history) ? mov.history : []), entry],
+            audit: { ...(mov.audit ?? {}), updatedAt: now, updatedBy: actor },
+          } as any)
           return
         }
 
