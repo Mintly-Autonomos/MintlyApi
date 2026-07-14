@@ -16,11 +16,16 @@ import { buildCorsOriginChecker } from '../../core/config/cors-origins'
 
 export async function buildServer (server: FastifyInstance = Fastify()): Promise<FastifyInstance> {
   // Allowlist por CORS_ORIGINS (P4) — ver core/config/cors-origins.ts.
+  // Negar CORS NÃO é bloquear a requisição no servidor: é só omitir o header
+  // `Access-Control-Allow-Origin` na resposta. Quem recusa é o navegador, do lado
+  // do cliente — a API responde normalmente. Por isso o callback recebe `false`
+  // sem erro; passar um `Error` faria o @fastify/cors chamar `next(error)`, que cairia
+  // no setErrorHandler genérico abaixo e devolveria 500, poluindo logs/alertas como
+  // se fosse bug real a cada origem não cadastrada (esperado em produção).
   const isOriginAllowed = buildCorsOriginChecker()
   await server.register(cors, {
     origin: (origin, callback) => {
-      if (isOriginAllowed(origin)) return callback(null, true)
-      callback(new Error('Origem não permitida pelo CORS.'), false)
+      callback(null, isOriginAllowed(origin))
     },
   })
 
