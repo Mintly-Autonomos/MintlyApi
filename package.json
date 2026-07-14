@@ -20,7 +20,8 @@
     "test:e2e": "vitest --run --config tests/e2e/vitest.e2e.config.ts",
     "validate:swagger": "tsx scripts/validate-swagger.ts",
     "db:indices": "tsx scripts/indices/run.ts",
-    "db:seed-envs": "tsx scripts/app/seed-valid-envs.ts"
+    "db:seed-envs": "tsx scripts/app/seed-valid-envs.ts",
+    "db:settle": "tsx scripts/movements/settle-due.ts"
   },
   "engines": {
     "node": ">=22 <25"
