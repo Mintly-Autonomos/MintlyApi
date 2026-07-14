@@ -243,8 +243,12 @@ describe('Financial Account (Integration)', () => {
       payload: { type: 'platform' },
     })
 
-    expect(response.statusCode).toBeGreaterThanOrEqual(400)
-    expect(response.statusCode).toBeLessThan(500)
+    // A regra (account-rules.ts) lança ConflictError → 409 + code AUTH-0002. Asserir a
+    // faixa 4xx passaria por qualquer erro (ex.: um 404 por engano); o status exato prova
+    // que a rejeição veio desta regra, não de outro motivo.
+    expect(response.statusCode).toBe(409)
+    const body = JSON.parse(response.payload)
+    expect(body.code).toBe('AUTH-0002')
   })
 
   it('PATCH com feePercent em conta não-platform (cash) é rejeitado (P5)', async () => {
@@ -259,8 +263,10 @@ describe('Financial Account (Integration)', () => {
       payload: { feePercent: 5 },
     })
 
-    expect(response.statusCode).toBeGreaterThanOrEqual(400)
-    expect(response.statusCode).toBeLessThan(500)
+    // Idem: ConflictError → 409 + code AUTH-0002 (regra "só platform tem taxa").
+    expect(response.statusCode).toBe(409)
+    const body = JSON.parse(response.payload)
+    expect(body.code).toBe('AUTH-0002')
   })
 
   it('PATCH com feePercent em conta platform é aceito (P5)', async () => {
