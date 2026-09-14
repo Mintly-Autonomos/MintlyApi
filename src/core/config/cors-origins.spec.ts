@@ -76,6 +76,11 @@ describe('deploy.yml propaga CORS_ORIGINS ao runtime', () => {
   })
 
   it('falha o deploy do EC2 quando CORS_ORIGINS esta ausente', () => {
-    expect(deploy).toContain('if [ -z "${CORS_ORIGINS:-}" ]; then')
+    const inicio = deploy.indexOf('- name: Validate required runtime env')
+    const step = deploy.slice(inicio, deploy.indexOf('- name: Setup Node.js', inicio))
+
+    expect(inicio).toBeGreaterThan(-1)
+    expect(step).toContain('CORS_ORIGINS')
+    expect(step).toContain('exit 1')
   })
 })
