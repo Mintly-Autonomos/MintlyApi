@@ -14,6 +14,16 @@ name: Settle Due Movements
 # madrugada seguinte, driblando o gate de release staging → main que existe
 # justamente para isso.
 #
+# ENVIRONMENTS DEDICADOS (`settle-*`, sem regra de proteção). Os environments
+# `staging`/`production` do deploy exigem `required_reviewers`, e regra de
+# proteção vale para QUALQUER trigger — inclusive `schedule`. Apontados neles, os
+# runs das 06:00 UTC ficariam parados em "Waiting for approval" até alguém clicar
+# (expira em 30 dias): um job noturno que exige humano às 3h não é um job noturno.
+# O gate humano continua onde importa, no deploy. As credenciais do Mongo são
+# secrets REPO-level, então os `settle-*` não precisam de secret próprio — e
+# existem como ponto de extensão para, no futuro, receberem um usuário do Atlas
+# com permissão reduzida (só ler/atualizar `financial_movements`).
+#
 # NOTA: `on: schedule` só dispara a partir da branch DEFAULT do repositório —
 # este arquivo precisa chegar na default para o cron começar a rodar. Até lá,
 # use o workflow_dispatch.
@@ -38,7 +48,7 @@ jobs:
     # No agendamento roda sempre; no disparo manual, só se o alvo for staging.
     if: github.event_name == 'schedule' || inputs.environment == 'staging'
     runs-on: ubuntu-latest
-    environment: staging
+    environment: settle-staging
 
     env:
       SETTLE_ENV: staging
@@ -80,9 +90,16 @@ jobs:
 
   production:
     name: Settle production
-    if: github.event_name == 'schedule' || inputs.environment == 'production'
+    # DESLIGADO NO AGENDAMENTO (só disparo manual) enquanto produção não existe:
+    # o deploy de production (AWS EC2) ainda não está pronto, e o banco `production`
+    # não está em `app.valid_environments` — o guardrail do settle-due.ts aborta.
+    # No schedule isso viraria um job vermelho toda madrugada; alerta que falha
+    # todo dia é alerta que ninguém lê, e aí a noite em que a STAGING quebrar de
+    # verdade passa batido. Reativar (voltando o `github.event_name ==
+    # 'schedule' ||`) junto com o primeiro deploy real de produção.
+    if: inputs.environment == 'production'
     runs-on: ubuntu-latest
-    environment: production
+    environment: settle-production
 
     env:
       SETTLE_ENV: production
