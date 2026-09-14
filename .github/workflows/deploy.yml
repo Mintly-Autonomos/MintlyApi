@@ -219,6 +219,16 @@ jobs:
           # production deploya o código da branch main.
           ref: main
 
+      # Espelha o guard REQUIRED do sync da Vercel. Sem CORS_ORIGINS a API sobe
+      # saudável e nega TODA origem de navegador (NODE_ENV=production desliga o
+      # atalho de localhost): falhar o deploy é melhor que derrubar o front.
+      - name: Validate required runtime env
+        run: |
+          if [ -z "${CORS_ORIGINS:-}" ]; then
+            echo "::error::CORS_ORIGINS ausente (defina nos Secrets do repo) — a API subiria negando toda origem de navegador."
+            exit 1
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -267,6 +277,11 @@ jobs:
         run: |
           ssh "$AWS_EC2_USER@$AWS_EC2_HOST" <<EOF
             set -e
+            # O bloco `env:` do job so alcanca os steps do RUNNER. Quem reinicia o
+            # processo aqui e `pm2 --update-env`, que le o env do shell do ssh —
+            # entao a var precisa existir NESTE shell para chegar no runtime.
+            # (No caminho systemctl ela tem de estar na unit: o systemd nao herda daqui.)
+            export CORS_ORIGINS='${CORS_ORIGINS}'
             mkdir -p "$AWS_APP_DIR"
             tar -xzf /tmp/mintly-api-deploy.tgz -C "$AWS_APP_DIR"
             cd "$AWS_APP_DIR"

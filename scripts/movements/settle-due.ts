@@ -3,8 +3,10 @@ import { APP_DB } from '../../src/app/environment/env-allowlist'
 import { SettleDueMovementsUseCase } from '../../src/app/financial-movement/use-cases/settle-due-movements.use-case'
 
 /**
- * Liquidação automática por data (P1): roda o settler para TODOS os ambientes
- * listados em `app.valid_environments`.
+ * Liquidação automática por data (P1): liquida UM ambiente por execução — o de
+ * `SETTLE_ENV`, validado contra a allowlist `app.valid_environments`. NÃO varre
+ * todos os ambientes da tabela: ver a justificativa do amarre ambiente ⇄ branch
+ * no corpo de `main()` e em `settle.yml`.
  *
  * Uso: `npm run db:settle` (lê as vars de conexão do Mongo). Idempotente — pode
  * repetir sem duplicar saldo. Agendado 1x/dia pelo workflow `settle.yml`.

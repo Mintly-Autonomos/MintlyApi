@@ -86,6 +86,20 @@ describe('ChangeMovementStatusUseCase', () => {
     expect(accounts.updateOne).not.toHaveBeenCalled()
   })
 
+  it('trava repetida e idempotente: ja manual no mesmo status nao grava de novo', async () => {
+    // Sem este curto-circuito, cada reenvio do formulario (ou retry apos timeout)
+    // empilha um `status:lock:*` identico no history - array embutido sem limite,
+    // que soterra a trilha de auditoria real.
+    const { movements, accounts } = wire({ mov: makeMov({ status: 'pending', statusSource: 'manual' }) })
+
+    const updated = await useCase.execute(MOV_ID, 'pending', CTX)
+
+    expect(updated.status).toBe('pending')
+    expect(updated.statusSource).toBe('manual')
+    expect(movements.updateOne).not.toHaveBeenCalled()
+    expect(accounts.updateOne).not.toHaveBeenCalled()
+  })
+
   it('mesmo status sem userId no contexto registra o carimbo por "system"', async () => {
     const { movements } = wire({ mov: makeMov({ status: 'settled' }) })
     await useCase.execute(MOV_ID, 'settled', { env: 'test', restaurantId: 'r1' } as any)

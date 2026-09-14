@@ -66,4 +66,16 @@ describe('deploy.yml propaga CORS_ORIGINS ao runtime', () => {
     const required = (deploy.match(/^\s*REQUIRED="[^"]*"$/gm) ?? []).join(' ')
     expect(required).toContain('CORS_ORIGINS')
   })
+
+  // Declarar no `env:` do job so alcanca os steps do RUNNER. No EC2 quem sobe o
+  // processo e `pm2 --update-env`, que le o env do shell do ssh: sem o export
+  // dentro do heredoc a var nunca chega no runtime, e a assercao de declaracao
+  // acima passaria verde com a producao negando toda origem de navegador.
+  it('exporta CORS_ORIGINS dentro do ssh do EC2 (declarar no env: do job nao basta)', () => {
+    expect(deploy).toContain('export CORS_ORIGINS=')
+  })
+
+  it('falha o deploy do EC2 quando CORS_ORIGINS esta ausente', () => {
+    expect(deploy).toContain('if [ -z "${CORS_ORIGINS:-}" ]; then')
+  })
 })

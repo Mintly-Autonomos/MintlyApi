@@ -52,6 +52,15 @@ export class ChangeMovementStatusUseCase {
         // settler liquidava na data assim mesmo. Carimba `manual` + auditoria, mas
         // NÃO toca no saldo — o status não mudou, não há impacto a reverter/aplicar.
         if (String(mov.status) === newStatus) {
+          // Idempotente: se ja esta travado como manual NESTE status, reafirmar nao
+          // muda nada de fato. Gravar de novo so empilharia `status:lock:*` identicos
+          // no `history` (array embutido, sem limite no schema), soterrando a trilha
+          // de auditoria real a cada reenvio de formulario ou retry de cliente.
+          if (mov.statusSource === MovementStatusSource.Manual) {
+            updated = movementFromStorage(mov as any)
+            return
+          }
+
           const now = new Date()
           const actor = ctx.userId ?? 'system'
           const entry = { at: now, by: actor, action: `status:lock:${newStatus}` }

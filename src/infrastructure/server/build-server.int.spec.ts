@@ -68,8 +68,13 @@ describe('build-server CORS (integração, P4)', () => {
 
   afterAll(async () => {
     await server.close()
-    process.env.CORS_ORIGINS = ORIGINAL_CORS_ORIGINS
-    process.env.NODE_ENV = ORIGINAL_NODE_ENV
+    // Atribuir `undefined` a process.env grava a STRING "undefined": a allowlist
+    // do proximo buildServer() nasceria como ['undefined'] em vez de vazia.
+    // Apagar a chave e a unica forma de restaurar o estado "nao definida".
+    if (ORIGINAL_CORS_ORIGINS === undefined) delete process.env.CORS_ORIGINS
+    else process.env.CORS_ORIGINS = ORIGINAL_CORS_ORIGINS
+    if (ORIGINAL_NODE_ENV === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = ORIGINAL_NODE_ENV
   })
 
   it('origem na allowlist: resposta traz access-control-allow-origin com aquela origem', async () => {
