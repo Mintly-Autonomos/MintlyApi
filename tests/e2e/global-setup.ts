@@ -30,10 +30,18 @@ function client (): MongoClient {
   return new MongoClient(uri)
 }
 
+/**
+ * Fail-open, igual ao `assertValidEnv`: se a allowlist compartilhada não puder
+ * ser lida/escrita (usuário do Atlas restrito aos bancos de tenant, por exemplo),
+ * o servidor da suíte TAMBÉM não vai conseguir lê-la — e allowlist ilegível é
+ * permissiva. Abortar aqui mataria a suíte inteira por causa de um guard que,
+ * nesse cenário, nem está ativo.
+ */
 export async function setup (): Promise<void> {
-  const conn = client()
-  await conn.connect()
+  let conn: MongoClient | undefined
   try {
+    conn = client()
+    await conn.connect()
     const col = conn.db(APP_DB).collection<{ name: string }>(COLLECTION)
     const total = await col.countDocuments()
 
@@ -43,18 +51,23 @@ export async function setup (): Promise<void> {
 
     const res = await col.updateOne({ name: E2E_ENV }, { $setOnInsert: { name: E2E_ENV } }, { upsert: true })
     inseridoPorNos = res.upsertedCount === 1
+  } catch (error) {
+    console.warn(`[e2e] allowlist nao registrada (${(error as Error).message}) - seguindo assim mesmo`)
   } finally {
-    await conn.close()
+    await conn?.close().catch(() => {})
   }
 }
 
 export async function teardown (): Promise<void> {
   if (!inseridoPorNos) return
-  const conn = client()
-  await conn.connect()
+  let conn: MongoClient | undefined
   try {
+    conn = client()
+    await conn.connect()
     await conn.db(APP_DB).collection(COLLECTION).deleteOne({ name: E2E_ENV })
+  } catch (error) {
+    console.warn(`[e2e] ATENCAO: nao foi possivel remover '${E2E_ENV}' da allowlist (${(error as Error).message})`)
   } finally {
-    await conn.close()
+    await conn?.close().catch(() => {})
   }
 }

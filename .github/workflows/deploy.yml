@@ -275,13 +275,24 @@ jobs:
 
       - name: Deploy on EC2 instance
         run: |
+          # O heredoc abaixo NAO e quotado de proposito: o runner expande o corpo
+          # inteiro antes de enviar, e e assim que AWS_APP_DIR e AWS_PROCESS_NAME
+          # chegam no EC2 ja resolvidos. O preco e que crase e substituicao de
+          # comando executam AQUI, no runner, inclusive dentro de linhas que
+          # parecem comentario — o # nao protege nada durante a expansao. Nao
+          # use nenhum dos dois no corpo do heredoc.
+          #
+          # printf %q produz um literal seguro para o shell. Sem ele, um valor de
+          # CORS_ORIGINS com aspa simples fecharia a string e o resto seria
+          # executado como comando no EC2.
+          CORS_Q=$(printf %q "$CORS_ORIGINS")
           ssh "$AWS_EC2_USER@$AWS_EC2_HOST" <<EOF
             set -e
-            # O bloco `env:` do job so alcanca os steps do RUNNER. Quem reinicia o
-            # processo aqui e `pm2 --update-env`, que le o env do shell do ssh —
+            # O bloco env: do job so alcanca os steps do RUNNER. Quem reinicia o
+            # processo aqui e pm2 --update-env, que le o env do shell do ssh,
             # entao a var precisa existir NESTE shell para chegar no runtime.
-            # (No caminho systemctl ela tem de estar na unit: o systemd nao herda daqui.)
-            export CORS_ORIGINS='${CORS_ORIGINS}'
+            # (No caminho systemctl ela tem de estar na unit: systemd nao herda daqui.)
+            export CORS_ORIGINS=${CORS_Q}
             mkdir -p "$AWS_APP_DIR"
             tar -xzf /tmp/mintly-api-deploy.tgz -C "$AWS_APP_DIR"
             cd "$AWS_APP_DIR"
