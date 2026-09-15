@@ -68,7 +68,9 @@ describe('Financial Movement E2E (Atlas, env=e2e)', () => {
         name: 'iFood E2E',
         type: 'platform',
         status: 'active',
-        isDefault: false,
+        // `isDefault` NAO entra no insert: e campo controlado pelo servidor e o
+        // schema o rejeita (A3-schema). Para eleger a conta padrao existe a rota
+        // dedicada PATCH /financial-accounts/:id/default.
         feePercent: 10,
         settlementDays: 14,
         audit: { createdAt: new Date(), updatedAt: new Date() },

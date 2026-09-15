@@ -4,16 +4,20 @@ import { ResponseBuilder, ResponseStructure } from '../../core/builders/response
 import { financialAccountInsertSchema, financialAccountUpdateSchema, FinancialAccount } from 'mintly-lib'
 import { FinancialAccountRepository } from './financial-account-repository'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
+import { NotFoundError } from '../../core/errors/core/not-found-error'
 import { Resource } from '../../core/types/resource'
 import { SetDefaultAccountUseCase } from './use-cases/set-default-account.use-case'
 import { InactivateAccountUseCase } from './use-cases/inactivate-account.use-case'
 import { escapeRegex } from '../../core/util/escape-regex'
 import { StatusCodes } from 'http-status-codes'
+import { assertAccountUpdateAllowed, AccountUpdateChanges } from './account-rules'
 
 export class FinancialAccountController extends CrudController<FinancialAccount, string> {
   constructor (
-    // Sem `private readonly`: o repo só alimenta o super (o CrudController pai é quem o usa).
-    financialAccountRepo: FinancialAccountRepository,
+    // Guardado (diferente de antes): o update precisa ler o TIPO ARMAZENADO da conta
+    // para validar a coerência platform ⇔ taxa/prazo (P5) — o PATCH parcial não traz
+    // o `type`, e o schema não conhece o estado do banco.
+    private readonly accountRepo: FinancialAccountRepository,
     // DI das use cases transacionais (mesmo padrão das demais rotas).
     private readonly setDefaultUseCase: SetDefaultAccountUseCase,
     private readonly inactivateUseCase: InactivateAccountUseCase,
@@ -22,7 +26,7 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
     // Sem ele, o CrudController valida o PATCH contra o schema COMPLETO e rejeita
     // updates parciais por falta de campos obrigatórios.
     super(
-      financialAccountRepo,
+      accountRepo,
       financialAccountInsertSchema as any,
       financialAccountUpdateSchema as any,
       Resource.FinancialAccount,
@@ -30,11 +34,30 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
   }
 
   /**
-   * "isDefault não editável pelo update genérico"
+   * PATCH /:id — guards de update:
+   *  - `isDefault` não é editável aqui (rota própria: PATCH /:id/default).
+   *  - `type` é imutável e taxa/prazo só existem em conta `platform` (P5) — regra
+   *    pura em `account-rules.ts`, aplicada contra o tipo ARMAZENADO.
    */
   async update (id: string, item: Partial<FinancialAccount>, source?: ContextSource): Promise<ResponseStructure> {
     if (item.isDefault !== undefined) {
       throw new ConflictError('O campo isDefault não pode ser editado manualmente. Use a rota específica de SetDefault.')
+    }
+
+    const changes = item as AccountUpdateChanges
+    const touchesTypeOrFee =
+      changes.type !== undefined ||
+      changes.feePercent !== undefined ||
+      changes.settlementDays !== undefined
+
+    // Só vai ao banco quando o PATCH mexe em tipo/taxa — não onera um rename.
+    if (touchesTypeOrFee) {
+      const ctx = buildRequestContext(source)
+      const stored = await this.accountRepo.findById(id, ctx)
+      if (!stored) {
+        throw new NotFoundError(Resource.FinancialAccount, id)
+      }
+      assertAccountUpdateAllowed(String((stored as any).type), changes)
     }
 
     return super.update(id, item, source)

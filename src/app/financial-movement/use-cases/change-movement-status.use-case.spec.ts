@@ -35,7 +35,7 @@ function makeMov (over: Record<string, any> = {}) {
 
 function wire (opts: { mov?: any } = {}) {
   const mov = 'mov' in opts ? opts.mov : makeMov()
-  const movements = { findOne: vi.fn().mockResolvedValue(mov), updateOne: vi.fn().mockResolvedValue({}) }
+  const movements = { findOne: vi.fn().mockResolvedValue(mov), updateOne: vi.fn().mockResolvedValue({ matchedCount: 1 }) }
   const accounts = { updateOne: vi.fn().mockResolvedValue({ matchedCount: 1 }) }
   const map: Record<string, any> = { financial_movements: movements, financial_accounts: accounts }
   mockGetDatabase.mockReturnValue({ collection: (n: string) => map[n] })
@@ -68,12 +68,44 @@ describe('ChangeMovementStatusUseCase', () => {
     expect(session.endSession).toHaveBeenCalled()
   })
 
-  it('mesmo status é no-op: não atualiza saldo nem movimentação', async () => {
-    const { movements, accounts } = wire({ mov: makeMov({ status: 'settled' }) })
-    const updated = await useCase.execute(MOV_ID, 'settled', CTX)
-    expect(updated.status).toBe('settled')
+  it('mesmo status carimba manual + auditoria e NÃO toca no saldo (P1 — o dono trava o settler)', async () => {
+    const { movements, accounts } = wire({ mov: makeMov({ status: 'pending' }) })
+
+    const updated = await useCase.execute(MOV_ID, 'pending', CTX)
+
+    expect(updated.status).toBe('pending')
+    expect(updated.statusSource).toBe('manual')
+
+    const [filter, update] = movements.updateOne.mock.calls[0]
+    expect(filter).toMatchObject({ restaurantId: 'r1' })
+    expect(update.$set.statusSource).toBe('manual')
+    expect(update.$set['audit.updatedAt']).toBeInstanceOf(Date)
+    expect(update.$set['audit.updatedBy']).toBe('u1')
+    expect(update.$push.history).toMatchObject({ by: 'u1', action: 'status:lock:pending' })
+    // Sem mudança de status não há impacto a reverter/aplicar: saldo intacto.
+    expect(accounts.updateOne).not.toHaveBeenCalled()
+  })
+
+  it('trava repetida e idempotente: ja manual no mesmo status nao grava de novo', async () => {
+    // Sem este curto-circuito, cada reenvio do formulario (ou retry apos timeout)
+    // empilha um `status:lock:*` identico no history - array embutido sem limite,
+    // que soterra a trilha de auditoria real.
+    const { movements, accounts } = wire({ mov: makeMov({ status: 'pending', statusSource: 'manual' }) })
+
+    const updated = await useCase.execute(MOV_ID, 'pending', CTX)
+
+    expect(updated.status).toBe('pending')
+    expect(updated.statusSource).toBe('manual')
     expect(movements.updateOne).not.toHaveBeenCalled()
     expect(accounts.updateOne).not.toHaveBeenCalled()
+  })
+
+  it('mesmo status sem userId no contexto registra o carimbo por "system"', async () => {
+    const { movements } = wire({ mov: makeMov({ status: 'settled' }) })
+    await useCase.execute(MOV_ID, 'settled', { env: 'test', restaurantId: 'r1' } as any)
+    const [, update] = movements.updateOne.mock.calls[0]
+    expect(update.$set['audit.updatedBy']).toBe('system')
+    expect(update.$push.history.by).toBe('system')
   })
 
   it('transição pending→settled reverte previsto e aplica disponível (saldo x2)', async () => {
@@ -87,12 +119,28 @@ describe('ChangeMovementStatusUseCase', () => {
     expect(update.$push.history.by).toBe('u1')
   })
 
-  it('sem userId no contexto registra history por "system"', async () => {
+  it('sem userId no contexto registra history e auditoria por "system"', async () => {
     const { movements } = wire()
     await useCase.execute(MOV_ID, 'settled', { env: 'test', restaurantId: 'r1' } as any)
     const [, update] = movements.updateOne.mock.calls[0]
     expect(update.$push.history.by).toBe('system')
-    expect(update.$set['audit.updatedBy']).toBeUndefined()
+    expect(update.$set['audit.updatedBy']).toBe('system')
+  })
+
+  it('carimba statusSource manual (trava o settler) - P1', async () => {
+    const { movements } = wire()
+    const updated = await useCase.execute(MOV_ID, 'settled', CTX)
+    expect(updated.statusSource).toBe('manual')
+    const [, update] = movements.updateOne.mock.calls[0]
+    expect(update.$set.statusSource).toBe('manual')
+  })
+
+  it('status alterado concorrentemente (guard não casa) lança ConflictError', async () => {
+    const { movements, accounts } = wire()
+    movements.updateOne.mockResolvedValue({ matchedCount: 0 })
+    await expect(useCase.execute(MOV_ID, 'settled', CTX)).rejects.toBeInstanceOf(ConflictError)
+    // guard-first: abortou sem tocar no saldo.
+    expect(accounts.updateOne).not.toHaveBeenCalled()
   })
 
   it('valores nulos na movimentação são tratados como 0 (branch ?? 0)', async () => {

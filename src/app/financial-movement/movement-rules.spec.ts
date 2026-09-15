@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { MovementDirection, MovementStatus } from 'mintly-lib'
-import { defaultStatus, computeSnapshot, balanceImpact, addDays } from './movement-rules'
+import { MovementDirection, MovementStatus, MovementStatusSource } from 'mintly-lib'
+import { defaultStatus, computeSnapshot, balanceImpact, addDays, resolveStatusSource } from './movement-rules'
 
 const cash = { type: 'cash' }
 const platform = { type: 'platform', feePercent: 12, settlementDays: 30 }
@@ -67,6 +67,125 @@ describe('movement-rules', () => {
     })
   })
 
+  describe('computeSnapshot com taxa congelada (P3)', () => {
+    const platformAccount = { type: 'platform', feePercent: 20, settlementDays: 30 }
+
+    it('usa a taxa congelada em vez da taxa viva da conta', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: platformAccount,
+        fee: { percent: 10, settlementDays: 5 },
+      })
+
+      expect(snap.feeValue).toBe(10)
+      expect(snap.netValue).toBe(90)
+      expect(snap.feePercentApplied).toBe(10)
+      expect(snap.settlementDaysApplied).toBe(5)
+      expect(snap.predictedReceiptDate).toEqual(new Date('2026-01-15T00:00:00.000Z'))
+    })
+
+    it('sem fee congelado, deriva da conta viva (comportamento do registro)', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: platformAccount,
+      })
+
+      expect(snap.feeValue).toBe(20)
+      expect(snap.netValue).toBe(80)
+      expect(snap.feePercentApplied).toBe(20)
+      expect(snap.settlementDaysApplied).toBe(30)
+    })
+
+    it('taxa congelada não se aplica a saída', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.Out,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: platformAccount,
+        fee: { percent: 10, settlementDays: 5 },
+      })
+
+      expect(snap.feeValue).toBe(0)
+      expect(snap.netValue).toBe(100)
+      expect(snap.feePercentApplied).toBeUndefined()
+    })
+
+    it('taxa congelada não se aplica a conta não-platform', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: { type: 'bank' },
+        fee: { percent: 10, settlementDays: 5 },
+      })
+
+      expect(snap.feeValue).toBe(0)
+      expect(snap.netValue).toBe(100)
+    })
+
+    it('fee: { percent: 0 } → taxa zero é respeitada, não cai na taxa da conta', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: platformAccount,
+        fee: { percent: 0 },
+      })
+
+      expect(snap.feeValue).toBe(0)
+      expect(snap.netValue).toBe(100)
+      expect(snap.feePercentApplied).toBe(0)
+    })
+
+    it('fee: { percent: 10 } sem settlementDays, conta com settlementDays: não deriva prazo da conta', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: platformAccount,
+        fee: { percent: 10 },
+      })
+
+      expect(snap.feePercentApplied).toBe(10)
+      expect(snap.settlementDaysApplied).toBeUndefined()
+      expect(snap.predictedReceiptDate).toBeUndefined()
+    })
+
+    it('fee: { settlementDays: 0 } → prazo zero é respeitado, data prevista = data do movimento', () => {
+      const date = new Date('2026-01-10T00:00:00.000Z')
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date,
+        account: platformAccount,
+        fee: { settlementDays: 0 },
+      })
+
+      expect(snap.settlementDaysApplied).toBe(0)
+      expect(snap.predictedReceiptDate).toEqual(date)
+    })
+
+    it('fee: {} (objeto vazio) → sem taxa e sem prazo; nada da conta viva vaza', () => {
+      const snap = computeSnapshot({
+        direction: MovementDirection.In,
+        grossValue: 100,
+        date: new Date('2026-01-10T00:00:00.000Z'),
+        account: platformAccount,
+        fee: {},
+      })
+
+      expect(snap.feeValue).toBe(0)
+      expect(snap.netValue).toBe(100)
+      expect(snap.feePercentApplied).toBeUndefined()
+      expect(snap.settlementDaysApplied).toBeUndefined()
+      expect(snap.predictedReceiptDate).toBeUndefined()
+    })
+  })
+
   describe('balanceImpact', () => {
     it('entrada settled → available += netValue', () => {
       expect(balanceImpact({ direction: MovementDirection.In, status: MovementStatus.Settled, grossValue: 100, netValue: 88 }))
@@ -91,6 +210,27 @@ describe('movement-rules', () => {
     it('cancelled → sem impacto', () => {
       expect(balanceImpact({ direction: MovementDirection.In, status: MovementStatus.Cancelled, grossValue: 100, netValue: 88 }))
         .toEqual({ bucket: null, delta: 0 })
+    })
+  })
+  describe('resolveStatusSource', () => {
+    it('pending SEM data prevista é manual (inalcançável pelo settler)', () => {
+      expect(resolveStatusSource({ status: MovementStatus.Pending, statusSource: MovementStatusSource.Auto }))
+        .toBe(MovementStatusSource.Manual)
+    })
+
+    it('pending COM data prevista preserva a origem informada', () => {
+      expect(resolveStatusSource({
+        status: MovementStatus.Pending,
+        predictedReceiptDate: new Date('2026-07-30T00:00:00.000Z'),
+        statusSource: MovementStatusSource.Auto,
+      })).toBe(MovementStatusSource.Auto)
+    })
+
+    it('settled/cancelled preservam a origem informada (a invariante só vale p/ pending)', () => {
+      expect(resolveStatusSource({ status: MovementStatus.Settled, statusSource: MovementStatusSource.Auto }))
+        .toBe(MovementStatusSource.Auto)
+      expect(resolveStatusSource({ status: MovementStatus.Cancelled, statusSource: MovementStatusSource.Manual }))
+        .toBe(MovementStatusSource.Manual)
     })
   })
 })

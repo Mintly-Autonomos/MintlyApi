@@ -71,6 +71,17 @@ jobs:
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
       FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+      # Allowlist do CORS (P4): CSV com as origens do MintlyWeb. SEM ela a
+      # allowlist nasce vazia e o servidor NEGA toda origem de navegador — o
+      # front perde a API. Por isso é REQUIRED no sync abaixo: falhar o deploy
+      # é melhor do que derrubar o front silenciosamente.
+      #
+      # ATENÇÃO — a Vercel força NODE_ENV=production mesmo neste ambiente de
+      # staging. Logo o atalho de localhost do `cors-origins.ts` (liberado só
+      # fora de produção) NÃO vale contra a staging: para desenvolver o front
+      # local apontando pra API de staging, inclua `http://localhost:4200` na
+      # própria CORS_ORIGINS da staging.
+      CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
 
     steps:
       - name: Checkout
@@ -133,6 +144,7 @@ jobs:
 
           REQUIRED="MONGODB_HOSTS MONGODB_USER MONGODB_PASSWORD MONGODB_REPLICA_SET MONGODB_AUTH_SOURCE"
           REQUIRED="$REQUIRED MONGO_ENV API_URL GMAIL_USER GMAIL_APP_PASSWORD EMAIL_FROM FRONTEND_URL"
+          REQUIRED="$REQUIRED CORS_ORIGINS"
           OPTIONAL="MONGODB_TLS"
 
           MISSING=""
@@ -195,6 +207,10 @@ jobs:
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
       FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+      # Allowlist do CORS (P4): CSV com as origens do MintlyWeb. Sem ela o
+      # servidor nega toda origem de navegador e o front perde a API. No EC2 o
+      # processo herda o env do serviço (pm2/systemd) — mantenha o secret em dia.
+      CORS_ORIGINS: ${{ secrets.CORS_ORIGINS }}
 
     steps:
       - name: Checkout
@@ -202,6 +218,16 @@ jobs:
         with:
           # production deploya o código da branch main.
           ref: main
+
+      # Espelha o guard REQUIRED do sync da Vercel. Sem CORS_ORIGINS a API sobe
+      # saudável e nega TODA origem de navegador (NODE_ENV=production desliga o
+      # atalho de localhost): falhar o deploy é melhor que derrubar o front.
+      - name: Validate required runtime env
+        run: |
+          if [ -z "${CORS_ORIGINS:-}" ]; then
+            echo "::error::CORS_ORIGINS ausente (defina nos Secrets do repo) — a API subiria negando toda origem de navegador."
+            exit 1
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -249,8 +275,24 @@ jobs:
 
       - name: Deploy on EC2 instance
         run: |
+          # O heredoc abaixo NAO e quotado de proposito: o runner expande o corpo
+          # inteiro antes de enviar, e e assim que AWS_APP_DIR e AWS_PROCESS_NAME
+          # chegam no EC2 ja resolvidos. O preco e que crase e substituicao de
+          # comando executam AQUI, no runner, inclusive dentro de linhas que
+          # parecem comentario — o # nao protege nada durante a expansao. Nao
+          # use nenhum dos dois no corpo do heredoc.
+          #
+          # printf %q produz um literal seguro para o shell. Sem ele, um valor de
+          # CORS_ORIGINS com aspa simples fecharia a string e o resto seria
+          # executado como comando no EC2.
+          CORS_Q=$(printf %q "$CORS_ORIGINS")
           ssh "$AWS_EC2_USER@$AWS_EC2_HOST" <<EOF
             set -e
+            # O bloco env: do job so alcanca os steps do RUNNER. Quem reinicia o
+            # processo aqui e pm2 --update-env, que le o env do shell do ssh,
+            # entao a var precisa existir NESTE shell para chegar no runtime.
+            # (No caminho systemctl ela tem de estar na unit: systemd nao herda daqui.)
+            export CORS_ORIGINS=${CORS_Q}
             mkdir -p "$AWS_APP_DIR"
             tar -xzf /tmp/mintly-api-deploy.tgz -C "$AWS_APP_DIR"
             cd "$AWS_APP_DIR"

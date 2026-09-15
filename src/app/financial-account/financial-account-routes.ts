@@ -23,7 +23,8 @@ export async function financialAccountRoutes (fastify: FastifyInstance) {
     return reply.status(200).send(response)
   })
 
-  // PATCH /financial-accounts/:id  (edição parcial: name, type, feePercent, settlementDays)
+  // PATCH /financial-accounts/:id  (edição parcial: name, status, feePercent, settlementDays)
+  // `type` NÃO é editável — o tipo da conta é imutável (P5).
   fastify.patch('/:id', async (request: any, reply) => {
     const { id } = request.params
     const response = await controller.update(id, request.body as any, request)

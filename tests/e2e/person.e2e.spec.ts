@@ -8,11 +8,13 @@ import { mongoConnection } from '../../src/infrastructure/db/mongodb'
 dotenv.config({ path: '.env.e2e' })
 
 const E2E_DB = 'e2e'
-const headers = { env: E2E_DB }
 
 describe('Person E2E (Atlas, env=e2e)', () => {
   let server: FastifyInstance
   let baseUrl: string
+  // Montado no beforeAll: `/people` vive no escopo protegido por JWT, então sem
+  // Authorization toda chamada morre em 401 antes de qualquer validação.
+  let headers: Record<string, string>
 
   beforeAll(async () => {
     if (!process.env.MONGODB_URI) {
@@ -24,6 +26,23 @@ describe('Person E2E (Atlas, env=e2e)', () => {
     const address = server.server.address()
     if (typeof address === 'string' || address === null) throw new Error('servidor sem endereço')
     baseUrl = `http://127.0.0.1:${address.port}`
+
+    // Identidade real: o restaurantId sai do JWT, nunca de header (ver
+    // build-request-context.ts). Signup é o caminho mais curto para um token válido.
+    const signup = await fetch(`${baseUrl}/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', env: E2E_DB },
+      body: JSON.stringify({
+        person: { name: 'E2E Person', phone: '11900000000' },
+        password: 'Senha123',
+        restaurantName: 'E2E Person Rest',
+        email: `person_e2e_${Date.now()}@teste.com`,
+        termsAccepted: true,
+      }),
+    })
+    expect(signup.status).toBe(201)
+    const { accessToken } = (await signup.json() as any).payload
+    headers = { env: E2E_DB, authorization: `Bearer ${accessToken}` }
   })
 
   afterAll(async () => {
@@ -41,7 +60,11 @@ describe('Person E2E (Atlas, env=e2e)', () => {
     const postRes = await fetch(`${baseUrl}/people/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
-      body: JSON.stringify({ name: 'E2E Ada', age: 42 }),
+      body: JSON.stringify({
+        name: 'E2E Ada',
+        phone: '11911111111',
+        audit: { createdAt: new Date(), updatedAt: new Date() },
+      }),
     })
     expect(postRes.status).toBe(200)
     const created = await postRes.json() as any
@@ -59,17 +82,17 @@ describe('Person E2E (Atlas, env=e2e)', () => {
     const getRes = await fetch(`${baseUrl}/people/${id}`, { headers })
     expect(getRes.status).toBe(200)
     const single = await getRes.json() as any
-    expect(single.payload).toMatchObject({ name: 'E2E Ada', age: 42 })
+    expect(single.payload).toMatchObject({ name: 'E2E Ada', phone: '11911111111' })
 
-    // PATCH (parcial — só age)
+    // PATCH (parcial — só o telefone)
     const patchRes = await fetch(`${baseUrl}/people/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...headers },
-      body: JSON.stringify({ age: 43 }),
+      body: JSON.stringify({ phone: '11922222222' }),
     })
     expect(patchRes.status).toBe(200)
     const patched = await patchRes.json() as any
-    expect(patched.payload).toMatchObject({ name: 'E2E Ada', age: 43 })
+    expect(patched.payload).toMatchObject({ name: 'E2E Ada', phone: '11922222222' })
 
     // DELETE
     const delRes = await fetch(`${baseUrl}/people/${id}`, { method: 'DELETE', headers })

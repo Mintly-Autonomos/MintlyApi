@@ -1,4 +1,4 @@
-import { FinancialAccountType, MovementDirection, MovementStatus } from 'mintly-lib'
+import { FinancialAccountType, MovementDirection, MovementStatus, MovementStatusSource } from 'mintly-lib'
 import { computeFeeNet } from '../../core/money/money'
 
 /**
@@ -49,6 +49,31 @@ export function defaultStatus (params: {
   return platformInflowWithDelay ? MovementStatus.Pending : MovementStatus.Settled
 }
 
+/**
+ * Invariante de honestidade do `statusSource` (P1): o settler só enxerga
+ * `pending` com `predictedReceiptDate: { $lte: now }` — e **campo ausente nunca
+ * casa esse filtro**. Logo, um `pending` SEM data prevista é inalcançável pelo
+ * job: chamá-lo de `auto` é mentira, nada automático vai acontecer com ele (ele
+ * ficaria "a receber" para sempre). Nesse caso o `statusSource` é `manual`: só
+ * o dono tira aquele movimento de "a receber", porque nenhum robô consegue.
+ *
+ * Regra pura, aplicada nos DOIS use-cases (registro e edição) depois de decidir
+ * status + snapshot.
+ */
+export function resolveStatusSource (params: {
+  status: MovementStatus | string
+  predictedReceiptDate?: Date | null
+  statusSource: MovementStatusSource
+}): MovementStatusSource {
+  const { status, predictedReceiptDate, statusSource } = params
+
+  if (status === MovementStatus.Pending && predictedReceiptDate == null) {
+    return MovementStatusSource.Manual
+  }
+
+  return statusSource
+}
+
 export interface MovementSnapshot {
   feeValue: number
   netValue: number
@@ -58,29 +83,53 @@ export interface MovementSnapshot {
 }
 
 /**
+ * Taxa/prazo a aplicar. Vem do SNAPSHOT congelado no movimento (edição) ou é
+ * derivada da conta viva quando ausente (registro, ou troca de conta).
+ */
+export interface AppliedFee {
+  percent?: number
+  settlementDays?: number
+}
+
+/**
  * Calcula fee/net e o snapshot de taxa/prazo. Taxa só se aplica a **entradas**
  * em conta `platform` (receber via plataforma desconta a taxa). Saídas e contas
  * não-platform: `feeValue = 0`, `netValue = grossValue`, sem data prevista.
+ *
+ * `fee` (P3): quando informado, é a taxa/prazo CONGELADOS no lançamento — usados
+ * na edição para que editar um campo inócuo (ex.: título) não re-precifique o
+ * movimento com a taxa ATUAL da conta. Ausente (`undefined`): deriva da conta
+ * viva (registro).
+ *
+ * IMPORTANTE — `fee` é tudo-ou-nada: quando `fee` vem, ele é o snapshot
+ * completo; ausência de um campo DENTRO dele significa "não havia" (ex.:
+ * movimento antigo sem prazo registrado), não "busque na conta". Nenhum campo
+ * de `fee` cai individualmente de volta na conta viva — o fallback para a
+ * conta só acontece quando `fee` inteiro é `undefined`.
  */
 export function computeSnapshot (params: {
   direction: MovementDirection
   grossValue: number
   date: Date
   account: AccountForRules
+  fee?: AppliedFee
 }): MovementSnapshot {
-  const { direction, grossValue, date, account } = params
+  const { direction, grossValue, date, account, fee } = params
   const isPlatform = isPlatformAccount(account)
 
   if (direction === MovementDirection.In && isPlatform) {
-    const { feeValue, netValue } = computeFeeNet(grossValue, account.feePercent)
+    const percent = fee != null ? fee.percent : account.feePercent
+    const settlementDays = fee != null ? fee.settlementDays : account.settlementDays
+
+    const { feeValue, netValue } = computeFeeNet(grossValue, percent)
     const snapshot: MovementSnapshot = {
       feeValue,
       netValue,
-      feePercentApplied: account.feePercent,
+      feePercentApplied: percent,
     }
-    if (account.settlementDays != null) {
-      snapshot.settlementDaysApplied = account.settlementDays
-      snapshot.predictedReceiptDate = addDays(date, account.settlementDays)
+    if (settlementDays != null) {
+      snapshot.settlementDaysApplied = settlementDays
+      snapshot.predictedReceiptDate = addDays(date, settlementDays)
     }
     return snapshot
   }

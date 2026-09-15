@@ -161,4 +161,29 @@ describe('RegisterMovementUseCase', () => {
     await expect(useCase.execute(makeInput(), CTX)).rejects.toThrow('schema invalido')
     expect(session.endSession).toHaveBeenCalled()
   })
+
+  it('grava statusSource auto no registro (P1)', async () => {
+    wire()
+    const created = await useCase.execute(makeInput(), CTX)
+    expect(created.statusSource).toBe('auto')
+  })
+
+  it('pendente de conta platform (com data prevista) nasce auto — o settler o alcança', async () => {
+    const { movements } = wire({ account: makeAccount({ type: 'platform', feePercent: 10, settlementDays: 14 }) })
+    const created = await useCase.execute(makeInput(), CTX)
+    expect(created.status).toBe('pending')
+    expect(created.statusSource).toBe('auto')
+    expect(storedDoc(movements).predictedReceiptDate).toBeInstanceOf(Date)
+  })
+
+  it('invariante: status pending em conta NÃO-platform nasce manual (sem data prevista, o settler nunca o alcança)', async () => {
+    const { movements } = wire() // conta cash: sem prazo → sem predictedReceiptDate
+    const created = await useCase.execute(makeInput({ status: 'pending' }), CTX)
+
+    expect(created.status).toBe('pending')
+    expect(created.statusSource).toBe('manual')
+    const doc = storedDoc(movements)
+    expect(doc.statusSource).toBe('manual')
+    expect(doc.predictedReceiptDate).toBeUndefined()
+  })
 })
