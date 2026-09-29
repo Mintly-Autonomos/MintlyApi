@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { MovementDirection, MovementStatus } from 'mintly-lib'
-import { defaultStatus, computeSnapshot, balanceImpact, addDays } from './movement-rules'
+import { defaultStatus, computeSnapshot, balanceImpact, addDays, resolveDueDate, shouldRecomputeStatus } from './movement-rules'
 
 const cash = { type: 'cash' }
 const platform = { type: 'platform', feePercent: 12, settlementDays: 30 }
@@ -31,6 +31,88 @@ describe('movement-rules', () => {
     it('soma dias corridos', () => {
       expect(addDays(new Date('2026-06-16T00:00:00.000Z'), 30).toISOString())
         .toBe('2026-07-16T00:00:00.000Z')
+    })
+  })
+
+  describe('resolveDueDate', () => {
+    const informado = new Date('2026-07-19T00:00:00.000Z')
+    const calculado = new Date('2026-07-31T00:00:00.000Z')
+    const gravado = new Date('2026-07-10T00:00:00.000Z')
+
+    it('o informado pelo dono ganha do calculado pela conta', () => {
+      expect(resolveDueDate({ informed: informado, computed: calculado, storedWasComputed: false }))
+        .toEqual(informado)
+    })
+
+    it('informar null limpa o vencimento, mesmo havendo gravado', () => {
+      expect(resolveDueDate({ informed: null, stored: gravado, storedWasComputed: false }))
+        .toBeUndefined()
+    })
+
+    it('sem informado, vale o calculado pela conta', () => {
+      expect(resolveDueDate({ computed: calculado, stored: gravado, storedWasComputed: true }))
+        .toEqual(calculado)
+    })
+
+    it('vencimento informado antes sobrevive quando a conta não calcula nada', () => {
+      // Mover um boleto de uma conta bancária para outra não pode apagar a data
+      // em que ele vence — o vencimento é do boleto, não da conta.
+      expect(resolveDueDate({ stored: gravado, storedWasComputed: false }))
+        .toEqual(gravado)
+    })
+
+    it('vencimento que veio de conta com prazo NÃO sobrevive à troca para conta sem prazo', () => {
+      // Aqui a data era derivada do repasse. Sem repasse, ela não significa nada
+      // — e é isso que faz o recebível voltar a ser dinheiro em caixa.
+      expect(resolveDueDate({ stored: gravado, storedWasComputed: true }))
+        .toBeUndefined()
+    })
+
+    it('sem nada, não há vencimento', () => {
+      expect(resolveDueDate({ storedWasComputed: false })).toBeUndefined()
+    })
+  })
+
+  describe('shouldRecomputeStatus', () => {
+    const base = {
+      hadDueDate: false,
+      hasDueDate: false,
+      isManual: false,
+      statusExplicitlyChanged: false,
+      currentStatus: MovementStatus.Settled,
+    }
+
+    it('recomputa quando o vencimento passa a existir', () => {
+      expect(shouldRecomputeStatus({ ...base, hadDueDate: false, hasDueDate: true })).toBe(true)
+    })
+
+    it('recomputa quando o vencimento deixa de existir', () => {
+      expect(shouldRecomputeStatus({
+        ...base, hadDueDate: true, hasDueDate: false, currentStatus: MovementStatus.Pending,
+      })).toBe(true)
+    })
+
+    it('NÃO recomputa quando o vencimento só muda de data', () => {
+      // Corrigir a data de um boleto não pago não pode transformá-lo em pago.
+      expect(shouldRecomputeStatus({
+        ...base, hadDueDate: true, hasDueDate: true, currentStatus: MovementStatus.Pending,
+      })).toBe(false)
+    })
+
+    it('NÃO recomputa o que o dono decidiu na mão', () => {
+      expect(shouldRecomputeStatus({ ...base, hasDueDate: true, isManual: true })).toBe(false)
+    })
+
+    it('NÃO recomputa quando esta edição mexeu no status', () => {
+      expect(shouldRecomputeStatus({ ...base, hasDueDate: true, statusExplicitlyChanged: true })).toBe(false)
+    })
+
+    it('NUNCA recomputa cancelado', () => {
+      // Reverter `cancelled` é no-op e aplicar `settled` credita o líquido:
+      // recomputar criaria saldo do nada.
+      expect(shouldRecomputeStatus({
+        ...base, hasDueDate: true, currentStatus: MovementStatus.Cancelled,
+      })).toBe(false)
     })
   })
 

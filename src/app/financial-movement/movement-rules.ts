@@ -122,6 +122,64 @@ export function computeSnapshot (params: {
   return { feeValue: 0, netValue: grossValue }
 }
 
+/**
+ * Qual vencimento vale no documento resultante, na ordem de precedência:
+ *
+ * 1. O que o dono informou nesta escrita (`null` = limpar, "é à vista agora").
+ * 2. O calculado pela conta com prazo — segue a conta e a data do lançamento.
+ * 3. O que já estava gravado, **desde que não tenha vindo de conta com prazo**.
+ *
+ * A condição do item 3 é a que mantém o boleto inteiro. Um vencimento informado
+ * pelo dono pertence ao lançamento e sobrevive a qualquer troca de conta — mover
+ * um boleto de uma conta bancária para outra não pode apagar a data em que ele
+ * vence. Já um vencimento derivado de repasse pertence à conta antiga: quando o
+ * movimento sai dela, a data deixa de significar alguma coisa e tem que sumir. É
+ * isso que faz o recebível voltar a ser dinheiro em caixa (P8).
+ */
+export function resolveDueDate (params: {
+  informed?: Date | null
+  computed?: Date
+  stored?: Date
+  storedWasComputed: boolean
+}): Date | undefined {
+  const { informed, computed, stored, storedWasComputed } = params
+
+  if (informed !== undefined) return informed ?? undefined
+  if (computed != null) return computed
+  if (stored != null && !storedWasComputed) return stored
+
+  return undefined
+}
+
+/**
+ * O status acompanha o vencimento quando ele **passa a existir ou deixa de
+ * existir** — nunca quando só muda de data.
+ *
+ * É o que fecha o P8 nos dois sentidos: mover um lançamento para conta
+ * plataforma faz nascer vencimento e ele volta a `pending`; mover de volta apaga
+ * o vencimento e ele volta a `settled`. E é o que protege o boleto vencido —
+ * corrigir a data de uma conta não paga não pode marcá-la como paga.
+ *
+ * `manual` é soberano (ação humana anterior), `cancelled` nunca é recomputado
+ * (reverter cancelado é no-op e aplicar liquidado credita o líquido: o saldo
+ * nasceria do nada), e uma edição que mexeu no status explicitamente já disse o
+ * que queria.
+ */
+export function shouldRecomputeStatus (params: {
+  hadDueDate: boolean
+  hasDueDate: boolean
+  isManual: boolean
+  statusExplicitlyChanged: boolean
+  currentStatus: MovementStatus | string
+}): boolean {
+  const { hadDueDate, hasDueDate, isManual, statusExplicitlyChanged, currentStatus } = params
+
+  if (isManual || statusExplicitlyChanged) return false
+  if (currentStatus === MovementStatus.Cancelled) return false
+
+  return hadDueDate !== hasDueDate
+}
+
 export type BalanceBucket = 'available' | 'predicted'
 
 export interface BalanceImpact {
