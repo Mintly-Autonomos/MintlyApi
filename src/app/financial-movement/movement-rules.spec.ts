@@ -1,27 +1,29 @@
 import { describe, it, expect } from 'vitest'
-import { MovementDirection, MovementStatus, MovementStatusSource } from 'mintly-lib'
-import { defaultStatus, computeSnapshot, balanceImpact, addDays, resolveStatusSource } from './movement-rules'
+import { MovementDirection, MovementStatus } from 'mintly-lib'
+import { defaultStatus, computeSnapshot, balanceImpact, addDays } from './movement-rules'
 
 const cash = { type: 'cash' }
 const platform = { type: 'platform', feePercent: 12, settlementDays: 30 }
 
 describe('movement-rules', () => {
   describe('defaultStatus', () => {
-    it('entrada em conta platform com prazo (>0) → pending', () => {
-      expect(defaultStatus({ direction: MovementDirection.In, account: platform })).toBe(MovementStatus.Pending)
+    it('com vencimento futuro → pending', () => {
+      expect(defaultStatus({ dueDate: new Date('2099-01-01T00:00:00.000Z') })).toBe(MovementStatus.Pending)
     })
 
-    it('entrada em conta sem prazo → settled', () => {
-      expect(defaultStatus({ direction: MovementDirection.In, account: cash })).toBe(MovementStatus.Settled)
+    it('com vencimento JÁ PASSADO → pending (vencido, não pago)', () => {
+      // Vencer não é pagar. Só o dono sabe se pagou, e ele diz isso pelo
+      // PATCH /:id/status — não pelo calendário. Se a data mandasse, o bloco
+      // "Vencidos" do Fluxo de Caixa nunca teria conteúdo.
+      expect(defaultStatus({ dueDate: new Date('2020-01-01T00:00:00.000Z') })).toBe(MovementStatus.Pending)
     })
 
-    it('entrada com prazo = 0 → settled (recebimento imediato)', () => {
-      expect(defaultStatus({ direction: MovementDirection.In, account: { type: 'platform', feePercent: 5, settlementDays: 0 } }))
-        .toBe(MovementStatus.Settled)
+    it('sem vencimento → settled (à vista)', () => {
+      expect(defaultStatus({})).toBe(MovementStatus.Settled)
     })
 
-    it('saída em conta platform com prazo → settled (prazo só vale p/ entrada)', () => {
-      expect(defaultStatus({ direction: MovementDirection.Out, account: platform })).toBe(MovementStatus.Settled)
+    it('vencimento nulo → settled', () => {
+      expect(defaultStatus({ dueDate: null })).toBe(MovementStatus.Settled)
     })
   })
 
@@ -222,27 +224,6 @@ describe('movement-rules', () => {
     it('cancelled → sem impacto', () => {
       expect(balanceImpact({ direction: MovementDirection.In, status: MovementStatus.Cancelled, grossValue: 100, netValue: 88 }))
         .toEqual({ bucket: null, delta: 0 })
-    })
-  })
-  describe('resolveStatusSource', () => {
-    it('pending SEM data prevista é manual (inalcançável pelo settler)', () => {
-      expect(resolveStatusSource({ status: MovementStatus.Pending, statusSource: MovementStatusSource.Auto }))
-        .toBe(MovementStatusSource.Manual)
-    })
-
-    it('pending COM data prevista preserva a origem informada', () => {
-      expect(resolveStatusSource({
-        status: MovementStatus.Pending,
-        dueDate: new Date('2026-07-30T00:00:00.000Z'),
-        statusSource: MovementStatusSource.Auto,
-      })).toBe(MovementStatusSource.Auto)
-    })
-
-    it('settled/cancelled preservam a origem informada (a invariante só vale p/ pending)', () => {
-      expect(resolveStatusSource({ status: MovementStatus.Settled, statusSource: MovementStatusSource.Auto }))
-        .toBe(MovementStatusSource.Auto)
-      expect(resolveStatusSource({ status: MovementStatus.Cancelled, statusSource: MovementStatusSource.Manual }))
-        .toBe(MovementStatusSource.Manual)
     })
   })
 })

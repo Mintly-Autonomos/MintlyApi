@@ -1,4 +1,4 @@
-import { FinancialAccountType, MovementDirection, MovementStatus, MovementStatusSource } from 'mintly-lib'
+import { FinancialAccountType, MovementDirection, MovementStatus } from 'mintly-lib'
 import { computeFeeNet } from '../../core/money/money'
 
 /**
@@ -22,56 +22,33 @@ export function addDays (date: Date, days: number): Date {
 /**
  * Única fonte de verdade p/ "conta com liquidação via plataforma": só contas
  * `platform` cobram taxa (`feePercent`) e têm prazo (`settlementDays`) — o schema
- * (união discriminada) garante isso. `defaultStatus` e `computeSnapshot` decidem
- * pelo MESMO sinal, evitando divergência (ex.: pendente sem data prevista).
+ * (união discriminada) garante isso. É também o sinal que o settler usa para
+ * saber o que pode liquidar sozinho: repasse de plataforma cai na data, boleto
+ * não se paga sozinho.
  */
 export function isPlatformAccount (account: AccountForRules): boolean {
   return account.type === FinancialAccountType.Platform
 }
 
 /**
- * Status default: **entrada** em conta `platform` com prazo (`settlementDays > 0`)
- * → `pending` (o recebimento só cai depois); demais casos → `settled`. Prazo só
- * vale p/ recebimento — saídas nunca ficam pendentes por liquidação. O usuário
- * pode sobrescrever depois.
- */
-export function defaultStatus (params: {
-  direction: MovementDirection
-  account: AccountForRules
-}): MovementStatus {
-  const { direction, account } = params
-  const platformInflowWithDelay =
-    direction === MovementDirection.In &&
-    isPlatformAccount(account) &&
-    account.settlementDays != null &&
-    account.settlementDays > 0
-
-  return platformInflowWithDelay ? MovementStatus.Pending : MovementStatus.Settled
-}
-
-/**
- * Invariante de honestidade do `statusSource` (P1): o settler só enxerga
- * `pending` com `predictedReceiptDate: { $lte: now }` — e **campo ausente nunca
- * casa esse filtro**. Logo, um `pending` SEM data prevista é inalcançável pelo
- * job: chamá-lo de `auto` é mentira, nada automático vai acontecer com ele (ele
- * ficaria "a receber" para sempre). Nesse caso o `statusSource` é `manual`: só
- * o dono tira aquele movimento de "a receber", porque nenhum robô consegue.
+ * Status default (M1): **tem vencimento → `pending`; não tem → `settled`**. Uma
+ * regra só, sem olhar direção nem tipo de conta.
  *
- * Regra pura, aplicada nos DOIS use-cases (registro e edição) depois de decidir
- * status + snapshot.
+ * Repare que a regra olha a PRESENÇA do vencimento, não se ele já passou. Uma
+ * saída lançada hoje com vencimento de ontem nasce `pending` e aparece como
+ * vencida — vencer não é pagar, e quem diz que pagou é o dono, pelo
+ * `PATCH /:id/status`. Se a data mandasse, o bloco "Vencidos" do Fluxo de Caixa
+ * nunca teria conteúdo.
+ *
+ * Entrada em conta `platform` com prazo mantém o comportamento de sempre: o
+ * `computeSnapshot` gera o vencimento e ela nasce `pending`. Prazo zero não gera
+ * vencimento, então continua nascendo `settled`.
+ *
+ * Substitui a regra antiga, que só conhecia "entrada de plataforma com prazo" e
+ * por isso não tinha como representar conta a pagar.
  */
-export function resolveStatusSource (params: {
-  status: MovementStatus | string
-  predictedReceiptDate?: Date | null
-  statusSource: MovementStatusSource
-}): MovementStatusSource {
-  const { status, predictedReceiptDate, statusSource } = params
-
-  if (status === MovementStatus.Pending && predictedReceiptDate == null) {
-    return MovementStatusSource.Manual
-  }
-
-  return statusSource
+export function defaultStatus (params: { dueDate?: Date | null }): MovementStatus {
+  return params.dueDate != null ? MovementStatus.Pending : MovementStatus.Settled
 }
 
 export interface MovementSnapshot {
