@@ -194,27 +194,55 @@ dueDate: s.date().coerce().optional(),   // quando o dinheiro entra/sai
 **`defaultStatus` passa a ser uma regra só, sem olhar direção:**
 
 ```
-status = pending  se dueDate > hoje
-       = settled  caso contrário
+status = pending  se tem dueDate
+       = settled  se não tem     (à vista)
 ```
 
-Para entrada em conta `platform` com prazo, o resultado é idêntico ao de hoje (o `dueDate`
-calculado é futuro → `pending`). Para saída com boleto, passa a nascer `pending` — que é o
-comportamento que a tela pede. `cancelled` segue fora dessa regra, e a invariante do
-`resolveStatusSource` (pendente sem data de vencimento é inalcançável pelo robô, logo `manual`)
-continua valendo, agora ancorada em `dueDate`.
+Repare que a regra olha a **presença** do vencimento, não se ele já passou. Uma saída lançada hoje
+com vencimento de ontem nasce `pending` e cai no bloco de vencidos — *vencer não é pagar*, e só o
+dono sabe se pagou. Para entrada em conta `platform` com prazo o resultado é idêntico ao de hoje;
+com `settlementDays: 0` nenhum `dueDate` é gravado, então ela continua nascendo `settled`.
+`cancelled` segue fora da regra.
 
-**O settler** passa a filtrar por `dueDate <= hoje` em vez de `predictedReceiptDate <= hoje`, e
-liquida saída também — o que estava vencido e não foi pago vira pago na data. Campo ausente
-continua não casando o filtro, então a invariante que protege o backlog antigo é a mesma.
+**O settler liquida apenas o que cai sozinho: entrada em conta `platform`.** Esse é o ponto que
+distingue os dois vencimentos que M1 unificou — o repasse do iFood *acontece* na data, o boleto do
+fornecedor *não se paga sozinho*. Se o robô liquidasse toda saída vencida, o bloco "Vencidos" do
+Fluxo de Caixa nunca teria conteúdo e o caixa mostraria como pago algo que talvez não tenha sido.
+
+O filtro do settler passa a ser `status: pending` + `dueDate <= hoje` + `direction: in` +
+`account.type: platform` — o tipo da conta já está no extended reference do movimento, então não
+precisa de join. Saída vencida e entrada a prazo em conta comum ficam pendentes até o dono marcar,
+pelo `PATCH /:id/status` que já existe.
+
+**Recompute do status.** Não é em toda escrita — status é fato sobre dinheiro, não campo derivado
+de conveniência. Ele é reavaliado em dois gatilhos, e sempre só quando `statusSource` é `auto`:
+
+| Gatilho | Efeito |
+|---|---|
+| Troca de conta | `dueDate` é recalculado pela conta nova e o status o acompanha (`pending` se passou a ter vencimento, `settled` se deixou de ter) |
+| `dueDate` informado pelo dono passa a existir ou deixa de existir | Mesma regra |
+| `dueDate` muda de uma data para outra | **Status não muda** — evita que corrigir a data de um boleto não pago o transforme em pago |
+
+**A invariante do `resolveStatusSource` some, e isso é uma simplificação.** Ela existia porque um
+`pending` sem `predictedReceiptDate` era inalcançável pelo settler — chamá-lo de `auto` era mentira.
+Com M1 esse estado não existe mais: sem `dueDate` o movimento nasce `settled`. Se o dono forçar
+`pending` sem vencimento, é ação humana e já carimba `manual` por outro caminho.
 
 **Efeito colateral bom: isso fecha o P8.** O P8 (`PROBLEMAS-FUTUROS.md`) é a troca de conta a
 partir de `settled` que não recomputa o status — um recebível de cartão lançado em conta cash
-fica contabilizado como caixa em mãos. Com a regra acima, o status deixa de ser uma decisão
-tomada uma vez no registro e passa a ser **função de `dueDate`**, recomputada em toda escrita,
-com uma única guarda: `statusSource === 'manual'` trava. Como o settler só liquida o que tem
-`dueDate <= hoje`, recomputar nunca desfaz liquidação legítima. A confirmação disso é um teste
-do ida-e-volta conta cash ↔ conta plataforma, no PR 1.
+fica contabilizado como caixa em mãos. Com a regra acima, o recompute passa a valer **nos dois
+sentidos**, e o ida-e-volta se resolve sozinho: mover o lançamento para a conta plataforma faz
+nascer um `dueDate`, então ele volta a ser `pending`; mover de volta para a conta cash apaga o
+`dueDate` e ele volta a `settled`. Hoje só o segundo sentido funciona.
+
+A razão pela qual isso é seguro — e não era antes — é que `settled` deixou de ser um estado
+ambíguo. O P8 ficou aberto porque não dava para distinguir "liquidado pelo settler" de "liquidado
+por `defaultStatus` no registro", e recomputar cegamente desfaria liquidação legítima. Agora a
+pergunta que o recompute faz não é "por que isto está liquidado?", e sim "esta conta gera
+vencimento?" — que tem resposta única. O que o settler liquidou nunca é tocado, porque ele só
+liquida movimento de conta plataforma e o recompute só age quando a conta muda.
+
+A confirmação é um teste do ida-e-volta conta cash ↔ conta plataforma, na fatia 1.
 
 **Migração.** Script `db:backfill-due-date` copia `predictedReceiptDate` → `dueDate` nos
 documentos existentes, no mesmo formato dos scripts que já existem em `scripts/`. Sem o backfill,
