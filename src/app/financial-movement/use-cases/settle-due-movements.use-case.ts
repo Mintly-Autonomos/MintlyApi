@@ -1,5 +1,5 @@
 import { Filter, Document } from 'mongodb'
-import { MovementStatus, MovementStatusSource } from 'mintly-lib'
+import { FinancialAccountType, MovementDirection, MovementStatus, MovementStatusSource } from 'mintly-lib'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import { applyStatusTransition } from '../movement-status'
 
@@ -9,18 +9,29 @@ export interface SettleDueResult {
 }
 
 /**
- * Critério do que é um "pendente vencido". Serve à varredura (fora da transação)
- * E à releitura dentro da sessão — tem que ser o MESMO nos dois lugares, senão a
- * releitura deixa de ser um guard.
+ * Critério do que o robô pode liquidar sozinho. Serve à varredura (fora da
+ * transação) E à releitura dentro da sessão — tem que ser o MESMO nos dois
+ * lugares, senão a releitura deixa de ser um guard.
+ *
+ * **Só entrada em conta `platform`.** É o único dinheiro que cai sozinho: o
+ * repasse acontece na data, sem ninguém fazer nada. Um boleto vencido NÃO foi
+ * pago — liquidá-lo automaticamente esvaziaria o bloco "Vencidos" do Fluxo de
+ * Caixa e mostraria como pago algo que talvez não tenha sido. Entrada a prazo em
+ * conta comum (fiado, cheque pré) fica de fora pelo mesmo motivo: ninguém
+ * garante que o cliente pagou.
+ *
+ * O tipo da conta vem do Extended Reference do próprio movimento, então o filtro
+ * não precisa de join.
  *
  * `statusSource` AUSENTE casa com `$ne: 'manual'` no Mongo — é assim que o
- * backlog anterior ao campo é tratado como `auto` e liquida na primeira rodada,
- * sem script de migração.
+ * backlog anterior ao campo é tratado como `auto` e liquida na primeira rodada.
  */
 const dueFilter = (now: Date): Filter<Document> => ({
   status: MovementStatus.Pending,
   statusSource: { $ne: MovementStatusSource.Manual },
-  predictedReceiptDate: { $lte: now },
+  direction: MovementDirection.In,
+  'account.type': FinancialAccountType.Platform,
+  dueDate: { $lte: now },
 })
 
 /**
