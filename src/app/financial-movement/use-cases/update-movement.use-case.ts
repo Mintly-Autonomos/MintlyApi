@@ -5,7 +5,7 @@ import { RequestContext } from '../../../core/context/request-context'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { Resource } from '../../../core/types/resource'
-import { computeSnapshot, balanceImpact, defaultStatus, resolveStatusSource } from '../movement-rules'
+import { computeSnapshot, balanceImpact, defaultStatus, resolveDueDate, shouldRecomputeStatus } from '../movement-rules'
 import { applyBalanceImpact } from '../movement-balance'
 import { movementToStorage, movementFromStorage } from '../financial-movement-repository'
 
@@ -13,6 +13,8 @@ export interface UpdateMovementInput {
   title?: string
   grossValue?: number
   date?: string | Date
+  /** `null` limpa o vencimento (passa a ser à vista). Ausente = não mexer. */
+  dueDate?: string | Date | null
   paymentMethod?: string
   status?: string
   accountId?: string
@@ -81,7 +83,6 @@ export class UpdateMovementUseCase {
 
         const newGross = changes.grossValue ?? num(mov.grossValue)
         const newDate = changes.date ? new Date(changes.date) : new Date(mov.date)
-        const dateChanged = newDate.getTime() !== new Date(mov.date).getTime()
 
         // P3 — snapshot congelado: a edição reaproveita a taxa/prazo gravados no
         // movimento, para que editar um campo inócuo (ex.: título) não re-precifique
@@ -89,12 +90,6 @@ export class UpdateMovementUseCase {
         // não existe snapshot aplicável à conta nova — vale a taxa/prazo vivos dela.
         const accountChanged = changes.accountId != null && changes.accountId !== oldAccountId
 
-        // P1 — trocar de conta RECOMPUTA o status pelas regras da conta NOVA (a
-        // mesma `defaultStatus` do registro). Arrastar o status antigo criava um
-        // beco sem saída: um `pending` de plataforma movido p/ conta bancária
-        // continuava `pending` (dinheiro em "a receber" numa conta que não tem "a
-        // receber") e, sem `predictedReceiptDate` — a conta nova não tem prazo —,
-        // ficava invisível ao settler PARA SEMPRE.
         const isManual = mov.statusSource === MovementStatusSource.Manual
 
         // Status explícito no payload só "vence" quando REALMENTE muda o status.
@@ -102,24 +97,6 @@ export class UpdateMovementUseCase {
         // junto — isso não pode ser lido como intenção de mexer no status (nem
         // travar o settler, nem neutralizar o recomputo abaixo).
         const statusExplicitlyChanged = changes.status != null && changes.status !== mov.status
-
-        // Recomputo SÓ a partir de `pending`: é o único estado que o bug acima
-        // alcança. Recomputar de `cancelled` CRIARIA saldo do nada (a reversão de
-        // `cancelled` é no-op e a aplicação de `settled` credita o líquido);
-        // recomputar de `settled` (todo movimento liquidado pelo settler é `auto`)
-        // devolveria para "a receber" dinheiro que JÁ entrou na conta.
-        // `statusSource: 'manual'` (ação humana anterior) é soberano e trava o
-        // recálculo.
-        const recomputeStatus =
-          accountChanged &&
-          !isManual &&
-          !statusExplicitlyChanged &&
-          mov.status === MovementStatus.Pending
-
-        const statusByRules = recomputeStatus
-          ? defaultStatus({ direction: direction as any, account: account as any })
-          : mov.status
-        const newStatus = statusExplicitlyChanged ? changes.status! : statusByRules
 
         const frozenFee = accountChanged
           ? undefined
@@ -140,34 +117,47 @@ export class UpdateMovementUseCase {
         const history = Array.isArray(mov.history) ? [...mov.history] : []
         history.push({ at: now, by: ctx.userId ?? 'system', action: 'update' })
 
-        // Data prevista do documento resultante — decidida ANTES do statusSource,
-        // porque a invariante `resolveStatusSource` depende dela.
-        let predictedReceiptDate: Date | undefined
-        if (snapshot.predictedReceiptDate != null) {
-          predictedReceiptDate = snapshot.predictedReceiptDate
-        } else if (!accountChanged && !dateChanged && mov.predictedReceiptDate != null) {
-          // Blindagem: um doc com `predictedReceiptDate` mas SEM
-          // `settlementDaysApplied` (semeado direto no banco, fora da API) não tem
-          // como recalcular a data prevista pelo snapshot congelado. Sem isto, o
-          // `replaceOne` APAGARIA a data prevista numa edição inócua (até de
-          // título) e o movimento sumiria do radar do settler. Só vale enquanto a
-          // data prevista continua fazendo sentido: conta e data de origem intactas.
-          predictedReceiptDate = new Date(mov.predictedReceiptDate)
-        }
-
-        // P1 — statusSource: editar um campo inócuo NÃO tira o movimento do
-        // alcance do settler. Só carimba `manual` se ESTA edição mexeu no status
-        // (ação humana explícita); caso contrário preserva a origem já gravada
-        // (ausente = `auto`, docs anteriores a este campo). Por cima, a invariante
-        // de domínio: `pending` sem data prevista é inalcançável pelo settler,
-        // logo é `manual`.
-        const statusSource = resolveStatusSource({
-          status: newStatus,
-          predictedReceiptDate,
-          statusSource: statusExplicitlyChanged
-            ? MovementStatusSource.Manual
-            : (mov.statusSource ?? MovementStatusSource.Auto),
+        // M1 — vencimento do documento resultante. `'dueDate' in changes`
+        // distingue "não enviado" de "enviado null": o null é como o dono diz que
+        // aquele lançamento passou a ser à vista.
+        //
+        // `storedWasComputed` é o que separa os dois tipos de vencimento. Só
+        // entrada de plataforma grava `settlementDaysApplied`, então a presença
+        // dele significa "esta data foi derivada do repasse daquela conta" — e ela
+        // tem que sumir quando o movimento sai de lá. Um vencimento informado pelo
+        // dono é do lançamento e sobrevive a qualquer troca de conta.
+        const newDueDate = resolveDueDate({
+          informed: 'dueDate' in changes
+            ? (changes.dueDate == null ? null : new Date(changes.dueDate))
+            : undefined,
+          computed: snapshot.dueDate,
+          stored: mov.dueDate != null ? new Date(mov.dueDate) : undefined,
+          storedWasComputed: mov.settlementDaysApplied != null,
         })
+
+        // P8 — o status acompanha o vencimento quando ele passa a existir ou deixa
+        // de existir. Nos dois sentidos: mover para conta plataforma faz nascer
+        // vencimento e devolve o lançamento a `pending`; mover de volta apaga o
+        // vencimento e ele volta a `settled`. Mudar só a DATA não mexe no status —
+        // corrigir o vencimento de um boleto não pago não pode marcá-lo como pago.
+        const recomputeStatus = shouldRecomputeStatus({
+          hadDueDate: mov.dueDate != null,
+          hasDueDate: newDueDate != null,
+          isManual,
+          statusExplicitlyChanged,
+          currentStatus: mov.status,
+        })
+
+        const statusByRules = recomputeStatus ? defaultStatus({ dueDate: newDueDate }) : mov.status
+        const newStatus = statusExplicitlyChanged ? changes.status! : statusByRules
+
+        // statusSource: editar um campo inócuo NÃO tira o movimento do alcance do
+        // settler. Só carimba `manual` se ESTA edição mexeu no status (ação humana
+        // explícita); caso contrário preserva a origem já gravada (ausente =
+        // `auto`, docs anteriores a este campo).
+        const statusSource = statusExplicitlyChanged
+          ? MovementStatusSource.Manual
+          : (mov.statusSource ?? MovementStatusSource.Auto)
 
         // Documento reconstruído (preserva imutáveis + history + audit.createdAt).
         const newDoc: Record<string, any> = {
@@ -194,7 +184,7 @@ export class UpdateMovementUseCase {
         }
         if (snapshot.feePercentApplied != null) newDoc.feePercentApplied = snapshot.feePercentApplied
         if (snapshot.settlementDaysApplied != null) newDoc.settlementDaysApplied = snapshot.settlementDaysApplied
-        if (predictedReceiptDate != null) newDoc.predictedReceiptDate = predictedReceiptDate
+        if (newDueDate != null) newDoc.dueDate = newDueDate
         const counterparty = changes.counterparty ?? mov.counterparty
         if (counterparty) newDoc.counterparty = counterparty
         const fiscalNote = changes.fiscalNote ?? mov.fiscalNote

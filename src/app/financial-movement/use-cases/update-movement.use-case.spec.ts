@@ -251,7 +251,7 @@ describe('UpdateMovementUseCase', () => {
     const doc = storedDoc(movements)
     expect(Number(doc.feePercentApplied)).toBe(20)
     expect(doc.settlementDaysApplied).toBe(14)
-    expect(doc.predictedReceiptDate).toBeInstanceOf(Date)
+    expect(doc.dueDate).toBeInstanceOf(Date)
   })
 
   it('conta cash não grava snapshot de taxa/prazo', async () => {
@@ -260,7 +260,7 @@ describe('UpdateMovementUseCase', () => {
     const doc = storedDoc(movements)
     expect(doc.feePercentApplied).toBeUndefined()
     expect(doc.settlementDaysApplied).toBeUndefined()
-    expect(doc.predictedReceiptDate).toBeUndefined()
+    expect(doc.dueDate).toBeUndefined()
   })
 
   it('counterparty/fiscalNote/description das mudanças são aplicados', async () => {
@@ -339,7 +339,7 @@ describe('UpdateMovementUseCase', () => {
       netValue: 90,
       feePercentApplied: 10,
       settlementDaysApplied: 14,
-      predictedReceiptDate: new Date('2026-06-30T00:00:00.000Z'),
+      dueDate: new Date('2026-06-30T00:00:00.000Z'),
       ...over,
     })
   }
@@ -355,7 +355,7 @@ describe('UpdateMovementUseCase', () => {
     expect(updated.status).toBe('settled')
     const doc = storedDoc(movements)
     expect(doc.status).toBe('settled')
-    expect(doc.predictedReceiptDate).toBeUndefined()
+    expect(doc.dueDate).toBeUndefined()
     // Recomputado pela regra, não por ação humana: continua no alcance do settler.
     expect(doc.statusSource).toBe(MovementStatusSource.Auto)
   })
@@ -388,7 +388,7 @@ describe('UpdateMovementUseCase', () => {
     const updated = await useCase.execute(MOV_ID, { accountId: ACC2_ID }, CTX)
 
     expect(updated.status).toBe('pending')
-    expect(storedDoc(movements).predictedReceiptDate).toBeInstanceOf(Date)
+    expect(storedDoc(movements).dueDate).toBeInstanceOf(Date)
   })
 
   it('CANCELADA (auto) trocando de conta NÃO recomputa o status e NÃO cria dinheiro', async () => {
@@ -431,7 +431,7 @@ describe('UpdateMovementUseCase', () => {
     expect(updated.status).toBe('settled')
     const doc = storedDoc(movements)
     expect(doc.status).toBe('settled')
-    expect(doc.predictedReceiptDate).toBeUndefined()
+    expect(doc.dueDate).toBeUndefined()
     // Mesmo status ≠ ação humana: não carimba manual (senão travaria o settler).
     expect(doc.statusSource).toBe(MovementStatusSource.Auto)
     expect(balanceCalls(accounts)).toEqual([
@@ -440,12 +440,16 @@ describe('UpdateMovementUseCase', () => {
     ])
   })
 
-  it('invariante: pendente que fica SEM data prevista é statusSource=manual (o settler nunca o alcança)', async () => {
-    // Doc legado: pending, `auto`, sem data prevista — inalcançável pelo settler.
+  it('doc legado pendente sem vencimento: edição inócua não mexe em status nem em statusSource', async () => {
+    // Antes do M1 este caso virava `manual`, porque um pendente sem data prevista
+    // era inalcançável pelo settler e chamá-lo de `auto` seria mentira. A regra
+    // caiu junto com o `resolveStatusSource`: o que o settler enxerga agora é
+    // entrada de conta plataforma com vencimento, e nenhuma edição de título
+    // muda isso. Marcar `manual` aqui só travaria o recomputo à toa.
     const mov = makePendingPlatformMov({
       statusSource: MovementStatusSource.Auto,
       settlementDaysApplied: undefined,
-      predictedReceiptDate: undefined,
+      dueDate: undefined,
     })
     const { movements } = wire({ mov, account: makeAccount({ _id: new ObjectId(ACC_ID), type: 'platform', feePercent: 10, settlementDays: 14 }) })
 
@@ -453,28 +457,122 @@ describe('UpdateMovementUseCase', () => {
 
     const doc = storedDoc(movements)
     expect(doc.status).toBe('pending')
-    expect(doc.predictedReceiptDate).toBeUndefined()
-    expect(doc.statusSource).toBe(MovementStatusSource.Manual)
+    expect(doc.dueDate).toBeUndefined()
+    expect(doc.statusSource).toBe(MovementStatusSource.Auto)
   })
 
-  // --- Blindagem: doc semeado com data prevista mas sem prazo aplicado ------
-  it('edição inócua preserva a predictedReceiptDate de doc sem settlementDaysApplied', async () => {
+  // --- Vencimento sem prazo aplicado: lido como informado pelo dono --------
+  it('edição inócua preserva o vencimento de doc sem settlementDaysApplied', async () => {
     const mov = makePendingPlatformMov({ settlementDaysApplied: undefined })
     const { movements } = wire({ mov, account: makeAccount({ _id: new ObjectId(ACC_ID), type: 'platform', feePercent: 10, settlementDays: 14 }) })
 
     await useCase.execute(MOV_ID, { title: 'Novo título' }, CTX)
 
     // Sem isto o replaceOne apagaria a data e o settler nunca mais veria o movimento.
-    expect(storedDoc(movements).predictedReceiptDate).toEqual(new Date('2026-06-30T00:00:00.000Z'))
+    expect(storedDoc(movements).dueDate).toEqual(new Date('2026-06-30T00:00:00.000Z'))
   })
 
-  it('mudar a DATA de doc sem settlementDaysApplied não ressuscita a data prevista antiga', async () => {
+  it('mudar a DATA de doc sem settlementDaysApplied preserva o vencimento', async () => {
     const mov = makePendingPlatformMov({ settlementDaysApplied: undefined })
     const { movements } = wire({ mov, account: makeAccount({ _id: new ObjectId(ACC_ID), type: 'platform', feePercent: 10, settlementDays: 14 }) })
 
     await useCase.execute(MOV_ID, { date: '2026-07-01T00:00:00.000Z' }, CTX)
 
-    // A data prevista antiga foi derivada da data ANTIGA: preservá-la seria mentira.
-    expect(storedDoc(movements).predictedReceiptDate).toBeUndefined()
+    // Mudou em relação ao modelo antigo, e de propósito. Sem `settlementDaysApplied`
+    // não há como afirmar que esta data foi derivada da data do lançamento — e um
+    // vencimento informado pelo dono não se move porque ele corrigiu a data da
+    // compra. O boleto vence quando vence.
+    expect(storedDoc(movements).dueDate).toEqual(new Date('2026-06-30T00:00:00.000Z'))
+  })
+
+  // --- M1 / P8: o status acompanha o vencimento nos dois sentidos ----------
+  describe('vencimento e recomputo de status (M1 / P8)', () => {
+    const platformAccount = () => makeAccount({ _id: new ObjectId(ACC2_ID), name: 'iFood', type: 'platform', feePercent: 10, settlementDays: 30 })
+
+    it('P8 — mover de conta cash para conta plataforma devolve o lançamento para pendente', async () => {
+      // Recebível de cartão lançado na conta errada: nasceu liquidado em cash e o
+      // dinheiro entrou como caixa em mãos. Corrigir a conta tem que desfazer isso.
+      const { movements } = wire({ mov: makeMov({ status: 'settled', statusSource: MovementStatusSource.Auto }), account: platformAccount() })
+
+      const updated = await useCase.execute(MOV_ID, { accountId: ACC2_ID }, CTX)
+
+      expect(updated.status).toBe('pending')
+      expect(storedDoc(movements).dueDate).toEqual(new Date('2026-07-16T00:00:00.000Z'))
+      expect(storedDoc(movements).statusSource).toBe(MovementStatusSource.Auto)
+    })
+
+    it('editar o título de um boleto vencido não o transforma em pago', async () => {
+      const mov = makeMov({
+        direction: 'out',
+        status: 'pending',
+        statusSource: MovementStatusSource.Auto,
+        dueDate: new Date('2020-01-01T00:00:00.000Z'),
+        category: { _id: CAT_ID, name: 'Fornecedores', type: 'expense' },
+      })
+      const { movements } = wire({ mov, category: { _id: new ObjectId(CAT_ID), name: 'Fornecedores', type: 'expense' } })
+
+      const updated = await useCase.execute(MOV_ID, { title: 'Fornecedor Embalagens (corrigido)' }, CTX)
+
+      expect(updated.status).toBe('pending')
+      expect(storedDoc(movements).dueDate).toEqual(new Date('2020-01-01T00:00:00.000Z'))
+    })
+
+    it('corrigir a data de vencimento de um boleto não pago mantém pendente', async () => {
+      const mov = makeMov({
+        direction: 'out',
+        status: 'pending',
+        statusSource: MovementStatusSource.Auto,
+        dueDate: new Date('2026-09-20T00:00:00.000Z'),
+      })
+      const { movements } = wire({ mov })
+
+      const updated = await useCase.execute(MOV_ID, { dueDate: '2026-09-22T00:00:00.000Z' }, CTX)
+
+      expect(updated.status).toBe('pending')
+      expect(storedDoc(movements).dueDate).toEqual(new Date('2026-09-22T00:00:00.000Z'))
+    })
+
+    it('limpar o vencimento (null) liquida o lançamento', async () => {
+      const mov = makeMov({
+        direction: 'out',
+        status: 'pending',
+        statusSource: MovementStatusSource.Auto,
+        dueDate: new Date('2026-09-20T00:00:00.000Z'),
+      })
+      const { movements } = wire({ mov })
+
+      const updated = await useCase.execute(MOV_ID, { dueDate: null }, CTX)
+
+      expect(updated.status).toBe('settled')
+      expect(storedDoc(movements).dueDate).toBeUndefined()
+    })
+
+    it('mover um boleto entre contas bancárias preserva o vencimento informado', async () => {
+      // O vencimento é do boleto, não da conta que vai pagá-lo.
+      const mov = makeMov({
+        direction: 'out',
+        status: 'pending',
+        statusSource: MovementStatusSource.Auto,
+        dueDate: new Date('2026-09-20T00:00:00.000Z'),
+      })
+      const { movements } = wire({ mov, account: makeAccount({ _id: new ObjectId(ACC2_ID), name: 'Banco 2', type: 'bank' }) })
+
+      const updated = await useCase.execute(MOV_ID, { accountId: ACC2_ID }, CTX)
+
+      expect(updated.status).toBe('pending')
+      expect(storedDoc(movements).dueDate).toEqual(new Date('2026-09-20T00:00:00.000Z'))
+    })
+
+    it('o que o dono liquidou na mão não volta para pendente ao trocar de conta', async () => {
+      const { movements } = wire({
+        mov: makeMov({ status: 'settled', statusSource: MovementStatusSource.Manual }),
+        account: platformAccount(),
+      })
+
+      const updated = await useCase.execute(MOV_ID, { accountId: ACC2_ID }, CTX)
+
+      expect(updated.status).toBe('settled')
+      expect(storedDoc(movements).statusSource).toBe(MovementStatusSource.Manual)
+    })
   })
 })
