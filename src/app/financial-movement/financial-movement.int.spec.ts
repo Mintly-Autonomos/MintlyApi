@@ -141,7 +141,7 @@ describe('Financial Movement (Integration)', () => {
     expect((await accountBalances(db, cashId)).available).toBe(100)
   })
 
-  it('entrada em conta platform → pending, fee/net + data prevista, vai p/ saldo previsto', async () => {
+  it('entrada em conta platform → pending, fee/net + vencimento, vai p/ saldo previsto', async () => {
     const { auth, db, restaurantId, revenueCatId } = await setup()
     const platformId = await createPlatformAccount(auth, restaurantId)
     const res = await app.inject({
@@ -155,7 +155,7 @@ describe('Financial Movement (Integration)', () => {
     expect(body.status).toBe('pending')
     expect(body.feeValue).toBe(12)
     expect(body.netValue).toBe(88)
-    expect(body.predictedReceiptDate).toBeDefined()
+    expect(body.dueDate).toBeDefined()
     const bal = await accountBalances(db, platformId)
     expect(bal.predicted).toBe(88)
     expect(bal.available).toBe(0)
