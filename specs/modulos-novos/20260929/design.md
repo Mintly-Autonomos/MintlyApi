@@ -125,6 +125,11 @@ Envelope segue o que já existe: `{ payload: T }`, via `ResponseBuilder`.
 Todo relatório com recorte temporal aceita a mesma query: `period` (`today` | `last7Days` |
 `thisMonth` | `lastMonth` | `custom`) e, quando `custom`, `from`/`to` em ISO date.
 
+Os valores saem da história **MIN-82**, que fixa o filtro de período da Visão Geral — adotamos como
+contrato de **todos** os relatórios, não só daquela página. Junto vêm três regras dela: o padrão é
+`thisMonth`; a comparação é sempre contra o **período anterior equivalente**; e o intervalo
+personalizado rejeita fim anterior ao início e qualquer data futura.
+
 Um helper compartilhado (`reports/shared/period.ts`) resolve isso num intervalo `[início, fim)`
 usando o fuso **`America/Sao_Paulo`, fixo**. "Hoje" e "este mês" só significam alguma coisa com
 fuso definido: em UTC, um lançamento das 22h de 31 de julho cairia em agosto e o mês fecharia
@@ -355,20 +360,35 @@ São a mesma coisa vista de dois ângulos: competência e caixa.
 **Decisão.** `restaurantSchema` ganha a configuração tributária:
 
 ```ts
-taxRatePercent: s.number().min(0).max(100).default(0),   // alíquota efetiva sobre a receita bruta
-taxRegime: s.type().enum(TaxRegime).optional(),          // simplesNacional | lucroPresumido | ...
+taxRegime: s.type().enum(TaxRegime),                     // mei | simplesNacionalAnexoI | ...
+taxRatePercent: s.number().min(0).max(100).optional(),   // alíquota efetiva — derivada (MIN-23);
+                                                         // informada na mão só como escape hatch
 ```
 
-No DRE: `impostos = receitaBruta × taxRatePercent / 100`.
+No DRE: `impostos = receitaBruta × alíquota efetiva`.
+
+**A alíquota não é digitada na mão — ela é calculada.** A história **MIN-23** ("Módulo de cálculo
+tributário — Simples Nacional") já especifica a tabela do Anexo I com as seis faixas e a fórmula
+da alíquota efetiva: `(RBT12 × alíquota nominal − dedução) / RBT12`, além do caminho do MEI (DAS
+fixo). O DRE **consome** essa função; não reimplementa regra tributária.
+
+O que muda em relação ao que a MIN-23 previu: ela calcula o RBT12 a partir da collection
+`daily_sales`, que não existe e depende do domínio de vendas — bloqueado. Proposta registrada como
+comentário na própria história: **RBT12 sai de `financial_movements`**, somando a receita bruta das
+entradas dos últimos 12 meses. É o mesmo número, da fonte que já está populada, e a origem pode ser
+trocada depois sem mexer em quem consome.
+
+O restaurante guarda o **regime** (`taxRegime`), que decide qual caminho de cálculo seguir, e a
+alíquota efetiva calculada pode ser cacheada ali como valor derivado.
 
 **Regra que evita contar duas vezes:** a movimentação de imposto (categoria com
 `dreGroup: 'tax'`) é **saída de caixa e só isso**. Ela aparece no Fluxo de Caixa e é
 **excluída de `despesasOperacionais`** no DRE — senão o imposto entraria na conta duas vezes, uma
 como dedução da receita e outra como despesa, e o lucro sairia menor do que é.
 
-**Pendência:** o Simples Nacional tem faixas por RBT12, então a alíquota efetiva varia com o
-faturamento dos últimos 12 meses. Por ora o dono informa a alíquota efetiva na mão. Calcular a
-faixa está nas pendências.
+**A alinhar com a MIN-23 antes da fatia do DRE:** onde o regime fica gravado. O design prevê
+`taxRegime` no `restaurantSchema`; se aquela história já tiver outro lugar em mente, vale acertar
+antes de duas implementações divergirem.
 
 ### M6. A taxa de plataforma não é despesa lançada
 
@@ -472,13 +492,15 @@ e os pilares com peso e nota individual. A composição proposta:
 |---|---|---|
 | Margem líquida | 30% | ≥ 10% |
 | Fôlego de caixa | 30% | ≥ 45 dias |
-| Prime cost | 25% | ≤ 60% da receita |
+| Prime cost | 25% | ≤ 65% da receita |
 | Tendência de receita | 15% | crescendo contra os 3 meses anteriores |
 
-Nota final é a média ponderada; rótulo por faixa (< 40 risco, < 70 atenção, ≥ 70 saudável). Os
-alvos de CMV (28–35%) e prime cost (≤ 60–65%) que aparecem nas telas são benchmark de restaurante
-— entram como constantes do domínio, com a origem comentada no código. Pesos, faixas e alvos
-precisam de validação do time de negócio; estão nas pendências.
+Nota final é a média ponderada; rótulo por faixa (< 40 risco, < 70 atenção, ≥ 70 saudável).
+
+Os **alvos de benchmark estão fechados** pela história **MIN-84**: CMV entre 28% e 35%, prime cost
+até 65%. Entram como constantes do domínio, com a origem comentada no código. Já os **pesos e as
+faixas do score continuam sendo proposta nossa** — a MIN-83 ("Score de Saúde Financeira") não os
+define. Precisam de aval antes desta fatia; estão nas pendências.
 
 ### 3.5 Receitas — bloqueado
 
@@ -561,6 +583,24 @@ Avulsos (import, notificações, avatar) entram fora dessa trilha, quando houver
 
 Cada fatia segue o ciclo combinado: perguntas do módulo → plano próprio → TDD → conferência dos
 números contra o seed → PR.
+
+### Onde o planejamento de cada fatia mora
+
+Este documento é o roteiro, e fica no repositório porque atravessa todas as fatias. O
+**planejamento de cada fatia vai para o Jira**, seguindo a convenção do projeto: a spec como
+comentário na história e as tasks como subtarefas, **uma subtarefa por branch**.
+
+Mapeamento do que já existe:
+
+| Fatia | Jira |
+|---|---|
+| 1 — `dueDate` | **MIN-89** (história, sob o épico MIN-47) → MIN-91 lib, MIN-92 API, MIN-93 migração |
+| 2 — Fluxo de Caixa | **MIN-90** (épico) → **MIN-94** (história) |
+| 3 — classificação contábil e imposto | parte em **MIN-23** (cálculo tributário, já existente); resto a criar |
+| 8 — Visão Geral | **MIN-81** (épico) → MIN-82 a MIN-88, sete histórias por bloco de tela |
+
+Fatias 4 a 7 ainda não têm épico nem história — são criadas quando entrarem na fila, para não
+encher o backlog de casca vazia.
 
 ---
 

@@ -85,34 +85,49 @@ houver número validado.
 
 ---
 
-## N5. Pesos do score de saúde e alvos de benchmark
+## N5. Pesos do score de saúde
 
-**Status:** aberto, com palpite em produção.
+**Status:** aberto, com palpite em produção. A parte dos alvos de benchmark ✅ **fechou** —
+ver abaixo.
 
-**O quê.** A Visão Geral mostra um score de 0 a 100 com pilares. A composição proposta no design:
-margem líquida 30%, fôlego de caixa 30%, prime cost 25%, tendência de receita 15%. As telas também
-exibem alvos de benchmark de restaurante — CMV entre 28% e 35%, prime cost ≤ 60–65%.
+**~~Alvos de benchmark~~ ✅ RESOLVIDO pela MIN-84** ("KPIs Críticos"): CMV entre 28% e 35%,
+prime cost até 65%. Entram como constantes do domínio, com a origem comentada no código. O design
+foi corrigido (seção 3.4) — o alvo de prime cost estava escrito como "≤ 60–65%", lido das prints;
+vale o número da história.
 
-**A decidir.** Os pesos são proposta nossa. Os alvos vieram das prints e batem com o que o mercado
-de food service usa, mas precisam de aval — são eles que decidem se o dono vê "saudável" ou
-"risco".
+**O que continua aberto.** A Visão Geral mostra um score de 0 a 100 composto por pilares, mas a
+**MIN-83 ("Score de Saúde Financeira") não define nem os pilares nem os pesos**. A composição do
+design é proposta nossa: margem líquida 30%, fôlego de caixa 30%, prime cost 25%, tendência de
+receita 15%, com faixas < 40 risco, < 70 atenção, ≥ 70 saudável.
 
-**Encaminhamento.** Constantes do domínio, com a origem comentada no código.
+**A decidir.** Os pesos e as faixas — são eles que decidem se o dono abre o app e lê "saudável" ou
+"risco". Registrado como comentário na MIN-81.
+
+**Encaminhamento.** Precisa de aval antes da fatia 8 (Visão Geral), que é a última da trilha —
+tempo de sobra para a resposta chegar.
 
 ---
 
-## N6. Faixas do Simples Nacional por RBT12
+## ~~N6. Faixas do Simples Nacional por RBT12~~ ✅ JÁ ESPECIFICADO (MIN-23)
 
-**Status:** aberto. Não bloqueia.
+**Status:** resolvido enquanto pendência de negócio — vira dependência técnica entre histórias.
 
-**O quê.** O DRE calcula imposto como `receita bruta × alíquota configurada no restaurante`
-(M5 do design). Mas a alíquota efetiva do Simples Nacional varia por faixa de receita bruta
-acumulada dos últimos 12 meses.
+**O quê.** O DRE precisa da alíquota para calcular o imposto sobre a receita. A pendência era
+quem decide a faixa. **A história MIN-23 ("Módulo de cálculo tributário — Simples Nacional") já
+especifica tudo**: a tabela do Anexo I com as seis faixas, a fórmula da alíquota efetiva
+`(RBT12 × alíquota nominal − dedução) / RBT12`, o caminho do MEI com DAS fixo e os alertas de
+mudança de faixa e de proximidade do teto. O DRE **consome** essa função; não reimplementa regra
+tributária. O design (M5) foi corrigido — ele previa o dono digitar a alíquota na mão.
 
-**A decidir.** O sistema calcula a faixa (precisa da tabela do anexo correto e do RBT12) ou o dono
-informa a alíquota efetiva na mão, como está hoje?
+**O que sobrou, e é técnico.** A MIN-23 calcula o RBT12 a partir da collection `daily_sales`, que
+não existe e depende do domínio de vendas (N1, bloqueado). Proposta registrada como comentário na
+própria história: **tirar o RBT12 de `financial_movements`**, somando a receita bruta das entradas
+dos últimos 12 meses — mesmo número, fonte que já está populada, trocável depois sem mexer em quem
+consome.
 
-**Encaminhamento.** Começa na mão. Se o time quiser automático, vira tarefa própria.
+**A alinhar antes da fatia do DRE.** Onde o regime tributário fica gravado. O design prevê
+`taxRegime` no restaurante; se a MIN-23 tiver outro lugar em mente, acertar antes de duas
+implementações divergirem.
 
 ---
 
