@@ -42,7 +42,7 @@ describe('movement-rules', () => {
           netValue: 88,
           feePercentApplied: 12,
           settlementDaysApplied: 30,
-          predictedReceiptDate: new Date('2026-07-16T00:00:00.000Z'),
+          dueDate: new Date('2026-07-16T00:00:00.000Z'),
         })
     })
 
@@ -56,7 +56,7 @@ describe('movement-rules', () => {
         .toEqual({ feeValue: 0, netValue: 100 })
     })
 
-    it('entrada em conta platform SEM settlementDays: aplica fee/net mas sem prazo/data prevista', () => {
+    it('entrada em conta platform SEM settlementDays: aplica fee/net mas sem prazo/vencimento', () => {
       const platformSemPrazo = { type: 'platform', feePercent: 10 }
       expect(computeSnapshot({ direction: MovementDirection.In, grossValue: 100, date, account: platformSemPrazo }))
         .toEqual({
@@ -64,6 +64,18 @@ describe('movement-rules', () => {
           netValue: 90,
           feePercentApplied: 10,
         })
+    })
+
+    it('prazo ZERO na conta viva: registra o prazo aplicado mas NÃO gera vencimento', () => {
+      // Prazo zero é "cai na hora". Sem esta guarda o movimento nasceria
+      // `pending` com vencimento igual à data do lançamento — o oposto do que a
+      // conta de prazo zero faz hoje.
+      const semEspera = { type: 'platform', feePercent: 5, settlementDays: 0 }
+
+      const snap = computeSnapshot({ direction: MovementDirection.In, grossValue: 100, date, account: semEspera })
+
+      expect(snap.settlementDaysApplied).toBe(0)
+      expect(snap.dueDate).toBeUndefined()
     })
   })
 
@@ -83,7 +95,7 @@ describe('movement-rules', () => {
       expect(snap.netValue).toBe(90)
       expect(snap.feePercentApplied).toBe(10)
       expect(snap.settlementDaysApplied).toBe(5)
-      expect(snap.predictedReceiptDate).toEqual(new Date('2026-01-15T00:00:00.000Z'))
+      expect(snap.dueDate).toEqual(new Date('2026-01-15T00:00:00.000Z'))
     })
 
     it('sem fee congelado, deriva da conta viva (comportamento do registro)', () => {
@@ -152,10 +164,10 @@ describe('movement-rules', () => {
 
       expect(snap.feePercentApplied).toBe(10)
       expect(snap.settlementDaysApplied).toBeUndefined()
-      expect(snap.predictedReceiptDate).toBeUndefined()
+      expect(snap.dueDate).toBeUndefined()
     })
 
-    it('fee: { settlementDays: 0 } → prazo zero é respeitado, data prevista = data do movimento', () => {
+    it('fee: { settlementDays: 0 } → prazo zero é respeitado e NÃO gera vencimento', () => {
       const date = new Date('2026-01-10T00:00:00.000Z')
       const snap = computeSnapshot({
         direction: MovementDirection.In,
@@ -166,7 +178,7 @@ describe('movement-rules', () => {
       })
 
       expect(snap.settlementDaysApplied).toBe(0)
-      expect(snap.predictedReceiptDate).toEqual(date)
+      expect(snap.dueDate).toBeUndefined()
     })
 
     it('fee: {} (objeto vazio) → sem taxa e sem prazo; nada da conta viva vaza', () => {
@@ -182,7 +194,7 @@ describe('movement-rules', () => {
       expect(snap.netValue).toBe(100)
       expect(snap.feePercentApplied).toBeUndefined()
       expect(snap.settlementDaysApplied).toBeUndefined()
-      expect(snap.predictedReceiptDate).toBeUndefined()
+      expect(snap.dueDate).toBeUndefined()
     })
   })
 
@@ -221,7 +233,7 @@ describe('movement-rules', () => {
     it('pending COM data prevista preserva a origem informada', () => {
       expect(resolveStatusSource({
         status: MovementStatus.Pending,
-        predictedReceiptDate: new Date('2026-07-30T00:00:00.000Z'),
+        dueDate: new Date('2026-07-30T00:00:00.000Z'),
         statusSource: MovementStatusSource.Auto,
       })).toBe(MovementStatusSource.Auto)
     })

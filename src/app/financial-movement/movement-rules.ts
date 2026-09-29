@@ -79,7 +79,8 @@ export interface MovementSnapshot {
   netValue: number
   feePercentApplied?: number
   settlementDaysApplied?: number
-  predictedReceiptDate?: Date
+  /** Vencimento calculado pela conta com prazo. Ver `dueDate` no schema da lib. */
+  dueDate?: Date
 }
 
 /**
@@ -129,7 +130,14 @@ export function computeSnapshot (params: {
     }
     if (settlementDays != null) {
       snapshot.settlementDaysApplied = settlementDays
-      snapshot.predictedReceiptDate = addDays(date, settlementDays)
+
+      // Prazo ZERO é "cai na hora": registra o prazo aplicado, mas NÃO gera
+      // vencimento. Sem esta guarda o movimento nasceria `pending` com
+      // vencimento igual à data do lançamento — o oposto do que a conta de
+      // prazo zero faz hoje (`defaultStatus` exigia `settlementDays > 0`).
+      if (settlementDays > 0) {
+        snapshot.dueDate = addDays(date, settlementDays)
+      }
     }
     return snapshot
   }
