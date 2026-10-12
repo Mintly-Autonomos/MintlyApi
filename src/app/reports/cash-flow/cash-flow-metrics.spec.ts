@@ -210,8 +210,14 @@ describe('buildDueItems', () => {
     ], TODAY, 30)
 
     expect(overdue).toEqual({
-      id: 'p1', title: 'A', category: { _id: 'c1', name: 'Categoria' }, direction: 'out',
-      amount: 730, dueDate: '2026-10-04', status: 'pending', overdue: true,
+      id: 'p1',
+      title: 'A',
+      category: { _id: 'c1', name: 'Categoria' },
+      direction: 'out',
+      amount: 730,
+      dueDate: '2026-10-04',
+      status: 'pending',
+      overdue: true,
     })
     expect(settled).toMatchObject({ id: 's1', amount: 2950, status: 'settled', overdue: false, settledAt: '2026-10-08' })
   })
