@@ -15,7 +15,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 - Etapa: ~~perguntas~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência contra o seed~~ ✅ →
   ~~revisão final~~ ✅ → ~~teste com o backend local~~ ✅ → ~~PR da lib~~ ✅ (MintlyLib#27, publicado
-  `2.10.0-preview`) → **PR da API aberto, aguardando review**.
+  `2.10.0-preview`) → **PR da API aberto (MintlyApi#40), CI verde, aguardando review**.
 - Spec: `specs/modulos-novos/20261012/fluxo-de-caixa.md`; plano: `specs/modulos-novos/20261012/plan.md`
   (12 tarefas). Postar os dois na MIN-94 quando o MCP do Atlassian voltar.
 - Branch da API: `feat/20261012/fluxo-de-caixa`, rebaseada em `staging` depois do merge do #39.
@@ -28,7 +28,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | # | Fatia | Lib | API | Estado |
 |---|---|---|---|---|
 | 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 ✅ mergeado | Concluída — falta o backfill em staging |
-| 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | PR aberto | **Em review** |
+| 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | #40 aberto, CI verde | **Em review** |
 | 3 | `dreGroup` + `mixed` + alíquota (M2, M5) | — | — | Na fila |
 | 4 | Resultado (DRE) | — | — | Na fila |
 | 5 | Subcategoria + `channel` (M3, M4) | — | — | Na fila |
