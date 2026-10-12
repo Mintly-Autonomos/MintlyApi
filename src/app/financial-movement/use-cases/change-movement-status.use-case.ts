@@ -4,11 +4,47 @@ import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connec
 import { RequestContext } from '../../../core/context/request-context'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
+import { ValidationError } from '../../../core/errors/core/validation-error'
+import { startOfLocalDay, toLocalDay } from '../../reports/shared/period'
 import { Resource } from '../../../core/types/resource'
 import { applyStatusTransition } from '../movement-status'
 import { movementFromStorage } from '../financial-movement-repository'
 
 const VALID = new Set<string>([MovementStatus.Pending, MovementStatus.Settled, MovementStatus.Cancelled])
+
+/** Relógio do cliente adiantado não pode virar 400 ao mandar "agora". */
+const FUTURE_TOLERANCE_MS = 5 * 60 * 1000
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+const HALF_DAY_MS = 12 * 60 * 60 * 1000
+
+/**
+ * `settledAt` informado pelo dono no PATCH de status. Ausente → `undefined`
+ * (a transição usa agora). Inválido ou no futuro → 400: pagamento que ainda não
+ * aconteceu não é liquidação.
+ *
+ * Só a data (`AAAA-MM-DD`, o que um seletor de data manda) é o DIA LOCAL do
+ * pagamento: vira o meio-dia em São Paulo. Lida pelo `new Date`, seria a
+ * meia-noite UTC — 21h do dia anterior — e o pagamento cairia um dia antes no
+ * Fluxo de Caixa. O "futuro" desse formato também é por dia local.
+ */
+export function parseSettledAt (value: string | Date | undefined, now: Date): Date | undefined {
+  if (value == null) return undefined
+  if (typeof value === 'string' && DATE_ONLY.test(value)) {
+    if (value > toLocalDay(now)) {
+      throw new ValidationError('settledAt não pode estar no futuro.')
+    }
+    return new Date(startOfLocalDay(value).getTime() + HALF_DAY_MS)
+  }
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    throw new ValidationError('settledAt inválido: informe uma data ISO.')
+  }
+  if (parsed.getTime() > now.getTime() + FUTURE_TOLERANCE_MS) {
+    throw new ValidationError('settledAt não pode estar no futuro.')
+  }
+  return parsed
+}
 
 /**
  * Altera o status de uma movimentação (MIN-68), corrigindo o saldo da conta na
@@ -21,10 +57,11 @@ const VALID = new Set<string>([MovementStatus.Pending, MovementStatus.Settled, M
  * o dono.
  */
 export class ChangeMovementStatusUseCase {
-  async execute (movementId: string, newStatus: string, ctx: RequestContext): Promise<any> {
+  async execute (movementId: string, newStatus: string, ctx: RequestContext, options: { settledAt?: string | Date } = {}): Promise<any> {
     if (!VALID.has(newStatus)) {
       throw new ConflictError(`Status inválido: ${newStatus}.`)
     }
+    const informedSettledAt = parseSettledAt(options.settledAt, new Date())
     if (!ObjectId.isValid(movementId)) {
       throw new NotFoundError(Resource.FinancialMovement, movementId)
     }
@@ -56,24 +93,27 @@ export class ChangeMovementStatusUseCase {
           // muda nada de fato. Gravar de novo so empilharia `status:lock:*` identicos
           // no `history` (array embutido, sem limite no schema), soterrando a trilha
           // de auditoria real a cada reenvio de formulario ou retry de cliente.
-          if (mov.statusSource === MovementStatusSource.Manual) {
+          //
+          // Exceção: reafirmar `settled` COM `settledAt` é o dono corrigindo
+          // "quando paguei" — isso grava, senão ele recebe 200 e nada muda.
+          const correctsSettledAt = newStatus === MovementStatus.Settled && informedSettledAt != null
+          if (mov.statusSource === MovementStatusSource.Manual && !correctsSettledAt) {
             updated = movementFromStorage(mov as any)
             return
           }
 
           const now = new Date()
           const actor = ctx.userId ?? 'system'
-          const entry = { at: now, by: actor, action: `status:lock:${newStatus}` }
+          const entry = { at: now, by: actor, action: correctsSettledAt ? 'settledAt:corrected' : `status:lock:${newStatus}` }
+          const $set: Record<string, unknown> = {
+            statusSource: MovementStatusSource.Manual,
+            'audit.updatedAt': now,
+            'audit.updatedBy': actor,
+          }
+          if (correctsSettledAt) $set.settledAt = informedSettledAt
           await movements.updateOne(
             { _id: mov._id, restaurantId: ctx.restaurantId },
-            {
-              $set: {
-                statusSource: MovementStatusSource.Manual,
-                'audit.updatedAt': now,
-                'audit.updatedBy': actor,
-              },
-              $push: { history: entry } as any,
-            },
+            { $set, $push: { history: entry } as any },
             { session },
           )
           // A resposta espelha o que ACABOU de ser gravado (history + audit), não o
@@ -81,6 +121,7 @@ export class ChangeMovementStatusUseCase {
           updated = movementFromStorage({
             ...mov,
             statusSource: MovementStatusSource.Manual,
+            ...(correctsSettledAt ? { settledAt: informedSettledAt } : {}),
             history: [...(Array.isArray(mov.history) ? mov.history : []), entry],
             audit: { ...(mov.audit ?? {}), updatedAt: now, updatedBy: actor },
           } as any)
@@ -89,7 +130,7 @@ export class ChangeMovementStatusUseCase {
 
         // P1 — ação HUMANA carimba `manual`: trava permanente, o settler nunca mais
         // reavalia este movimento por data. Quem tem a palavra final é o dono.
-        await applyStatusTransition({
+        const transition = await applyStatusTransition({
           movements,
           accounts,
           movement: mov,
@@ -98,9 +139,15 @@ export class ChangeMovementStatusUseCase {
           statusSource: MovementStatusSource.Manual,
           session,
           now: new Date(),
+          settledAt: informedSettledAt,
         })
 
-        updated = movementFromStorage({ ...mov, status: newStatus, statusSource: MovementStatusSource.Manual } as any)
+        updated = movementFromStorage({
+          ...mov,
+          status: newStatus,
+          statusSource: MovementStatusSource.Manual,
+          settledAt: transition.settledAt,
+        } as any)
       })
 
       return updated

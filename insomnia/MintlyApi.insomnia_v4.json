@@ -552,6 +552,31 @@
         "mimeType": "application/json",
         "text": "{\n  \"direction\": \"in\",\n  \"title\": \"Dup\",\n  \"grossValue\": 33,\n  \"date\": \"2026-06-16T00:00:00Z\",\n  \"accountId\": \"{{ _.cashAccountId }}\",\n  \"categoryId\": \"{{ _.revenueCategoryId }}\",\n  \"paymentMethod\": \"cash\",\n  \"confirmDuplicate\": true\n}"
       }
+    },
+    {
+      "_id": "fld_reports",
+      "_type": "request_group",
+      "parentId": "wrk_mintly",
+      "name": "Reports"
+    },
+    {
+      "_id": "req_cash_flow",
+      "_type": "request",
+      "parentId": "fld_reports",
+      "name": "Fluxo de Caixa",
+      "method": "GET",
+      "url": "{{ _.base_url }}/reports/cash-flow?horizon=30",
+      "headers": [
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "MIN-94. horizon de 1 a 365 (padrão 30). Para conferir números: npm run db:seed-demo num restaurante recém-criado."
     }
   ]
 }

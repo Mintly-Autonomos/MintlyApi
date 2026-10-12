@@ -25,6 +25,11 @@ export const errorGlossary: ErrorEntry = {
     apiMessage: 'The provided "env" is not an allowed environment.',
     code: 'APP-0004',
   },
+  validation: {
+    message: 'Dados inválidos.',
+    apiMessage: 'The request data is invalid.',
+    code: 'APP-0005',
+  },
   // Auth — fonte única dos códigos (antes definidos inline em cada erro).
   unauthorized: {
     message: 'Credenciais inválidas ou token expirado.',

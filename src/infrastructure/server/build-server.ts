@@ -7,6 +7,7 @@ import { personRoutes } from '../../app/person/person-routes'
 import { financialAccountRoutes } from '../../app/financial-account/financial-account-routes'
 import { financialCategoryRoutes } from '../../app/financial-category/financial-category-routes'
 import { financialMovementRoutes } from '../../app/financial-movement/financial-movement-routes'
+import { cashFlowRoutes } from '../../app/reports/cash-flow/cash-flow-routes'
 import { healthRoutes } from '../../app/health/health-routes'
 import { authRoutes } from '../../app/auth/auth-routes'
 import { verifyJwt } from '../../core/hooks/verify-jwt'
@@ -127,6 +128,7 @@ export async function buildServer (server: FastifyInstance = Fastify()): Promise
     await protectedScope.register(financialCategoryRoutes, { prefix: '/financial-categories' })
 
     await protectedScope.register(financialMovementRoutes, { prefix: '/financial-movements' })
+    await protectedScope.register(cashFlowRoutes, { prefix: '/reports' })
   })
 
   // await server.register(financialAccountRoutes, { prefix: '/financial-accounts' })

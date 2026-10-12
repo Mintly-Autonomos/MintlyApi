@@ -180,6 +180,34 @@ export function shouldRecomputeStatus (params: {
   return hadDueDate !== hasDueDate
 }
 
+/**
+ * `settledAt` do documento resultante — quando o dinheiro de fato mexeu.
+ * Fonte única da regra; quem chama escolhe só o `fallback`:
+ *
+ *  - registro à vista e recompute por troca de conta → `date` (o dinheiro
+ *    mexeu na data do lançamento, não na hora do cadastro);
+ *  - liquidação automática → `dueDate` (o repasse cai na data, mesmo que o
+ *    robô rode às 3h do dia seguinte);
+ *  - dono no PATCH de status → agora, ou o `informed` do body.
+ *
+ * Quem continua liquidada preserva o que tinha — inclusive "nada", em documento
+ * anterior ao campo: inventar uma data ali mudaria o passado do relatório.
+ * Pendente e cancelada não têm `settledAt`.
+ */
+export function resolveSettledAt (params: {
+  newStatus: MovementStatus | string
+  previousStatus?: MovementStatus | string
+  previousSettledAt?: Date
+  informed?: Date
+  fallback: Date
+}): Date | undefined {
+  const { newStatus, previousStatus, previousSettledAt, informed, fallback } = params
+
+  if (newStatus !== MovementStatus.Settled) return undefined
+  if (previousStatus === MovementStatus.Settled) return previousSettledAt
+  return informed ?? fallback
+}
+
 export type BalanceBucket = 'available' | 'predicted'
 
 export interface BalanceImpact {

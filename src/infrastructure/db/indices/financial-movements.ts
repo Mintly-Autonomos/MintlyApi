@@ -25,4 +25,10 @@ export async function ensure (col: Collection<Document>): Promise<void> {
   // Fluxo de Caixa (M1): pendentes por vencimento dentro do restaurante — a
   // projeção diária, o a receber/a pagar e a lista de vencimentos saem todos daqui.
   await col.createIndex({ restaurantId: 1, status: 1, dueDate: 1 })
+
+  // Fluxo de Caixa (fatia 2): liquidadas por `settledAt` dentro do restaurante —
+  // série realizada e o histórico de saída da margem de segurança. Documentos
+  // anteriores ao campo caem no `{ restaurantId, status, dueDate }` acima ou no
+  // `{ restaurantId, date }`.
+  await col.createIndex({ restaurantId: 1, status: 1, settledAt: 1 })
 }

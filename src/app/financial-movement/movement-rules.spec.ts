@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { MovementDirection, MovementStatus } from 'mintly-lib'
-import { defaultStatus, computeSnapshot, balanceImpact, addDays, resolveDueDate, shouldRecomputeStatus } from './movement-rules'
+import { defaultStatus, computeSnapshot, balanceImpact, addDays, resolveDueDate, shouldRecomputeStatus, resolveSettledAt } from './movement-rules'
 
 const cash = { type: 'cash' }
 const platform = { type: 'platform', feePercent: 12, settlementDays: 30 }
@@ -307,5 +307,39 @@ describe('movement-rules', () => {
       expect(balanceImpact({ direction: MovementDirection.In, status: MovementStatus.Cancelled, grossValue: 100, netValue: 88 }))
         .toEqual({ bucket: null, delta: 0 })
     })
+  })
+})
+
+describe('resolveSettledAt (fatia 2)', () => {
+  const date = new Date('2026-10-01T15:00:00.000Z')
+  const now = new Date('2026-10-12T15:00:00.000Z')
+
+  it('pendente não tem settledAt', () => {
+    expect(resolveSettledAt({ newStatus: MovementStatus.Pending, fallback: now })).toBeUndefined()
+  })
+
+  it('cancelada não tem settledAt', () => {
+    expect(resolveSettledAt({ newStatus: MovementStatus.Cancelled, previousStatus: MovementStatus.Settled, previousSettledAt: date, fallback: now })).toBeUndefined()
+  })
+
+  it('registro à vista: usa o fallback (data do lançamento)', () => {
+    expect(resolveSettledAt({ newStatus: MovementStatus.Settled, fallback: date })).toEqual(date)
+  })
+
+  it('pendente → liquidada sem data informada: usa o fallback', () => {
+    expect(resolveSettledAt({ newStatus: MovementStatus.Settled, previousStatus: MovementStatus.Pending, fallback: now })).toEqual(now)
+  })
+
+  it('data informada vence o fallback', () => {
+    const informed = new Date('2026-10-09T12:00:00.000Z')
+    expect(resolveSettledAt({ newStatus: MovementStatus.Settled, previousStatus: MovementStatus.Pending, informed, fallback: now })).toEqual(informed)
+  })
+
+  it('continua liquidada: preserva o settledAt anterior', () => {
+    expect(resolveSettledAt({ newStatus: MovementStatus.Settled, previousStatus: MovementStatus.Settled, previousSettledAt: date, fallback: now })).toEqual(date)
+  })
+
+  it('continua liquidada sem settledAt anterior (documento antigo): não inventa um', () => {
+    expect(resolveSettledAt({ newStatus: MovementStatus.Settled, previousStatus: MovementStatus.Settled, fallback: now })).toBeUndefined()
   })
 })

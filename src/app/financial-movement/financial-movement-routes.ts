@@ -34,7 +34,7 @@ export async function financialMovementRoutes (fastify: FastifyInstance) {
     return controller.recompute(request, reply)
   })
 
-  // PATCH /financial-movements/:id/status — muda status (corrige saldo). body: { status }
+  // PATCH /financial-movements/:id/status — muda status (corrige saldo). body: { status, settledAt? }
   fastify.patch('/:id/status', async (request: any, reply) => {
     return controller.changeStatus(request, reply)
   })

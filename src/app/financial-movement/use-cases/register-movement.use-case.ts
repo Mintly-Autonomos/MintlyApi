@@ -6,7 +6,7 @@ import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { Resource } from '../../../core/types/resource'
 import { FinancialMovementRepository, movementToStorage, movementFromStorage } from '../financial-movement-repository'
-import { computeSnapshot, defaultStatus, balanceImpact, resolveDueDate } from '../movement-rules'
+import { computeSnapshot, defaultStatus, balanceImpact, resolveDueDate, resolveSettledAt } from '../movement-rules'
 import { applyBalanceImpact } from '../movement-balance'
 
 export interface RegisterMovementInput {
@@ -117,6 +117,9 @@ export class RegisterMovementUseCase {
         if (snapshot.feePercentApplied != null) doc.feePercentApplied = snapshot.feePercentApplied
         if (snapshot.settlementDaysApplied != null) doc.settlementDaysApplied = snapshot.settlementDaysApplied
         if (dueDate != null) doc.dueDate = dueDate
+        // À vista: o dinheiro mexeu na data do lançamento, não na hora do cadastro.
+        const settledAt = resolveSettledAt({ newStatus: status, fallback: date })
+        if (settledAt != null) doc.settledAt = settledAt
         if (input.counterparty) doc.counterparty = input.counterparty
         if (input.fiscalNote) doc.fiscalNote = input.fiscalNote
         if (input.description) doc.description = input.description
