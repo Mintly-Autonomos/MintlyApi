@@ -1,6 +1,6 @@
-import { CashFlowWeek, DailyPoint, MovementDirection, MovementStatus } from 'mintly-lib'
+import { CashFlowWeek, CriticalDayInsight, DailyPoint, DueItem, MovementDirection, MovementStatus } from 'mintly-lib'
 import { fromCents, toCents } from '../../../core/money/money'
-import { addDaysToDay } from '../shared/period'
+import { addDaysToDay, diffDays, toLocalDay } from '../shared/period'
 import { CashFlowMovement, cashAmount, cashDay, isOverdue } from '../shared/cash-date'
 
 /**
@@ -115,4 +115,83 @@ export function groupWeeks (points: DailyPoint[]): CashFlowWeek[] {
     })
   }
   return weeks
+}
+
+/**
+ * Série realizada: saldo no fim de cada um dos 7 dias antes de hoje,
+ * reconstruído para TRÁS a partir do caixa de hoje desfazendo o que liquidou
+ * em cada dia. Usa todas as liquidadas, inclusive à vista. Limitação: edição
+ * retroativa reescreve o passado desenhado (N12).
+ */
+export function buildRealized (p: { today: string; cashToday: number; movements: CashFlowMovement[] }): DailyPoint[] {
+  const flows = flowsByDay(p.movements.filter(isSettled), p.today)
+  const todayFlows = flows.get(p.today) ?? NO_FLOWS
+  let balance = toCents(p.cashToday) - (todayFlows.inflows - todayFlows.outflows)
+
+  const points: DailyPoint[] = []
+  for (let i = 1; i <= REALIZED_DAYS; i++) {
+    const date = addDaysToDay(p.today, -i)
+    const f = flows.get(date) ?? NO_FLOWS
+    points.unshift(point(date, balance, f))
+    balance -= f.inflows - f.outflows
+  }
+  return points
+}
+
+/**
+ * Margem de segurança do dia crítico (F3): SAFETY_DAYS dias de despesa média.
+ * O divisor conta desde a primeira movimentação do restaurante (no máximo 90):
+ * dividir sempre por 90 faria um restaurante com 10 dias de uso nunca ver
+ * alerta. Sem histórico, o limiar é 0 e só saldo negativo dispara.
+ */
+export function safetyThreshold (p: { today: string; outflowTotal: number; firstMovementDay: string | null }) {
+  if (p.firstMovementDay == null) {
+    return { value: 0, days: SAFETY_DAYS, avgDailyOutflow: 0 }
+  }
+  const historyDays = Math.max(1, Math.min(OUTFLOW_HISTORY_DAYS, diffDays(p.firstMovementDay, p.today)))
+  const avgCents = Math.round(toCents(p.outflowTotal) / historyDays)
+  return { value: fromCents(avgCents * SAFETY_DAYS), days: SAFETY_DAYS, avgDailyOutflow: fromCents(avgCents) }
+}
+
+/** Primeiro dia da projeção com saldo ABAIXO do limiar (igual ao limiar não é crítico). */
+export function criticalDayInsight (points: DailyPoint[], threshold: number): CriticalDayInsight | null {
+  const hit = points.find((p) => p.balance < threshold)
+  if (!hit) return null
+  return { kind: 'criticalDay', severity: 'warning', date: hit.date, balance: hit.balance, threshold }
+}
+
+/**
+ * Lista de vencimentos: só movimentação COM vencimento — venda à vista não
+ * entra, senão a lista vira extrato. Janela: pendentes até o fim do horizonte
+ * (vencidas incluídas) + liquidadas nos últimos REALIZED_DAYS dias. Filtros e
+ * agrupamento por dia são do front.
+ */
+export function buildDueItems (movements: CashFlowMovement[], today: string, horizon: number): DueItem[] {
+  const end = addDaysToDay(today, horizon)
+  const realizedFrom = addDaysToDay(today, -REALIZED_DAYS)
+
+  const inWindow = (m: CashFlowMovement): boolean => {
+    const day = cashDay(m, today)
+    if (isPending(m)) return day <= end
+    if (isSettled(m)) return day >= realizedFrom && day <= today
+    return false
+  }
+
+  return movements
+    .filter((m) => m.dueDate != null && inWindow(m))
+    .map((m) => {
+      const item: DueItem = {
+        id: m.id,
+        title: m.title,
+        category: m.category,
+        direction: m.direction,
+        amount: cashAmount(m),
+        dueDate: toLocalDay(m.dueDate!),
+        status: m.status as DueItem['status'],
+        overdue: isOverdue(m, today),
+      }
+      if (isSettled(m)) item.settledAt = cashDay(m, today)
+      return item
+    })
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.title.localeCompare(b.title, 'pt-BR'))
 }
