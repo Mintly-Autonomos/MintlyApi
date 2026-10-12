@@ -17,7 +17,12 @@ export async function ensure (col: Collection<Document>): Promise<void> {
   // A query de duplicidade filtra por `audit.createdAt` (não `createdAt` de topo).
   await col.createIndex({ restaurantId: 1, 'account._id': 1, title: 1, 'audit.createdAt': -1 })
 
-  // Query do settler (P1): pendentes vencidos, CROSS-TENANT (sem restaurantId —
-  // o job varre todos os restaurantes do ambiente numa tacada).
-  await col.createIndex({ status: 1, predictedReceiptDate: 1 })
+  // Query do settler (P1/M1): entradas de conta plataforma vencidas, CROSS-TENANT
+  // (sem restaurantId — o job varre todos os restaurantes do ambiente numa
+  // tacada). A ordem dos campos segue a seletividade do filtro.
+  await col.createIndex({ status: 1, direction: 1, 'account.type': 1, dueDate: 1 })
+
+  // Fluxo de Caixa (M1): pendentes por vencimento dentro do restaurante — a
+  // projeção diária, o a receber/a pagar e a lista de vencimentos saem todos daqui.
+  await col.createIndex({ restaurantId: 1, status: 1, dueDate: 1 })
 }

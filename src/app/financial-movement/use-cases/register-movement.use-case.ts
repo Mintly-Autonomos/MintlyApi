@@ -6,7 +6,7 @@ import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { Resource } from '../../../core/types/resource'
 import { FinancialMovementRepository, movementToStorage, movementFromStorage } from '../financial-movement-repository'
-import { computeSnapshot, defaultStatus, balanceImpact, resolveStatusSource } from '../movement-rules'
+import { computeSnapshot, defaultStatus, balanceImpact, resolveDueDate } from '../movement-rules'
 import { applyBalanceImpact } from '../movement-balance'
 
 export interface RegisterMovementInput {
@@ -14,6 +14,8 @@ export interface RegisterMovementInput {
   title: string
   grossValue: number
   date: string | Date
+  /** Vencimento informado pelo dono. Em conta `platform`, o sistema calcula quando ausente. */
+  dueDate?: string | Date
   accountId: string
   categoryId: string
   paymentMethod: string
@@ -28,8 +30,8 @@ export interface RegisterMovementInput {
 /**
  * Registra uma movimentação (entrada ou saída) e ajusta o saldo da conta na
  * MESMA transação (MIN-49/50). Busca conta (ativa) + categoria vivas para o
- * snapshot (Extended Reference); calcula fee/net/data prevista; status default
- * por prazo; bloqueia duplicidade (<2min) salvo `confirmDuplicate`.
+ * snapshot (Extended Reference); calcula fee/net/vencimento; status default pela
+ * presença do vencimento; bloqueia duplicidade (<2min) salvo `confirmDuplicate`.
  */
 export class RegisterMovementUseCase {
   constructor (private readonly movementRepo: FinancialMovementRepository = new FinancialMovementRepository()) {}
@@ -77,19 +79,22 @@ export class RegisterMovementUseCase {
           date,
           account: account as any,
         })
-        const status = input.status ?? defaultStatus({ direction: input.direction, account: account as any })
+        // M1 — vencimento: o informado pelo dono manda; senão vale o calculado
+        // pela conta com prazo. Sem nenhum dos dois, é à vista.
+        const dueDate = resolveDueDate({
+          informed: input.dueDate != null ? new Date(input.dueDate) : undefined,
+          computed: snapshot.dueDate,
+          storedWasComputed: false,
+        })
+
+        const status = input.status ?? defaultStatus({ dueDate })
         const now = new Date()
 
-        // P1 — nasce `auto` (o settler pode liquidá-lo por data); só vira `manual`
-        // se um humano mexer no status depois (PATCH /:id/status). EXCEÇÃO — a
-        // invariante de domínio: um `pending` SEM data prevista (ex.: POST com
-        // `status: 'pending'` numa conta não-platform, ou uma saída) é inalcançável
-        // pelo settler; chamá-lo de `auto` seria condená-lo a "a receber" eterno.
-        const statusSource = resolveStatusSource({
-          status,
-          predictedReceiptDate: snapshot.predictedReceiptDate,
-          statusSource: MovementStatusSource.Auto,
-        })
+        // Nasce `auto`: o settler pode liquidá-lo na data. Só vira `manual` se um
+        // humano mexer no status depois, pelo PATCH /:id/status. Um status
+        // explícito AQUI não carimba manual de propósito — um front que reenvia o
+        // formulário inteiro mandaria o status junto e travaria o settler em tudo.
+        const statusSource = MovementStatusSource.Auto
 
         // 4. Documento (snapshots de account/category; campos computados).
         const doc: Record<string, any> = {
@@ -111,7 +116,7 @@ export class RegisterMovementUseCase {
         }
         if (snapshot.feePercentApplied != null) doc.feePercentApplied = snapshot.feePercentApplied
         if (snapshot.settlementDaysApplied != null) doc.settlementDaysApplied = snapshot.settlementDaysApplied
-        if (snapshot.predictedReceiptDate != null) doc.predictedReceiptDate = snapshot.predictedReceiptDate
+        if (dueDate != null) doc.dueDate = dueDate
         if (input.counterparty) doc.counterparty = input.counterparty
         if (input.fiscalNote) doc.fiscalNote = input.fiscalNote
         if (input.description) doc.description = input.description

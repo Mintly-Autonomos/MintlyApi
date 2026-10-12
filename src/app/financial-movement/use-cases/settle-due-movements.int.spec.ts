@@ -47,7 +47,7 @@ describe('SettleDueMovementsUseCase (P1)', () => {
       netValue: toDecimal128(90),
       feePercentApplied: 10,
       settlementDaysApplied: 5,
-      predictedReceiptDate: new Date('2026-01-06T00:00:00.000Z'),
+      dueDate: new Date('2026-01-06T00:00:00.000Z'),
       account: { _id: String(accountId), name: 'iFood', type: 'platform' },
       category: { _id: String(new ObjectId()), name: 'Vendas', type: 'revenue' },
       paymentMethod: 'pix',
@@ -124,8 +124,29 @@ describe('SettleDueMovementsUseCase (P1)', () => {
     expect(await balances(accountId)).toEqual({ available: 0, predicted: 90 })
   })
 
+  it('NÃO liquida SAÍDA vencida — vencer não é pagar', async () => {
+    // O boleto do fornecedor não se paga sozinho. Se o robô liquidasse, o bloco
+    // "Vencidos" do Fluxo de Caixa nunca teria conteúdo.
+    await seed({ statusSource: 'auto', direction: 'out' }, { type: 'bank' })
+
+    const result = await new SettleDueMovementsUseCase().execute({ env: ENV, now: NOW })
+
+    expect(result.settled).toBe(0)
+  })
+
+  it('NÃO liquida entrada a prazo em conta comum — ninguém garante que o cliente pagou', async () => {
+    await seed(
+      { statusSource: 'auto', account: { _id: 'x', name: 'Banco', type: 'bank' } },
+      { type: 'bank' },
+    )
+
+    const result = await new SettleDueMovementsUseCase().execute({ env: ENV, now: NOW })
+
+    expect(result.settled).toBe(0)
+  })
+
   it('NÃO liquida quem ainda não venceu', async () => {
-    await seed({ statusSource: 'auto', predictedReceiptDate: new Date('2026-12-31T00:00:00.000Z') })
+    await seed({ statusSource: 'auto', dueDate: new Date('2026-12-31T00:00:00.000Z') })
 
     const result = await new SettleDueMovementsUseCase().execute({ env: ENV, now: NOW })
 

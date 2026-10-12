@@ -94,13 +94,13 @@ describe('Financial Movement E2E (Atlas, env=e2e)', () => {
     fetch(`${baseUrl}/financial-movements/`, { method: 'POST', headers: auth, body: JSON.stringify(body) })
 
   it('fluxo completo: entrada platform → settle → saída → duplicidade → edição retroativa', async () => {
-    // 1. entrada platform → pending + saldo previsto, com data prevista
+    // 1. entrada platform → pending + saldo previsto, com vencimento
     const reg = await post({ direction: 'in', title: 'Venda app', grossValue: 100, date: '2026-06-16T00:00:00.000Z', accountId: platformId, categoryId: revenueCatId, paymentMethod: 'pix' })
     expect(reg.status).toBe(201)
     const mov = (await reg.json() as any).payload
     expect(mov.status).toBe('pending')
     expect(mov.netValue).toBe(90)
-    expect(mov.predictedReceiptDate).toBeDefined()
+    expect(mov.dueDate).toBeDefined()
 
     // 2. confirma recebimento → settled (saldo migra de previsto p/ disponível)
     const settle = await fetch(`${baseUrl}/financial-movements/${mov._id}/status`, { method: 'PATCH', headers: auth, body: JSON.stringify({ status: 'settled' }) })

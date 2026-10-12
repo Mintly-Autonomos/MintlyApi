@@ -128,7 +128,7 @@ describe('RegisterMovementUseCase', () => {
     const doc = storedDoc(movements)
     expect(Number(doc.feePercentApplied)).toBe(10)
     expect(doc.settlementDaysApplied).toBe(14)
-    expect(doc.predictedReceiptDate).toBeInstanceOf(Date)
+    expect(doc.dueDate).toBeInstanceOf(Date)
     const [, update] = accounts.updateOne.mock.calls[0]
     expect(update.$inc).toHaveProperty('predictedBalance')
   })
@@ -173,17 +173,75 @@ describe('RegisterMovementUseCase', () => {
     const created = await useCase.execute(makeInput(), CTX)
     expect(created.status).toBe('pending')
     expect(created.statusSource).toBe('auto')
-    expect(storedDoc(movements).predictedReceiptDate).toBeInstanceOf(Date)
+    expect(storedDoc(movements).dueDate).toBeInstanceOf(Date)
   })
 
-  it('invariante: status pending em conta NÃO-platform nasce manual (sem data prevista, o settler nunca o alcança)', async () => {
-    const { movements } = wire() // conta cash: sem prazo → sem predictedReceiptDate
+  it('status pending explícito em conta sem prazo nasce auto e sem vencimento', async () => {
+    // O registro NUNCA carimba `manual`: um front que reenvia o formulário
+    // inteiro mandaria o status junto e travaria o settler em tudo. Quem carimba
+    // manual é o PATCH /:id/status. Aqui `auto` é inofensivo — sem vencimento e
+    // fora de conta plataforma, o settler não alcança este movimento de todo
+    // jeito, e quem o resolve é o dono.
+    const { movements } = wire()
     const created = await useCase.execute(makeInput({ status: 'pending' }), CTX)
 
     expect(created.status).toBe('pending')
-    expect(created.statusSource).toBe('manual')
-    const doc = storedDoc(movements)
-    expect(doc.statusSource).toBe('manual')
-    expect(doc.predictedReceiptDate).toBeUndefined()
+    expect(created.statusSource).toBe('auto')
+    expect(storedDoc(movements).dueDate).toBeUndefined()
+  })
+
+  describe('vencimento (M1)', () => {
+    it('saída com vencimento futuro nasce pendente e grava dueDate', async () => {
+      const { movements } = wire()
+      const created = await useCase.execute(
+        makeInput({ direction: 'out', grossValue: 2100, dueDate: '2026-07-19T00:00:00.000Z' }),
+        CTX,
+      )
+
+      expect(created.status).toBe('pending')
+      expect(created.dueDate).toEqual(new Date('2026-07-19T00:00:00.000Z'))
+      expect(storedDoc(movements).dueDate).toEqual(new Date('2026-07-19T00:00:00.000Z'))
+    })
+
+    it('saída com vencimento JÁ PASSADO nasce pendente (vencida, não paga)', async () => {
+      wire()
+      const created = await useCase.execute(
+        makeInput({ direction: 'out', grossValue: 730, dueDate: '2020-01-01T00:00:00.000Z' }),
+        CTX,
+      )
+
+      expect(created.status).toBe('pending')
+    })
+
+    it('saída sem vencimento continua nascendo liquidada', async () => {
+      const { movements } = wire()
+      const created = await useCase.execute(makeInput({ direction: 'out', grossValue: 730 }), CTX)
+
+      expect(created.status).toBe('settled')
+      expect(storedDoc(movements).dueDate).toBeUndefined()
+    })
+
+    it('entrada a prazo em conta comum nasce pendente (fiado, cheque pré)', async () => {
+      wire()
+      const created = await useCase.execute(makeInput({ dueDate: '2026-07-19T00:00:00.000Z' }), CTX)
+
+      expect(created.status).toBe('pending')
+    })
+
+    it('conta platform com prazo ZERO nasce liquidada e sem vencimento', async () => {
+      const { movements } = wire({ account: makeAccount({ type: 'platform', feePercent: 10, settlementDays: 0 }) })
+      const created = await useCase.execute(makeInput(), CTX)
+
+      expect(created.status).toBe('settled')
+      expect(storedDoc(movements).settlementDaysApplied).toBe(0)
+      expect(storedDoc(movements).dueDate).toBeUndefined()
+    })
+
+    it('vencimento informado pelo dono ganha do calculado pela conta', async () => {
+      const { movements } = wire({ account: makeAccount({ type: 'platform', feePercent: 10, settlementDays: 30 }) })
+      await useCase.execute(makeInput({ dueDate: '2026-07-05T00:00:00.000Z' }), CTX)
+
+      expect(storedDoc(movements).dueDate).toEqual(new Date('2026-07-05T00:00:00.000Z'))
+    })
   })
 })
