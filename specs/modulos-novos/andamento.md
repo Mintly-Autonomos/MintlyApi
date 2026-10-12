@@ -14,10 +14,10 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 **Fatia 3 — `dreGroup` + `mixed` + alíquota (M2, M5)** — classificação contábil da categoria e
 imposto do restaurante, fundação do Resultado (DRE).
 
-- Etapa: **perguntas do módulo** → spec → plano → TDD → conferência → PR.
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ (aguardando revisão) → plano → TDD → conferência → PR.
+- Spec: `specs/modulos-novos/20261012/classificacao-contabil.md`. Decidido: implementar a MIN-23 nesta
+  fatia; regime por `PATCH /restaurants/me`; DAS do MEI em `app.tax_settings`; alertas como insights.
 - Branch: `feat/20261012/classificacao-contabil` (API, a partir de `staging`).
-- Ponto de partida obrigatório: alinhar com a **MIN-23** (cálculo tributário, "Em Desenvolvimento"
-  no Jira) onde o regime tributário fica gravado e quem implementa o cálculo.
 
 ## Fatias
 
@@ -25,7 +25,7 @@ imposto do restaurante, fundação do Resultado (DRE).
 |---|---|---|---|---|
 | 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 ✅ mergeado | Concluída — falta o backfill em staging |
 | 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | #40 ✅ mergeado | Concluída |
-| 3 | `dreGroup` + `mixed` + alíquota (M2, M5) | — | — | **Em andamento** — perguntas |
+| 3 | `dreGroup` + `mixed` + alíquota (M2, M5) | — | — | **Em andamento** — spec escrita |
 | 4 | Resultado (DRE) | — | — | Na fila |
 | 5 | Subcategoria + `channel` (M3, M4) | — | — | Na fila |
 | 6 | Custos & Despesas — fatia A | — | — | Na fila |
@@ -49,7 +49,9 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
       backend local), achados da revisão corrigidos, pendências menores (lista abaixo).
 - [ ] **MIN-89** (fatia 1): comentário de que o #39 foi mergeado e o backfill de staging está pendente.
 - [ ] **MIN-90 / MIN-94**: mover para concluído, se o fluxo do board permitir.
-- [ ] **Fatia 3**: o que sair das perguntas sobre a MIN-23 (comentário na MIN-23) e a spec da fatia.
+- [ ] **MIN-23**: comentário dizendo que a fatia 3 implementa o cálculo (sem `daily_sales`: RBT12 de
+      `financial_movements`), com a spec `specs/modulos-novos/20261012/classificacao-contabil.md`.
+- [ ] **Fatia 3**: história/subtarefas para lib e API (ainda não existem no Jira).
 
 ## Em aberto (não bloqueia a fatia atual)
 
