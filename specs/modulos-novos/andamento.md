@@ -13,10 +13,10 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 2 — Fluxo de Caixa** (épico MIN-90, história MIN-94).
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ (aguardando sua revisão) → plano → TDD →
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ (aguardando revisão) → TDD →
   conferência contra o seed → PR.
-- Spec: `specs/modulos-novos/20261012/fluxo-de-caixa.md`. Postar como comentário na MIN-94
-  quando o MCP do Atlassian voltar.
+- Spec: `specs/modulos-novos/20261012/fluxo-de-caixa.md`; plano: `specs/modulos-novos/20261012/plan.md`
+  (12 tarefas). Postar os dois na MIN-94 quando o MCP do Atlassian voltar.
 - Branch da API: `feat/20261012/fluxo-de-caixa`, empilhada sobre
   `feat/20260929/status-por-vencimento` (MintlyApi#39), porque depende do `dueDate`.
   Quando o #39 for mergeado, rebase em `staging`.
@@ -27,7 +27,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | # | Fatia | Lib | API | Estado |
 |---|---|---|---|---|
 | 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 aberto, CI verde | Aguardando review/merge do #39 |
-| 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | — | — | **Em andamento** — spec escrita |
+| 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | — | — | **Em andamento** — spec e plano escritos |
 | 3 | `dreGroup` + `mixed` + alíquota (M2, M5) | — | — | Na fila |
 | 4 | Resultado (DRE) | — | — | Na fila |
 | 5 | Subcategoria + `channel` (M3, M4) | — | — | Na fila |
