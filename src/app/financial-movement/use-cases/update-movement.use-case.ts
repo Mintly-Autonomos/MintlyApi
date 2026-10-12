@@ -186,11 +186,18 @@ export class UpdateMovementUseCase {
         if (snapshot.settlementDaysApplied != null) newDoc.settlementDaysApplied = snapshot.settlementDaysApplied
         if (newDueDate != null) newDoc.dueDate = newDueDate
         // Mudança explícita de status é ação humana (agora); recompute pela regra
-        // segue o lançamento (newDate). Quem continua liquidada preserva o que tinha.
+        // segue o lançamento (newDate). Quem continua liquidada preserva o que tinha
+        // — exceto o à vista, cujo settledAt É a data do lançamento: corrigir a
+        // data move o dia em que o dinheiro mexeu. Um settledAt diferente da data
+        // foi informado pelo dono e fica.
+        const previousSettledAt = mov.settledAt != null ? new Date(mov.settledAt) : undefined
+        const settledAtFollowsDate = previousSettledAt != null &&
+          mov.dueDate == null && newDueDate == null &&
+          previousSettledAt.getTime() === new Date(mov.date).getTime()
         const settledAt = resolveSettledAt({
           newStatus,
           previousStatus: mov.status,
-          previousSettledAt: mov.settledAt != null ? new Date(mov.settledAt) : undefined,
+          previousSettledAt: settledAtFollowsDate ? newDate : previousSettledAt,
           fallback: statusExplicitlyChanged ? now : newDate,
         })
         if (settledAt != null) newDoc.settledAt = settledAt
