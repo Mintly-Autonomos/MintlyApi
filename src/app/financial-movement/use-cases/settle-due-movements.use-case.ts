@@ -36,9 +36,9 @@ const dueFilter = (now: Date): Filter<Document> => ({
 
 /**
  * Liquidação automática por data (P1). Movimentos de conta `platform` nascem
- * `pending` (saldo "a receber") e, até aqui, NUNCA saíam de lá sozinhos: o
- * `predictedReceiptDate` era gravado e ninguém o lia. Resultado: o saldo
- * disponível subestimava o caixa real indefinidamente.
+ * `pending` (saldo "a receber") e, até a P1, NUNCA saíam de lá sozinhos: a data
+ * de vencimento era gravada e ninguém a lia. Resultado: o saldo disponível
+ * subestimava o caixa real indefinidamente.
  *
  * Este use-case é **puro de infraestrutura de request**: não conhece Fastify,
  * header nem RequestContext — recebe o `env` e trabalha. É o que permite chamá-lo

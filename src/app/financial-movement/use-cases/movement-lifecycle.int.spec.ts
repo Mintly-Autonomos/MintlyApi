@@ -365,15 +365,15 @@ describe('Financial Movement lifecycle (Integration)', () => {
     const res = await app.inject({ method: 'PATCH', url: `/financial-movements/${movId}`, headers: auth, payload: { accountId: bankId } })
     expect(res.statusCode).toBe(200)
 
-    // Conta bancária não tem prazo: nada a aguardar → liquidado, sem data prevista.
-    // Antes disto o movimento continuava `pending` e SEM `predictedReceiptDate`,
-    // ficando invisível ao settler para sempre (dinheiro preso em "a receber").
+    // Conta bancária não tem prazo: nada a aguardar → liquidado, sem vencimento.
+    // Antes disto o movimento continuava `pending` e SEM vencimento, ficando
+    // invisível ao settler para sempre (dinheiro preso em "a receber").
     expect(res.json().payload.status).toBe('settled')
-    expect(res.json().payload.predictedReceiptDate).toBeUndefined()
+    expect(res.json().payload.dueDate).toBeUndefined()
 
     const doc = await db.collection('financial_movements').findOne({ _id: new ObjectId(movId) })
     expect(doc!.status).toBe('settled')
-    expect(doc!.predictedReceiptDate).toBeUndefined()
+    expect(doc!.dueDate).toBeUndefined()
 
     expect(await balances(db, platformId)).toEqual({ available: 0, predicted: 0 })
     expect(await balances(db, bankId)).toEqual({ available: 100, predicted: 0 })
