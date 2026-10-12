@@ -22,7 +22,8 @@
     "db:indices": "tsx scripts/indices/run.ts",
     "db:seed-envs": "tsx scripts/app/seed-valid-envs.ts",
     "db:settle": "tsx scripts/movements/settle-due.ts",
-    "db:backfill-due-date": "tsx scripts/movements/backfill-due-date.ts"
+    "db:backfill-due-date": "tsx scripts/movements/backfill-due-date.ts",
+    "db:seed-demo": "tsx scripts/app/seed-demo.ts"
   },
   "engines": {
     "node": ">=22 <25"
