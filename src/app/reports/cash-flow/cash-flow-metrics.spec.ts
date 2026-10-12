@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { MovementDirection, MovementStatus } from 'mintly-lib'
 import { CashFlowMovement } from '../shared/cash-date'
-import { buildDueItems, buildProjection, buildRealized, criticalDayInsight, groupWeeks, lowestPoint, safetyThreshold, summarizePending } from './cash-flow-metrics'
+import { buildDueItems, buildProjection, computeCashFlow, buildRealized, criticalDayInsight, groupWeeks, lowestPoint, safetyThreshold, summarizePending } from './cash-flow-metrics'
 
 const TODAY = '2026-10-12'
 const at = (day: string) => new Date(`${day}T15:00:00.000Z`)
@@ -214,5 +214,55 @@ describe('buildDueItems', () => {
       amount: 730, dueDate: '2026-10-04', status: 'pending', overdue: true,
     })
     expect(settled).toMatchObject({ id: 's1', amount: 2950, status: 'settled', overdue: false, settledAt: '2026-10-08' })
+  })
+})
+
+describe('computeCashFlow', () => {
+  it('monta o relatório e fecha projectedBalance com o último ponto', () => {
+    const report = computeCashFlow({
+      today: TODAY,
+      horizon: 30,
+      cashToday: 9000,
+      movements: [
+        mov({ title: 'Embalagens', grossValue: 730, dueDate: at('2026-10-04') }),
+        mov({ title: 'Recebível', direction: MovementDirection.In, grossValue: 2900, netValue: 2900, dueDate: at('2026-10-17') }),
+        mov({ title: 'Salários', grossValue: 5400, dueDate: at('2026-10-22') }),
+      ],
+      outflowHistory: { total: 54000, firstMovementDay: '2026-07-01' },
+    })
+
+    expect(report).toMatchObject({
+      horizon: 30,
+      today: TODAY,
+      cashToday: 9000,
+      receivable: 2900,
+      payable: 6130,
+      projectedBalance: 5770,
+      lowestBalance: { date: '2026-10-22', balance: 5770 },
+      overdue: { count: 1, receivable: 0, payable: 730 },
+      safetyThreshold: { value: 4200, days: 7, avgDailyOutflow: 600 },
+      insights: [],
+    })
+    expect(report.projection).toHaveLength(31)
+    expect(report.projection[30].balance).toBe(report.projectedBalance)
+    expect(report.realized).toHaveLength(7)
+    expect(report.weeks).toHaveLength(5)
+    expect(report.dueItems.map((i) => i.title)).toEqual(['Embalagens', 'Recebível', 'Salários'])
+  })
+
+  it('dia crítico vira insight', () => {
+    const report = computeCashFlow({
+      today: TODAY,
+      horizon: 30,
+      cashToday: 5000,
+      movements: [mov({ grossValue: 2000, dueDate: at('2026-10-15') })],
+      outflowHistory: { total: 54000, firstMovementDay: '2026-07-01' },
+    })
+    expect(report.insights).toEqual([{ kind: 'criticalDay', severity: 'warning', date: '2026-10-15', balance: 3000, threshold: 4200 }])
+  })
+
+  it('restaurante sem nenhuma movimentação: tudo zero, sem quebrar', () => {
+    const report = computeCashFlow({ today: TODAY, horizon: 30, cashToday: 0, movements: [], outflowHistory: { total: 0, firstMovementDay: null } })
+    expect(report).toMatchObject({ receivable: 0, payable: 0, projectedBalance: 0, lowestBalance: { date: TODAY, balance: 0 }, dueItems: [], insights: [] })
   })
 })

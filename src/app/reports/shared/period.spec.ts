@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDaysToDay, diffDays, startOfLocalDay, toLocalDay } from './period'
+import { addDaysToDay, diffDays, parseGmtOffset, startOfLocalDay, toLocalDay } from './period'
 
 describe('period — dias em America/Sao_Paulo', () => {
   it('lançamento às 22h30 em São Paulo (01h30 UTC do dia seguinte) fica no próprio dia', () => {
@@ -26,5 +26,17 @@ describe('period — dias em America/Sao_Paulo', () => {
 
   it('início do dia é o inverso de toLocalDay', () => {
     expect(toLocalDay(startOfLocalDay('2026-02-28'))).toBe('2026-02-28')
+  })
+})
+
+describe('parseGmtOffset', () => {
+  it('lê deslocamentos negativos, positivos e o GMT puro', () => {
+    expect(parseGmtOffset('GMT-03:00')).toBe(-180)
+    expect(parseGmtOffset('GMT+05:30')).toBe(330)
+    expect(parseGmtOffset('GMT')).toBe(0)
+  })
+
+  it('sem nome de fuso: zero', () => {
+    expect(parseGmtOffset(undefined)).toBe(0)
   })
 })

@@ -1,4 +1,4 @@
-import { CashFlowWeek, CriticalDayInsight, DailyPoint, DueItem, MovementDirection, MovementStatus } from 'mintly-lib'
+import { CashFlowReport, CashFlowWeek, CriticalDayInsight, DailyPoint, DueItem, MovementDirection, MovementStatus } from 'mintly-lib'
 import { fromCents, toCents } from '../../../core/money/money'
 import { addDaysToDay, diffDays, toLocalDay } from '../shared/period'
 import { CashFlowMovement, cashAmount, cashDay, isOverdue } from '../shared/cash-date'
@@ -194,4 +194,39 @@ export function buildDueItems (movements: CashFlowMovement[], today: string, hor
       return item
     })
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.title.localeCompare(b.title, 'pt-BR'))
+}
+
+export interface CashFlowInput {
+  today: string
+  horizon: number
+  cashToday: number
+  movements: CashFlowMovement[]
+  outflowHistory: { total: number; firstMovementDay: string | null }
+}
+
+/** O relatório inteiro, a partir das linhas e dos agregados que o repositório trouxe. */
+export function computeCashFlow (input: CashFlowInput): CashFlowReport {
+  const { today, horizon, cashToday, movements, outflowHistory } = input
+
+  const projection = buildProjection({ today, horizon, cashToday, movements })
+  const pending = summarizePending(movements, today, horizon)
+  const threshold = safetyThreshold({ today, outflowTotal: outflowHistory.total, firstMovementDay: outflowHistory.firstMovementDay })
+  const critical = criticalDayInsight(projection, threshold.value)
+
+  return {
+    horizon,
+    today,
+    cashToday,
+    receivable: pending.receivable,
+    payable: pending.payable,
+    projectedBalance: projection[projection.length - 1].balance,
+    lowestBalance: lowestPoint(projection),
+    overdue: pending.overdue,
+    safetyThreshold: threshold,
+    projection,
+    realized: buildRealized({ today, cashToday, movements }),
+    weeks: groupWeeks(projection),
+    dueItems: buildDueItems(movements, today, horizon),
+    insights: critical ? [critical] : [],
+  }
 }

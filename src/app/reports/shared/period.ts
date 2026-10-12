@@ -43,15 +43,23 @@ export function diffDays (from: string, to: string): number {
   return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / DAY_MS)
 }
 
-/** Deslocamento do fuso naquele dia, em minutos (ex.: GMT-03:00 → -180). */
-function offsetMinutes (day: string): number {
-  const [y, m, d] = parts(day)
-  const name = offsetFormat.formatToParts(new Date(Date.UTC(y, m - 1, d, 12)))
-    .find((p) => p.type === 'timeZoneName')?.value ?? 'GMT'
-  const match = /GMT([+-])(\d{2}):(\d{2})/.exec(name)
+/**
+ * Nome de fuso no formato `longOffset` do Intl → minutos (ex.: "GMT-03:00" →
+ * -180). "GMT" puro (UTC) ou nome ausente → 0.
+ */
+export function parseGmtOffset (name: string | undefined): number {
+  const match = /GMT([+-])(\d{2}):(\d{2})/.exec(name ?? '')
   if (!match) return 0
   const minutes = Number(match[2]) * 60 + Number(match[3])
   return match[1] === '-' ? -minutes : minutes
+}
+
+/** Deslocamento do fuso naquele dia, em minutos. */
+function offsetMinutes (day: string): number {
+  const [y, m, d] = parts(day)
+  const name = offsetFormat.formatToParts(new Date(Date.UTC(y, m - 1, d, 12)))
+    .find((p) => p.type === 'timeZoneName')?.value
+  return parseGmtOffset(name)
 }
 
 /** Primeiro instante do dia local — limite inferior de filtro no Mongo. */
