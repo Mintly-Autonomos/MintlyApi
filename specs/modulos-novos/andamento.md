@@ -14,8 +14,8 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 **Fatia 3 — `dreGroup` + `mixed` + alíquota (M2, M5)** — classificação contábil da categoria e
 imposto do restaurante, fundação do Resultado (DRE).
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ (aguardando revisão) → plano → TDD → conferência → PR.
-- Spec: `specs/modulos-novos/20261012/classificacao-contabil.md`. Decidido: implementar a MIN-23 nesta
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ (aguardando revisão) → TDD → conferência → PR.
+- Spec: `specs/modulos-novos/20261012/classificacao-contabil.md`; plano: `specs/modulos-novos/20261012/plan-classificacao-contabil.md` (11 tarefas). Decidido: implementar a MIN-23 nesta
   fatia; regime por `PATCH /restaurants/me`; DAS do MEI em `app.tax_settings`; alertas como insights.
 - Branch: `feat/20261012/classificacao-contabil` (API, a partir de `staging`).
 
@@ -25,7 +25,7 @@ imposto do restaurante, fundação do Resultado (DRE).
 |---|---|---|---|---|
 | 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 ✅ mergeado | Concluída — falta o backfill em staging |
 | 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | #40 ✅ mergeado | Concluída |
-| 3 | `dreGroup` + `mixed` + alíquota (M2, M5) | — | — | **Em andamento** — spec escrita |
+| 3 | `dreGroup` + `mixed` + alíquota (M2, M5) | — | — | **Em andamento** — spec e plano escritos |
 | 4 | Resultado (DRE) | — | — | Na fila |
 | 5 | Subcategoria + `channel` (M3, M4) | — | — | Na fila |
 | 6 | Custos & Despesas — fatia A | — | — | Na fila |
