@@ -14,14 +14,12 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 **Fatia 2 — Fluxo de Caixa** (épico MIN-90, história MIN-94).
 
 - Etapa: ~~perguntas~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência contra o seed~~ ✅ →
-  ~~revisão final~~ ✅ → ~~teste com o backend local~~ ✅ → **PR da lib aberto (MintlyLib#27)**.
-- Falta: merge do #27 → `npm i` da versão publicada na API → PR da API.
+  ~~revisão final~~ ✅ → ~~teste com o backend local~~ ✅ → ~~PR da lib~~ ✅ (MintlyLib#27, publicado
+  `2.10.0-preview`) → **PR da API aberto, aguardando review**.
 - Spec: `specs/modulos-novos/20261012/fluxo-de-caixa.md`; plano: `specs/modulos-novos/20261012/plan.md`
   (12 tarefas). Postar os dois na MIN-94 quando o MCP do Atlassian voltar.
-- Branch da API: `feat/20261012/fluxo-de-caixa`, empilhada sobre
-  `feat/20260929/status-por-vencimento` (MintlyApi#39), porque depende do `dueDate`.
-  Quando o #39 for mergeado, rebase em `staging`.
-- Validação: suíte 691/691 (cobertura 98,7 / 98,5 / 99,3 / 98,8); `reports/` com 100%; E2E contra o
+- Branch da API: `feat/20261012/fluxo-de-caixa`, rebaseada em `staging` depois do merge do #39.
+- Validação (contra `mintly-lib@2.10.0-preview` publicada): suíte 691/691 (cobertura 98,7 / 98,5 / 99,3 / 98,8); `reports/` com 100%; E2E contra o
   Atlas 4/4; servidor local (`npm run dev` contra Mongo em memória) dirigido por HTTP, inclusive o
   `db:seed-demo` reproduzindo o cenário da print.
 
@@ -29,8 +27,8 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 | # | Fatia | Lib | API | Estado |
 |---|---|---|---|---|
-| 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 aberto, CI verde | Aguardando review/merge do #39 |
-| 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 aberto | branch pronta, PR após publicar a lib | **Em andamento** — implementada e revisada |
+| 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 ✅ mergeado | Concluída — falta o backfill em staging |
+| 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | PR aberto | **Em review** |
 | 3 | `dreGroup` + `mixed` + alíquota (M2, M5) | — | — | Na fila |
 | 4 | Resultado (DRE) | — | — | Na fila |
 | 5 | Subcategoria + `channel` (M3, M4) | — | — | Na fila |
@@ -41,8 +39,8 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 ## Próximos passos
 
-1. Merge do MintlyApi#39 → rodar os comandos de staging abaixo.
-2. Merge do MintlyLib#27 → `npm i mintly-lib@<versão publicada>` na API → abrir o PR da API (fatia 2).
+1. Rodar o backfill de staging abaixo (o #39 já foi mergeado).
+2. Review e merge do PR da API da fatia 2.
 3. Fatia 3 só começa depois de alinhar com a MIN-23 onde o `taxRegime` fica gravado.
 
 ## Em aberto (não bloqueia a fatia atual)
@@ -85,7 +83,7 @@ Os scripts conectam pelas mesmas variáveis do app (as do `.env` / da Vercel) e 
 por `MONGO_ENV`. O `deploy.yml` usa `vars.MONGO_ENV` quando existe e o nome do environment
 quando não — conferir o valor nas Variables do GitHub antes de rodar.
 
-### Staging — depois do merge do MintlyApi#39
+### Staging — já liberado (MintlyApi#39 mergeado em 12/10/2026)
 
 ```bash
 # Fatia 1 (M1): copia predictedReceiptDate → dueDate e remove o índice antigo.
