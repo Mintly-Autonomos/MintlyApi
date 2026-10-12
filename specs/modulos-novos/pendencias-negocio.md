@@ -208,3 +208,18 @@ caixa de hoje (3.1 do design). Isso é correto enquanto ninguém edita movimenta
 retroativa — quando edita, o passado desenhado muda junto.
 
 **A decidir.** Se virar problema, guardar snapshot diário de saldo por conta.
+
+---
+
+## N13. Margem de segurança do dia crítico
+
+**Status:** aberto, com palpite em produção.
+
+**O quê.** O Fluxo de Caixa marca como **dia crítico** o primeiro dia em que o saldo projetado
+fica abaixo de **7 dias de despesa média** (média diária das saídas liquidadas nos últimos 90
+dias × 7). Limiar zero não serve: a print mostra o alerta com menor saldo de +R$ 900.
+
+**A decidir.** 7 dias é a margem certa para restaurante? O dono deveria poder ajustar?
+
+**Encaminhamento.** Entra como constante nomeada (`SAFETY_DAYS`) e comentada no domínio. Spec:
+`specs/modulos-novos/20261012/fluxo-de-caixa.md` (F3).

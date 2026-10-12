@@ -13,7 +13,10 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 2 — Fluxo de Caixa** (épico MIN-90, história MIN-94).
 
-- Etapa: perguntas do módulo → plano → TDD → conferência contra o seed → PR.
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ (aguardando sua revisão) → plano → TDD →
+  conferência contra o seed → PR.
+- Spec: `specs/modulos-novos/20261012/fluxo-de-caixa.md`. Postar como comentário na MIN-94
+  quando o MCP do Atlassian voltar.
 - Branch da API: `feat/20261012/fluxo-de-caixa`, empilhada sobre
   `feat/20260929/status-por-vencimento` (MintlyApi#39), porque depende do `dueDate`.
   Quando o #39 for mergeado, rebase em `staging`.
@@ -24,7 +27,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | # | Fatia | Lib | API | Estado |
 |---|---|---|---|---|
 | 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 aberto, CI verde | Aguardando review/merge do #39 |
-| 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | — | — | **Em andamento** |
+| 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | — | — | **Em andamento** — spec escrita |
 | 3 | `dreGroup` + `mixed` + alíquota (M2, M5) | — | — | Na fila |
 | 4 | Resultado (DRE) | — | — | Na fila |
 | 5 | Subcategoria + `channel` (M3, M4) | — | — | Na fila |
@@ -46,6 +49,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
   saiu como `2.8.0-preview → 2.9.0-preview`. Decidir se corrige o `ci.yml` ou só registra.
 - **E2E da capacidade nova da fatia 1:** saída com vencimento e o ida-e-volta do P8 só têm
   cobertura de integração.
+- **Spec da fatia 2 no Jira:** postar `20261012/fluxo-de-caixa.md` como comentário na MIN-94.
 - **MintlyWeb × contrato com número cru (N9):** precisa estar combinado antes do Fluxo de Caixa
   substituir o mock.
 
@@ -53,8 +57,8 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 ## Comandos pendentes no ambiente
 
-Rodar **de uma vez**, na ordem, depois do merge indicado. Os índices (`db:indices`) **não**
-entram aqui: o `deploy.yml` já os roda a cada deploy.
+Rodar **de uma vez**, na ordem, depois do merge indicado. A fatia 2 não acrescenta comando: o `settledAt` não tem
+migração. Os índices (`db:indices`) **não** entram aqui: o `deploy.yml` já os roda a cada deploy.
 
 Os scripts conectam pelas mesmas variáveis do app (as do `.env` / da Vercel) e escolhem o banco
 por `MONGO_ENV`. O `deploy.yml` usa `vars.MONGO_ENV` quando existe e o nome do environment
