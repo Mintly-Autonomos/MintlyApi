@@ -209,6 +209,9 @@ retroativa — quando edita, o passado desenhado muda junto.
 
 **A decidir.** Se virar problema, guardar snapshot diário de saldo por conta.
 
+**Melhoria parcial (fatia 2).** Com o `settledAt`, um pagamento lançado com atraso já cai no dia em
+que o dinheiro mexeu, e não no vencimento. A limitação que sobra é a da edição retroativa.
+
 ---
 
 ## N13. Margem de segurança do dia crítico

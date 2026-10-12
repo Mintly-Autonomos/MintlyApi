@@ -13,21 +13,24 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 2 — Fluxo de Caixa** (épico MIN-90, história MIN-94).
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ (aguardando revisão) → TDD →
-  conferência contra o seed → PR.
+- Etapa: ~~perguntas~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência contra o seed~~ ✅ →
+  ~~revisão final~~ ✅ → ~~teste com o backend local~~ ✅ → **PR da lib aberto (MintlyLib#27)**.
+- Falta: merge do #27 → `npm i` da versão publicada na API → PR da API.
 - Spec: `specs/modulos-novos/20261012/fluxo-de-caixa.md`; plano: `specs/modulos-novos/20261012/plan.md`
   (12 tarefas). Postar os dois na MIN-94 quando o MCP do Atlassian voltar.
 - Branch da API: `feat/20261012/fluxo-de-caixa`, empilhada sobre
   `feat/20260929/status-por-vencimento` (MintlyApi#39), porque depende do `dueDate`.
   Quando o #39 for mergeado, rebase em `staging`.
-- Lib: branch nova a partir de `staging` (o #26 já está lá).
+- Validação: suíte 691/691 (cobertura 98,7 / 98,5 / 99,3 / 98,8); `reports/` com 100%; E2E contra o
+  Atlas 4/4; servidor local (`npm run dev` contra Mongo em memória) dirigido por HTTP, inclusive o
+  `db:seed-demo` reproduzindo o cenário da print.
 
 ## Fatias
 
 | # | Fatia | Lib | API | Estado |
 |---|---|---|---|---|
 | 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 aberto, CI verde | Aguardando review/merge do #39 |
-| 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | — | — | **Em andamento** — spec e plano escritos |
+| 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 aberto | branch pronta, PR após publicar a lib | **Em andamento** — implementada e revisada |
 | 3 | `dreGroup` + `mixed` + alíquota (M2, M5) | — | — | Na fila |
 | 4 | Resultado (DRE) | — | — | Na fila |
 | 5 | Subcategoria + `channel` (M3, M4) | — | — | Na fila |
@@ -39,7 +42,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 ## Próximos passos
 
 1. Merge do MintlyApi#39 → rodar os comandos de staging abaixo.
-2. Fechar a fatia 2 (lib + API) e abrir os dois PRs.
+2. Merge do MintlyLib#27 → `npm i mintly-lib@<versão publicada>` na API → abrir o PR da API (fatia 2).
 3. Fatia 3 só começa depois de alinhar com a MIN-23 onde o `taxRegime` fica gravado.
 
 ## Em aberto (não bloqueia a fatia atual)
@@ -52,13 +55,31 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 - **Spec da fatia 2 no Jira:** postar `20261012/fluxo-de-caixa.md` como comentário na MIN-94.
 - **MintlyWeb × contrato com número cru (N9):** precisa estar combinado antes do Fluxo de Caixa
   substituir o mock.
+- **Datas sem horário no registro/edição de movimentação:** `date`/`dueDate` em `AAAA-MM-DD` são
+  lidas como meia-noite UTC — 21h do dia anterior em São Paulo. A fatia 2 corrigiu isso só para o
+  `settledAt` do PATCH de status; no POST/PATCH de movimentação é comportamento das fatias
+  anteriores. Conferir como o MintlyWeb envia essas datas antes de mexer.
+
+### Pendências técnicas da revisão da fatia 2 (menores, não corrigidas)
+
+- `outflowHistory` não pré-filtra por data antes do `$addFields`: varre todas as saídas liquidadas
+  do restaurante a cada relatório. O comentário do índice de `settledAt` promete servir esse
+  histórico, o que hoje não acontece. Irrelevante no volume atual; cresce com a idade do restaurante.
+- A série realizada parte do caixa das contas ativas, mas desfaz liquidações de contas inativas
+  também (borda rara: conta inativa não recebe lançamento novo).
+- Faltam testes de integração com horário 22h–23h59 nas bordas de dia do repositório (o cenário
+  planta tudo ao meio-dia).
+- A lista de vencimentos mostra liquidadas de hoje−7 até hoje (8 dias); a série realizada tem 7.
+  Documentar qual leitura vale.
+- Categoria ausente num movimento vira o texto `"undefined"` no item da lista.
+- `DueItem.settledAt` de documento antigo é inferido (`dueDate`/`date`), e o tipo da lib não diz isso.
 
 ---
 
 ## Comandos pendentes no ambiente
 
-Rodar **de uma vez**, na ordem, depois do merge indicado. A fatia 2 não acrescenta comando: o `settledAt` não tem
-migração. Os índices (`db:indices`) **não** entram aqui: o `deploy.yml` já os roda a cada deploy.
+Rodar **de uma vez**, na ordem, depois do merge indicado. A fatia 2 não acrescenta comando: o
+`settledAt` não tem migração, e o índice novo sobe com o `db:indices` do deploy. Os índices (`db:indices`) **não** entram aqui: o `deploy.yml` já os roda a cada deploy.
 
 Os scripts conectam pelas mesmas variáveis do app (as do `.env` / da Vercel) e escolhem o banco
 por `MONGO_ENV`. O `deploy.yml` usa `vars.MONGO_ENV` quando existe e o nome do environment
