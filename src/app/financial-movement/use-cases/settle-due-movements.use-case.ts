@@ -96,6 +96,8 @@ export class SettleDueMovementsUseCase {
             statusSource: MovementStatusSource.Auto,
             session,
             now,
+            // O repasse cai NA DATA, mesmo que o robô só rode às 3h do dia seguinte.
+            settledAt: movement.dueDate,
           })
           applied = true
         })

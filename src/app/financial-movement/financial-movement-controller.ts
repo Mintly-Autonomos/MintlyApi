@@ -54,8 +54,8 @@ export class FinancialMovementController {
   async changeStatus (request: any, reply: any) {
     const ctx = buildRequestContext(request)
     const { id } = request.params
-    const { status } = (request.body ?? {}) as { status: string }
-    const result = await this.changeStatusUseCase.execute(id, status, ctx)
+    const { status, settledAt } = (request.body ?? {}) as { status: string; settledAt?: string }
+    const result = await this.changeStatusUseCase.execute(id, status, ctx, { settledAt })
 
     return new ResponseBuilder().status(StatusCodes.OK).payload(result).send(reply)
   }

@@ -79,8 +79,14 @@ describe('FinancialMovementController', () => {
   it('changeStatus delega passando id e status', async () => {
     await controller.changeStatus(makeRequest({ params: { id: 'm1' }, body: { status: 'settled' } }), reply)
 
-    expect(changeStatusUseCase.execute).toHaveBeenCalledWith('m1', 'settled', expect.anything())
+    expect(changeStatusUseCase.execute).toHaveBeenCalledWith('m1', 'settled', expect.anything(), { settledAt: undefined })
     expect(reply.status).toHaveBeenCalledWith(200)
+  })
+
+  it('changeStatus repassa o settledAt do body', async () => {
+    await controller.changeStatus(makeRequest({ params: { id: 'm1' }, body: { status: 'settled', settledAt: '2026-10-09' } }), reply)
+
+    expect(changeStatusUseCase.execute).toHaveBeenCalledWith('m1', 'settled', expect.anything(), { settledAt: '2026-10-09' })
   })
 
   it('update delega passando id e body', async () => {

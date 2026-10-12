@@ -4,11 +4,32 @@ import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connec
 import { RequestContext } from '../../../core/context/request-context'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
+import { ValidationError } from '../../../core/errors/core/validation-error'
 import { Resource } from '../../../core/types/resource'
 import { applyStatusTransition } from '../movement-status'
 import { movementFromStorage } from '../financial-movement-repository'
 
 const VALID = new Set<string>([MovementStatus.Pending, MovementStatus.Settled, MovementStatus.Cancelled])
+
+/** Relógio do cliente adiantado não pode virar 400 ao mandar "agora". */
+const FUTURE_TOLERANCE_MS = 5 * 60 * 1000
+
+/**
+ * `settledAt` informado pelo dono no PATCH de status. Ausente → `undefined`
+ * (a transição usa agora). Inválido ou no futuro → 400: pagamento que ainda não
+ * aconteceu não é liquidação.
+ */
+export function parseSettledAt (value: string | Date | undefined, now: Date): Date | undefined {
+  if (value == null) return undefined
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    throw new ValidationError('settledAt inválido: informe uma data ISO.')
+  }
+  if (parsed.getTime() > now.getTime() + FUTURE_TOLERANCE_MS) {
+    throw new ValidationError('settledAt não pode estar no futuro.')
+  }
+  return parsed
+}
 
 /**
  * Altera o status de uma movimentação (MIN-68), corrigindo o saldo da conta na
@@ -21,10 +42,11 @@ const VALID = new Set<string>([MovementStatus.Pending, MovementStatus.Settled, M
  * o dono.
  */
 export class ChangeMovementStatusUseCase {
-  async execute (movementId: string, newStatus: string, ctx: RequestContext): Promise<any> {
+  async execute (movementId: string, newStatus: string, ctx: RequestContext, options: { settledAt?: string | Date } = {}): Promise<any> {
     if (!VALID.has(newStatus)) {
       throw new ConflictError(`Status inválido: ${newStatus}.`)
     }
+    const informedSettledAt = parseSettledAt(options.settledAt, new Date())
     if (!ObjectId.isValid(movementId)) {
       throw new NotFoundError(Resource.FinancialMovement, movementId)
     }
@@ -89,7 +111,7 @@ export class ChangeMovementStatusUseCase {
 
         // P1 — ação HUMANA carimba `manual`: trava permanente, o settler nunca mais
         // reavalia este movimento por data. Quem tem a palavra final é o dono.
-        await applyStatusTransition({
+        const transition = await applyStatusTransition({
           movements,
           accounts,
           movement: mov,
@@ -98,9 +120,15 @@ export class ChangeMovementStatusUseCase {
           statusSource: MovementStatusSource.Manual,
           session,
           now: new Date(),
+          settledAt: informedSettledAt,
         })
 
-        updated = movementFromStorage({ ...mov, status: newStatus, statusSource: MovementStatusSource.Manual } as any)
+        updated = movementFromStorage({
+          ...mov,
+          status: newStatus,
+          statusSource: MovementStatusSource.Manual,
+          settledAt: transition.settledAt,
+        } as any)
       })
 
       return updated

@@ -1,7 +1,7 @@
 import { Collection, ObjectId, ClientSession } from 'mongodb'
 import { MovementStatusSource } from 'mintly-lib'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
-import { balanceImpact } from './movement-rules'
+import { balanceImpact, resolveSettledAt } from './movement-rules'
 import { applyBalanceImpact } from './movement-balance'
 
 const num = (v: any): number => Number((v ?? 0).toString())
@@ -17,6 +17,8 @@ export interface StatusTransitionParams {
   statusSource: MovementStatusSource
   session: ClientSession
   now: Date
+  /** Quando o dinheiro mexeu, se quem chama sabe (settler: dueDate; dono: o informado). Ausente = `now`. */
+  settledAt?: Date
 }
 
 /**
@@ -31,27 +33,37 @@ export interface StatusTransitionParams {
  * mesmo tempo), o filtro não casa, lançamos e a transação aborta — sem ter
  * tocado no saldo. A ordem inversa (saldo primeiro) causaria drift.
  */
-export async function applyStatusTransition (p: StatusTransitionParams): Promise<void> {
+export async function applyStatusTransition (p: StatusTransitionParams): Promise<{ settledAt?: Date }> {
   const { movements, accounts, movement, newStatus, actor, statusSource, session, now } = p
 
   const oldStatus = String(movement.status)
   const restaurantId = movement.restaurantId as string | undefined
 
-  const res = await movements.updateOne(
-    { _id: movement._id, restaurantId, status: oldStatus },
-    {
-      $set: {
-        status: newStatus,
-        statusSource,
-        'audit.updatedAt': now,
-        'audit.updatedBy': actor,
-      },
-      $push: {
-        history: { at: now, by: actor, action: `status:${oldStatus}->${newStatus}` },
-      } as any,
+  const settledAt = resolveSettledAt({
+    newStatus,
+    previousStatus: oldStatus,
+    previousSettledAt: movement.settledAt ?? undefined,
+    informed: p.settledAt,
+    fallback: now,
+  })
+
+  const update: Record<string, any> = {
+    $set: {
+      status: newStatus,
+      statusSource,
+      'audit.updatedAt': now,
+      'audit.updatedBy': actor,
     },
-    { session },
-  )
+    $push: {
+      history: { at: now, by: actor, action: `status:${oldStatus}->${newStatus}` },
+    },
+  }
+  // Pendente/cancelada não têm settledAt: a volta remove o campo, senão a série
+  // realizada contaria dinheiro que não mexeu.
+  if (settledAt != null) update.$set.settledAt = settledAt
+  else update.$unset = { settledAt: '' }
+
+  const res = await movements.updateOne({ _id: movement._id, restaurantId, status: oldStatus }, update, { session })
 
   if (res.matchedCount === 0) {
     throw new ConflictError('O status da movimentação mudou concorrentemente; a operação foi abortada.')
@@ -66,4 +78,6 @@ export async function applyStatusTransition (p: StatusTransitionParams): Promise
 
   await applyBalanceImpact(accounts, accountId, restaurantId, oldImpact, -1, session, now)
   await applyBalanceImpact(accounts, accountId, restaurantId, newImpact, 1, session, now)
+
+  return { settledAt }
 }
