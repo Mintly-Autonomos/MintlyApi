@@ -11,25 +11,21 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 ## Passo atual
 
-**Fatia 2 — Fluxo de Caixa** (épico MIN-90, história MIN-94).
+**Fatia 3 — `dreGroup` + `mixed` + alíquota (M2, M5)** — classificação contábil da categoria e
+imposto do restaurante, fundação do Resultado (DRE).
 
-- Etapa: ~~perguntas~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência contra o seed~~ ✅ →
-  ~~revisão final~~ ✅ → ~~teste com o backend local~~ ✅ → ~~PR da lib~~ ✅ (MintlyLib#27, publicado
-  `2.10.0-preview`) → **PR da API aberto (MintlyApi#40), CI verde, aguardando review**.
-- Spec: `specs/modulos-novos/20261012/fluxo-de-caixa.md`; plano: `specs/modulos-novos/20261012/plan.md`
-  (12 tarefas). Postar os dois na MIN-94 quando o MCP do Atlassian voltar.
-- Branch da API: `feat/20261012/fluxo-de-caixa`, rebaseada em `staging` depois do merge do #39.
-- Validação (contra `mintly-lib@2.10.0-preview` publicada): suíte 691/691 (cobertura 98,7 / 98,5 / 99,3 / 98,8); `reports/` com 100%; E2E contra o
-  Atlas 4/4; servidor local (`npm run dev` contra Mongo em memória) dirigido por HTTP, inclusive o
-  `db:seed-demo` reproduzindo o cenário da print.
+- Etapa: **perguntas do módulo** → spec → plano → TDD → conferência → PR.
+- Branch: `feat/20261012/classificacao-contabil` (API, a partir de `staging`).
+- Ponto de partida obrigatório: alinhar com a **MIN-23** (cálculo tributário, "Em Desenvolvimento"
+  no Jira) onde o regime tributário fica gravado e quem implementa o cálculo.
 
 ## Fatias
 
 | # | Fatia | Lib | API | Estado |
 |---|---|---|---|---|
 | 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 ✅ mergeado | Concluída — falta o backfill em staging |
-| 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | #40 aberto, CI verde | **Em review** |
-| 3 | `dreGroup` + `mixed` + alíquota (M2, M5) | — | — | Na fila |
+| 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | #40 ✅ mergeado | Concluída |
+| 3 | `dreGroup` + `mixed` + alíquota (M2, M5) | — | — | **Em andamento** — perguntas |
 | 4 | Resultado (DRE) | — | — | Na fila |
 | 5 | Subcategoria + `channel` (M3, M4) | — | — | Na fila |
 | 6 | Custos & Despesas — fatia A | — | — | Na fila |
@@ -40,8 +36,20 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 ## Próximos passos
 
 1. Rodar o backfill de staging abaixo (o #39 já foi mergeado).
-2. Review e merge do PR da API da fatia 2.
-3. Fatia 3 só começa depois de alinhar com a MIN-23 onde o `taxRegime` fica gravado.
+2. Fatia 3: fechar as perguntas (começando pela MIN-23), spec, plano, implementação.
+
+## Postar no Jira (quando o MCP do Atlassian voltar)
+
+O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir para o Jira fica aqui:
+
+- [ ] **MIN-94** (Fluxo de Caixa): comentário com a spec `specs/modulos-novos/20261012/fluxo-de-caixa.md`.
+- [ ] **MIN-94**: subtarefas no padrão do projeto (uma por branch) — lib `feat/20261012/fluxo-de-caixa`
+      (MintlyLib#27) e API `feat/20261012/fluxo-de-caixa` (MintlyApi#40), ambas concluídas.
+- [ ] **MIN-94**: comentário de execução — o que foi entregue, validação (691 testes, E2E 4/4,
+      backend local), achados da revisão corrigidos, pendências menores (lista abaixo).
+- [ ] **MIN-89** (fatia 1): comentário de que o #39 foi mergeado e o backfill de staging está pendente.
+- [ ] **MIN-90 / MIN-94**: mover para concluído, se o fluxo do board permitir.
+- [ ] **Fatia 3**: o que sair das perguntas sobre a MIN-23 (comentário na MIN-23) e a spec da fatia.
 
 ## Em aberto (não bloqueia a fatia atual)
 
@@ -50,7 +58,6 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
   saiu como `2.8.0-preview → 2.9.0-preview`. Decidir se corrige o `ci.yml` ou só registra.
 - **E2E da capacidade nova da fatia 1:** saída com vencimento e o ida-e-volta do P8 só têm
   cobertura de integração.
-- **Spec da fatia 2 no Jira:** postar `20261012/fluxo-de-caixa.md` como comentário na MIN-94.
 - **MintlyWeb × contrato com número cru (N9):** precisa estar combinado antes do Fluxo de Caixa
   substituir o mock.
 - **Datas sem horário no registro/edição de movimentação:** `date`/`dueDate` em `AAAA-MM-DD` são
