@@ -134,4 +134,49 @@ describe('subcategorias da categoria (Integration)', () => {
     expect((await stored(s.db, ok.json().payload._id)).subcategories).toEqual([])
     expect((await patch(s.auth, ok.json().payload._id, { subcategories: [] })).statusCode).toBe(400)
   })
+
+  it('categoria antiga sem o campo: listagem devolve subcategories: []', async () => {
+    const s = await setup()
+    const id = await cmvId(s.db, s.restaurantId)
+    await s.db.collection('financial_categories').updateMany({ restaurantId: s.restaurantId }, { $unset: { subcategories: '' } })
+
+    const list = (await app.inject({ method: 'GET', url: '/financial-categories?size=50', headers: s.auth })).json().payload
+
+    expect(list.length).toBeGreaterThan(0)
+    expect(list.every((c: any) => Array.isArray(c.subcategories))).toBe(true)
+    expect(list.find((c: any) => c._id === id).subcategories).toEqual([])
+  })
+
+  it('dois POSTs simultâneos com o mesmo nome: um 201, um 409, uma subcategoria só', async () => {
+    const s = await setup()
+    const id = await cmvId(s.db, s.restaurantId)
+
+    const codes = (await Promise.all([post(s.auth, id, { name: 'Frango' }), post(s.auth, id, { name: 'frango' }), post(s.auth, id, { name: ' Frango ' })])).map((r) => r.statusCode).sort()
+
+    expect(codes).toEqual([201, 409, 409])
+    expect((await stored(s.db, id)).subcategories).toHaveLength(1)
+  })
+
+  it('POSTs simultâneos com nomes diferentes: todos entram', async () => {
+    const s = await setup()
+    const id = await cmvId(s.db, s.restaurantId)
+
+    const codes = (await Promise.all(['Frango', 'Óleo', 'Molhos'].map((name) => post(s.auth, id, { name })))).map((r) => r.statusCode)
+
+    expect(codes).toEqual([201, 201, 201])
+    expect((await stored(s.db, id)).subcategories).toHaveLength(3)
+  })
+
+  it('duas renomeações simultâneas para o mesmo nome: uma 409', async () => {
+    const s = await setup()
+    const id = await cmvId(s.db, s.restaurantId)
+    const a = (await post(s.auth, id, { name: 'A' })).json().payload._id
+    const b = (await post(s.auth, id, { name: 'B' })).json().payload._id
+
+    const codes = (await Promise.all([patch(s.auth, `${id}/subcategories/${a}`, { name: 'Frango' }), patch(s.auth, `${id}/subcategories/${b}`, { name: 'FRANGO' })])).map((r) => r.statusCode).sort()
+
+    expect(codes).toEqual([200, 409])
+    const names = (await stored(s.db, id)).subcategories.map((x: any) => x.name.toLowerCase())
+    expect(names.filter((n: string) => n === 'frango')).toHaveLength(1)
+  })
 })

@@ -3,8 +3,12 @@ import { RecordStatus, Subcategory, subcategoryInsertSchema, subcategoryUpdateSc
 import { FinancialCategoryRepository } from '../financial-category-repository'
 import { RequestContext } from '../../../core/context/request-context'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
+import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { Resource } from '../../../core/types/resource'
 import { assertUniqueSubcategoryName, findSubcategory, normalizeSubcategoryName } from '../subcategory-rules'
+
+/** Tentativas antes de desistir quando outra gravação muda a categoria no meio. */
+const MAX_ATTEMPTS = 5
 
 /**
  * Sub-recurso de subcategorias (M4, fatia 5). Funciona em QUALQUER categoria do
@@ -31,35 +35,53 @@ export class SubcategoryUseCase {
     return { at: new Date(), by: ctx.userId ?? 'system', action, detail }
   }
 
+  private names (category: any): string[] {
+    return (category.subcategories ?? []).map((s: Subcategory) => s.name)
+  }
+
+  /**
+   * Lê, decide e grava só se os nomes não mudaram desde a leitura (a regra de
+   * unicidade é em memória). Se outra gravação passou na frente, relê e decide de
+   * novo — aí o nome repetido vira 409. Sem `write`, não há o que gravar.
+   */
+  private async withRetry<T> (categoryId: string, ctx: RequestContext, attempt: (category: any, names: string[]) => Promise<{ result: T; write?: () => Promise<boolean> }>): Promise<T> {
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      const category = await this.category(categoryId, ctx)
+      const { result, write } = await attempt(category, this.names(category))
+      if (!write || await write()) return result
+    }
+    throw new ConflictError('A categoria foi alterada ao mesmo tempo por outra pessoa. Tente de novo.')
+  }
+
   async add (categoryId: string, body: unknown, ctx: RequestContext): Promise<Subcategory> {
     const { name: raw } = subcategoryInsertSchema.parse(body ?? {}) as { name: string }
-    const category = await this.category(categoryId, ctx)
     const name = normalizeSubcategoryName(raw)
-    assertUniqueSubcategoryName(category.subcategories, name)
-    const sub: Subcategory = { _id: new ObjectId().toHexString(), name, status: RecordStatus.Active }
-    await this.repo.pushSubcategory(categoryId, sub, this.entry(ctx, 'subcategory:add', name), ctx)
-    return sub
+    return this.withRetry(categoryId, ctx, async (category, names) => {
+      assertUniqueSubcategoryName(category.subcategories, name)
+      const sub: Subcategory = { _id: new ObjectId().toHexString(), name, status: RecordStatus.Active }
+      return { result: sub, write: () => this.repo.pushSubcategory(categoryId, sub, this.entry(ctx, 'subcategory:add', name), names, ctx) }
+    })
   }
 
   async rename (categoryId: string, subId: string, body: unknown, ctx: RequestContext): Promise<Subcategory> {
     const changes = subcategoryUpdateSchema.parse(body ?? {}) as { name?: string }
-    const category = await this.category(categoryId, ctx)
-    const sub = this.subcategory(category, subId)
-    if (changes.name === undefined) return sub
-    const name = normalizeSubcategoryName(changes.name)
-    assertUniqueSubcategoryName(category.subcategories, name, subId)
-    if (name === sub.name) return sub
-    await this.repo.setSubcategoryFields(categoryId, subId, { name }, this.entry(ctx, 'subcategory:rename', `${sub.name} → ${name}`), ctx)
-    return { ...sub, name }
+    const name = changes.name === undefined ? undefined : normalizeSubcategoryName(changes.name)
+    return this.withRetry(categoryId, ctx, async (category, names) => {
+      const sub = this.subcategory(category, subId)
+      if (name === undefined) return { result: sub }
+      assertUniqueSubcategoryName(category.subcategories, name, subId)
+      if (name === sub.name) return { result: sub }
+      return { result: { ...sub, name }, write: () => this.repo.setSubcategoryFields(categoryId, subId, { name }, this.entry(ctx, 'subcategory:rename', `${sub.name} → ${name}`), names, ctx) }
+    })
   }
 
   /** Idempotente: pedir o status que já está não grava nem registra history. */
   async setStatus (categoryId: string, subId: string, status: RecordStatus, ctx: RequestContext): Promise<Subcategory> {
-    const category = await this.category(categoryId, ctx)
-    const sub = this.subcategory(category, subId)
-    if (sub.status === status) return sub
-    const action = status === RecordStatus.Active ? 'subcategory:reactivate' : 'subcategory:inactivate'
-    await this.repo.setSubcategoryFields(categoryId, subId, { status }, this.entry(ctx, action, sub.name), ctx)
-    return { ...sub, status }
+    return this.withRetry(categoryId, ctx, async (category, names) => {
+      const sub = this.subcategory(category, subId)
+      if (sub.status === status) return { result: sub }
+      const action = status === RecordStatus.Active ? 'subcategory:reactivate' : 'subcategory:inactivate'
+      return { result: { ...sub, status }, write: () => this.repo.setSubcategoryFields(categoryId, subId, { status }, this.entry(ctx, action, sub.name), names, ctx) }
+    })
   }
 }
