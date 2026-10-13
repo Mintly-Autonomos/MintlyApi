@@ -13,7 +13,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 7 — Custos & Despesas, fatia B (subitens, anomalias, evolução)** — campos novos em `GET /reports/expenses`.
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ (aguardando revisão) → TDD → conferência → PR.
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência~~ ✅ (revisor + 2 correções + teste local) → **PR da lib #32 aberto, aguardando merge** → `npm i` da versão publicada → PR da API.
 - Spec: `specs/modulos-novos/20261013/custos-despesas-b.md`; plano: `specs/modulos-novos/20261013/plan-custos-despesas-b.md` (5 tarefas). Decidido: tudo no mesmo relatório; anomalia por subitem (categoria sem subitens avaliada inteira; taxa fora), só no mês consultado, ≥ 2 meses na média; projeção linear só no mês atual.
 - Branch: `feat/20261013/custos-despesas-b` (API, a partir de `staging`).
 
@@ -27,7 +27,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 4 | Resultado (DRE) | #29 ✅ mergeado (`2.12.0-preview`) | #42 ✅ mergeado | Concluída |
 | 5 | Subcategoria + `channel` (M3, M4) | #30 ✅ mergeado (`2.13.0-preview`) | #43 ✅ mergeado | Concluída |
 | 6 | Custos & Despesas — fatia A | #31 ✅ mergeado (`2.14.0-preview`) | #44 ✅ mergeado | Concluída |
-| 7 | Custos & Despesas — fatia B | — | — | **Em andamento** — spec e plano escritos |
+| 7 | Custos & Despesas — fatia B | #32 aberto | — | **Em review** — lib #32 aberto; API pronta na branch |
 | 8 | Visão Geral | — | — | Na fila |
 | 9 | Receitas, Previsões | — | — | Bloqueado (domínio de vendas) |
 
@@ -35,7 +35,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 1. Rodar o backfill de staging abaixo (o #39 já foi mergeado).
 2. Rodar os comandos da fatia 3 abaixo (o #41 já foi mergeado).
-3. Fatia 7: spec, plano, implementação.
+3. Fatia 7: merge da lib #32 → `npm i mintly-lib@<versão>` → PR da API. Nenhum comando novo no ambiente.
 
 ## Postar no Jira (quando o MCP do Atlassian voltar)
 
@@ -52,6 +52,7 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
       `financial_movements`), com a spec `specs/modulos-novos/20261012/classificacao-contabil.md`.
 - [ ] **Fatia 3**: história/subtarefas para lib e API (ainda não existem no Jira).
 - [ ] **Fatia 4 (Resultado/DRE)**: épico/história e subtarefas (ainda não existem no Jira) + spec `20261012/resultado-dre.md`.
+- [ ] **Fatia 7 (Custos & Despesas, fatia B)**: história/subtarefas (lib #32, API) + spec `20261013/custos-despesas-b.md`; N4 (limiares) segue aberto.
 - [ ] **Fatia 6 (Custos & Despesas, fatia A)**: história/subtarefas (lib #31, API #44) + spec `20261013/custos-despesas.md`.
 - [ ] **Fatia 5 (Subcategoria + canal)**: história/subtarefas (lib #30, API #43) + spec `20261013/subcategoria-canal.md`; mínimos adiados da revisão (NFC no nome, max(60) antes do trim, `null` no `updateMovementSchema` da lib).
 
@@ -68,6 +69,13 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
   lidas como meia-noite UTC — 21h do dia anterior em São Paulo. A fatia 2 corrigiu isso só para o
   `settledAt` do PATCH de status; no POST/PATCH de movimentação é comportamento das fatias
   anteriores. Conferir como o MintlyWeb envia essas datas antes de mexer.
+
+### Pendências da fatia 7
+
+- **Limiares de anomalia (N4):** seguem o palpite (≥ 50% e ≥ R$ 100, base de ≥ 2 meses) — validar com o negócio.
+- Decidido na revisão: projeção não multiplica o que está lançado para depois de hoje; base da anomalia conta desde o primeiro gasto da unidade (adoção gradual de subcategoria).
+- Gráfico "Por categoria" em M−4/M−5 pode não explicar todo o total (categoria que só teve gasto lá não entra na lista).
+- Menores: nome de subcategoria de categoria apagada pode vir vazio; Σ `projected` dos itens pode diferir do total por centavos; campos novos obrigatórios nos tipos da lib (mocks do front).
 
 ### Pendências da fatia 6
 
