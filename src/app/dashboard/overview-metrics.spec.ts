@@ -74,15 +74,15 @@ describe('computeOverview — cenário (mês fechado)', () => {
     expect(r.cards.primeCost.targetMax).toBe(0.65)
   })
 
-  it('score 83, healthy, com os quatro pilares', () => {
-    expect(r.health).toMatchObject({ score: 83, label: 'healthy', bands: { risk: 40, attention: 70 } })
+  it('mês passado: score daquele mês, sem o fôlego (decisão A da revisão)', () => {
+    expect(r.health).toMatchObject({ score: 100, label: 'healthy', basisMonth: '2026-07', bands: { risk: 40, attention: 70 } })
     const byKey = Object.fromEntries(r.health.pillars.map((pl) => [pl.key, pl]))
     expect(byKey.netMargin).toMatchObject({ weight: 0.3, score: 100 })
-    expect(byKey.runway).toMatchObject({ weight: 0.3, value: 20 })
-    expect(byKey.runway.score).toBeCloseTo(44.444, 2)
+    expect(byKey.runway).toMatchObject({ weight: 0.3, value: null, score: null })
     expect(byKey.primeCost).toMatchObject({ weight: 0.25, score: 100 })
     expect(byKey.revenueTrend).toMatchObject({ weight: 0.15, score: 100 })
     expect(byKey.revenueTrend.value).toBeCloseTo(58_400 / (156_200 / 3) - 1, 10)
+    expect(r.cards.projection.runwayDays).toBe(20)
   })
 
   it('insights na ordem e com os números', () => {
@@ -118,36 +118,39 @@ describe('computeOverview — bordas', () => {
     expect(computeOverview(input).insights.map((i) => i.kind)).toEqual(['breakEvenReached', 'taxRegimeNotConfigured'])
   })
 
-  it('mês atual no dia 10: tendência e ponto projetado usam a receita projetada', () => {
+  it('mês atual: score de hoje = último mês fechado (junho) + fôlego de hoje', () => {
     const input = overviewScenario()
     input.today = new Date('2026-07-10T15:00:00Z')
-    ;(input.result.current as any).grossRevenue = 10_000
-    ;(input.result as any).history = ['2026-04', '2026-05', '2026-06', '2026-07'].map((month, i) => ({ month, grossRevenue: [30_000, 30_000, 30_000, 10_000][i], netProfit: 0, netMargin: null }))
-    ;(input.expenses as any).projection = { total: 40_000, revenue: 31_000, elapsedDays: 10, daysInMonth: 31 }
     const r = computeOverview(input)
-    const trend = r.health.pillars.find((pl) => pl.key === 'revenueTrend')!
-    expect(trend.value).toBeCloseTo(31_000 / 30_000 - 1, 10)
-    expect(trend.score).toBe(100)
-    expect(r.revenueVsExpense.at(-1)).toEqual({ month: '2026-07', revenue: 31_000, expense: 40_000, projected: true })
+    const byKey = Object.fromEntries(r.health.pillars.map((pl) => [pl.key, pl]))
+    expect(r.health.basisMonth).toBe('2026-06')
+    expect(byKey.netMargin.value).toBeCloseTo(5_100 / 54_200, 10)
+    expect(byKey.primeCost.value).toBeCloseTo(26_000 / 54_200, 10)
+    expect(byKey.revenueTrend.value).toBeCloseTo(54_200 / ((47_000 + 50_000 + 52_000) / 3) - 1, 10)
+    expect(byKey.runway).toMatchObject({ value: 20 })
+    expect(r.health).toMatchObject({ score: 82, label: 'healthy' })
   })
 
-  it('mês atual: receita projetada vem de Custos (venda futura do mês não é multiplicada)', () => {
+  it('mês atual sem venda ainda: o mês pela metade não derruba o score', () => {
+    const input = overviewScenario()
+    input.today = new Date('2026-07-01T15:00:00Z')
+    ;(input.result as any).current = { ...input.result.current, grossRevenue: 0, netProfit: -6_000, netMargin: null }
+    ;(input.expenses as any).primeCost = { ...input.expenses.primeCost, pctOfRevenue: null }
+    expect(computeOverview(input).health).toMatchObject({ score: 82, basisMonth: '2026-06' })
+  })
+
+  it('mês atual: ponto projetado de Receita × Despesa usa a receita projetada de Custos', () => {
     const input = overviewScenario()
     input.today = new Date('2026-07-10T15:00:00Z')
-    ;(input.result.current as any).grossRevenue = 10_000
-    ;(input.result as any).history = ['2026-04', '2026-05', '2026-06', '2026-07'].map((month, i) => ({ month, grossRevenue: [30_000, 30_000, 30_000, 10_000][i], netProfit: 0, netMargin: null }))
     ;(input.expenses as any).projection = { total: 40_000, revenue: 15_000, elapsedDays: 10, daysInMonth: 31 }
-    const r = computeOverview(input)
-    expect(r.health.pillars.find((pl) => pl.key === 'revenueTrend')!.value).toBeCloseTo(15_000 / 30_000 - 1, 10)
-    expect(r.revenueVsExpense.at(-1)).toEqual({ month: '2026-07', revenue: 15_000, expense: 40_000, projected: true })
+    expect(computeOverview(input).revenueVsExpense.at(-1)).toEqual({ month: '2026-07', revenue: 15_000, expense: 40_000, projected: true })
   })
 
-  it('mês atual no dia 1: projeta ×dias do mês, sem divisão por zero', () => {
+  it('mês atual no dia 1 sem projeção de Custos: projeta ×dias do mês, sem divisão por zero', () => {
     const input = overviewScenario()
     input.today = new Date('2026-07-01T15:00:00Z')
     ;(input.result.current as any).grossRevenue = 1_000
-    const trend = computeOverview(input).health.pillars.find((pl) => pl.key === 'revenueTrend')!
-    expect(trend.value).toBeCloseTo(31_000 / (156_200 / 3) - 1, 10)
+    expect(computeOverview(input).revenueVsExpense.at(-1)).toMatchObject({ month: '2026-07', revenue: 31_000, projected: true })
   })
 
   it('restaurante sem dados: score null, noData, nada de NaN', () => {
@@ -169,8 +172,9 @@ describe('computeOverview — bordas', () => {
     expect(JSON.stringify(r)).not.toMatch(/NaN|Infinity/)
   })
 
-  it('caixa negativo: fôlego 0 e pilar com nota 0', () => {
+  it('caixa negativo (mês atual): fôlego 0 e pilar com nota 0', () => {
     const input = overviewScenario()
+    input.today = new Date('2026-07-10T15:00:00Z')
     ;(input.cashFlow as any).cashToday = -2_000
     const r = computeOverview(input)
     expect(r.cards.projection.runwayDays).toBe(0)

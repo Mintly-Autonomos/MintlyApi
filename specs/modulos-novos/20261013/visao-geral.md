@@ -98,12 +98,13 @@ Puras em `src/app/dashboard/overview-metrics.ts`; somas em centavos onde houver 
 | Pilar `netMargin` | valor = margem líquida do DRE; 0% → 0, 10% → 100 |
 | Pilar `runway` | valor = fôlego; 0 → 0, 45 → 100 |
 | Pilar `primeCost` | valor = prime cost %; 85% → 0, 65% → 100 |
-| Pilar `revenueTrend` | valor = (receita base − média) / média. Receita base = receita do mês; **se o mês é o atual**, projetada: `receita × dias do mês / dias decorridos` (SP). Média = meses M−1..M−3 do histórico com receita > 0; nenhum → sem dado. −20% → 0, 0% → 100 |
+| Pilar `revenueTrend` | valor = (receita base − média) / média. Receita base = receita do mês-base (ver "Base do score"). Média = meses M−1..M−3 do histórico com receita > 0; nenhum → sem dado. −20% → 0, 0% → 100 |
+| Base do score (decisão A da revisão) | **Mês atual:** saúde de hoje — `netMargin`, `primeCost` e `revenueTrend` do **último mês fechado** (M−1: margem do histórico do DRE, prime cost anterior de Custos, tendência de M−1 contra M−2..M−4) + `runway` de hoje. **Mês passado:** pilares daquele mês, **sem** `runway` (sem o caixa da época; não muda com o tempo). `health.basisMonth` informa o mês dos pilares |
 | Nota do pilar | Linear entre as pontas, limitada a 0..100, sem arredondar |
 | Score | `round(Σ peso × nota / Σ peso)` dos pilares com nota; nenhum → `null` |
 | Rótulo | `< 40` risk · `< 70` attention · `≥ 70` healthy · sem score → noData |
 | Insights | `cashTight` ← Fluxo tem `criticalDay`; `cmvAboveTarget` ← CMV % > 35%, `impact = round((pct − 0,35) × receita)` ao centavo; `primeCostAboveTarget` ← prime cost % > 65%; `expenseAnomaly` ← 1ª anomalia de Custos; `breakEvenReached` ← DRE `breakEven.reachedOnDay`; `taxRegimeNotConfigured` ← insight do DRE. Ordem: warning → positive → info, depois a ordem desta lista; máximo 4 |
-| Receita × Despesa | M−5..M: receita bruta (DRE `history`) e despesa (Custos `history`, todas as saídas + taxas). Mês atual: mais um ponto `projected: true` com a receita projetada e `projection.total` de Custos |
+| Receita × Despesa | M−5..M: receita bruta (DRE `history`) e despesa (Custos `history`, todas as saídas + taxas). Mês atual: mais um ponto `projected: true` com `projection.revenue` e `projection.total` de Custos (extrapola o que já aconteceu e soma o lançado para depois de hoje pelo valor cheio) |
 | Cascata | Linhas do DRE do mês: `grossRevenue`, `taxes`, `cmv`, `operatingExpenses`, `netProfit` |
 
 Constantes (palpite N5): pesos `netMargin 0,30 · runway 0,30 · primeCost 0,25 · revenueTrend 0,15`;

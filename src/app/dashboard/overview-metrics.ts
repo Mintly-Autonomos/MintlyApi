@@ -108,7 +108,7 @@ export function computeOverview (input: OverviewInput): OverviewReport {
   const { result, cashFlow, expenses, today } = input
   const month = result.referenceMonth
   const window = projectionWindow(month, today)
-  // Mês atual: receita projetada — senão o mês pela metade sempre "cai". Vem de
+  // Mês atual: receita projetada (ponto projetado de Receita × Despesa). Vem de
   // Custos, que extrapola só o que já aconteceu e soma o lançado para depois de
   // hoje pelo valor cheio (mesma regra da despesa projetada).
   const revenueBase = window
@@ -116,17 +116,31 @@ export function computeOverview (input: OverviewInput): OverviewReport {
     : result.current.grossRevenue
 
   const runway = runwayDays(cashFlow.cashToday, cashFlow.safetyThreshold.avgDailyOutflow)
-  const values: Record<HealthPillarKey, number | null> = {
-    netMargin: result.current.netMargin,
-    runway,
-    primeCost: expenses.primeCost.pctOfRevenue,
-    revenueTrend: revenueTrend(revenueBase, result.history, month),
-  }
+  const cmvPrev = groupPct(expenses, [DreGroup.Cmv], 'previous', expenses.revenue.previous)
+  const primePrev = groupPct(expenses, [DreGroup.Cmv, DreGroup.Labor], 'previous', expenses.revenue.previous)
+
+  // Base do score (decisão A da revisão). Mês atual: a saúde de HOJE — pilares do
+  // mês vêm do último mês fechado (o mês pela metade puxaria a nota para "risco"
+  // na primeira semana) + fôlego de hoje. Mês passado: a nota daquele mês, sem o
+  // fôlego (não temos o caixa da época) — e ela não muda com o tempo.
+  const basisMonth = window ? addMonths(month, -1) : month
+  const basisPoint = result.history.find((h) => h.month === basisMonth)
+  const values: Record<HealthPillarKey, number | null> = window
+    ? {
+      netMargin: basisPoint?.netMargin ?? null,
+      runway,
+      primeCost: primePrev,
+      revenueTrend: basisPoint ? revenueTrend(basisPoint.grossRevenue, result.history, basisMonth) : null,
+    }
+    : {
+      netMargin: result.current.netMargin,
+      runway: null,
+      primeCost: expenses.primeCost.pctOfRevenue,
+      revenueTrend: revenueTrend(result.current.grossRevenue, result.history, month),
+    }
   const pillars: HealthPillar[] = PILLAR_ORDER.map((key) => ({ key, weight: HEALTH_WEIGHTS[key], score: pillarScore(key, values[key]), value: values[key] }))
   const score = healthScore(pillars)
 
-  const cmvPrev = groupPct(expenses, [DreGroup.Cmv], 'previous', expenses.revenue.previous)
-  const primePrev = groupPct(expenses, [DreGroup.Cmv, DreGroup.Labor], 'previous', expenses.revenue.previous)
   const expenseByMonth = new Map(expenses.history.map((h) => [h.month, h.total]))
 
   const revenueVsExpense = result.history.map((h) => ({ month: h.month, revenue: h.grossRevenue, expense: expenseByMonth.get(h.month) ?? 0, projected: false }))
@@ -143,7 +157,7 @@ export function computeOverview (input: OverviewInput): OverviewReport {
       cmv: { pct: expenses.cmv.pctOfRevenue, previousPct: cmvPrev, deltaPoints: points(expenses.cmv.pctOfRevenue, cmvPrev), target: expenses.cmv.target },
       primeCost: { pct: expenses.primeCost.pctOfRevenue, previousPct: primePrev, deltaPoints: points(expenses.primeCost.pctOfRevenue, primePrev), targetMax: expenses.primeCost.targetMax },
     },
-    health: { score, label: healthLabel(score), pillars, bands: HEALTH_BANDS },
+    health: { score, label: healthLabel(score), basisMonth, pillars, bands: HEALTH_BANDS },
     insights: buildInsights(input),
     revenueVsExpense,
     profitWaterfall: {
