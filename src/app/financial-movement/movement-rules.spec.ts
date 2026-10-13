@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { MovementDirection, MovementStatus } from 'mintly-lib'
-import { defaultStatus, computeSnapshot, balanceImpact, addDays, resolveDueDate, shouldRecomputeStatus, resolveSettledAt } from './movement-rules'
+import { MovementDirection, MovementStatus, RecordStatus } from 'mintly-lib'
+import { defaultStatus, computeSnapshot, balanceImpact, addDays, resolveDueDate, shouldRecomputeStatus, resolveSettledAt, resolveMovementSubcategory } from './movement-rules'
+import { ValidationError } from '../../core/errors/core/validation-error'
 
 const cash = { type: 'cash' }
 const platform = { type: 'platform', feePercent: 12, settlementDays: 30 }
@@ -341,5 +342,38 @@ describe('resolveSettledAt (fatia 2)', () => {
 
   it('continua liquidada sem settledAt anterior (documento antigo): não inventa um', () => {
     expect(resolveSettledAt({ newStatus: MovementStatus.Settled, previousStatus: MovementStatus.Settled, fallback: now })).toBeUndefined()
+  })
+})
+
+describe('resolveMovementSubcategory (fatia 5)', () => {
+  const category = {
+    subcategories: [
+      { _id: 's1', name: 'Frango', status: RecordStatus.Active },
+      { _id: 's2', name: 'Óleo', status: RecordStatus.Inactive },
+    ],
+  }
+  const current = { _id: 's2', name: 'Óleo' }
+
+  it('nada pedido: mantém se a categoria não mudou; remove se mudou', () => {
+    expect(resolveMovementSubcategory({ category, current, categoryChanged: false, requested: undefined })).toEqual(current)
+    expect(resolveMovementSubcategory({ category, current, categoryChanged: true, requested: undefined })).toBeUndefined()
+  })
+
+  it('null remove', () => {
+    expect(resolveMovementSubcategory({ category, current, categoryChanged: false, requested: null })).toBeUndefined()
+  })
+
+  it('mesma subcategoria já gravada é mantida mesmo inativa', () => {
+    expect(resolveMovementSubcategory({ category, current, categoryChanged: false, requested: 's2' })).toEqual(current)
+  })
+
+  it('nova subcategoria ativa da categoria → cópia { _id, name }', () => {
+    expect(resolveMovementSubcategory({ category, current, categoryChanged: false, requested: 's1' })).toEqual({ _id: 's1', name: 'Frango' })
+  })
+
+  it('inexistente na categoria ou inativa nova → 400', () => {
+    expect(() => resolveMovementSubcategory({ category, categoryChanged: true, requested: 'x' })).toThrow(ValidationError)
+    expect(() => resolveMovementSubcategory({ category, categoryChanged: true, requested: 's2' })).toThrow(ValidationError)
+    expect(() => resolveMovementSubcategory({ category: {}, categoryChanged: true, requested: 's1' })).toThrow(ValidationError)
   })
 })
