@@ -105,8 +105,8 @@ Puras em `src/app/reports/expenses/expenses-detail.ts`; somas em centavos.
 | Anomalia | ≥ 2 meses elegíveis entre M−1..M−3 **e** média > 0 **e** `valor − média ≥ R$ 100` **e** `(valor − média) / média ≥ 0,5`. Valor = real do mês consultado |
 | `hasAnomaly` | A categoria inteira ou algum subitem dela é anômalo |
 | `anomalies` | Todas as unidades anômalas; ordem: `excess` desc., depois `name` |
-| `history` do item | 6 meses (mesma janela e canal); Σ itens = `history` total |
-| Projeção | Só se mês consultado = mês atual (SP). `elapsedDays` = dia de hoje em SP (inclusive); `daysInMonth` = dias do mês. `total` = `round(total até hoje × daysInMonth / elapsedDays)` em centavos; por item, a mesma conta em `projected`. Mês fechado → `projection: null`, `projected: null` |
+| `history` do item | 6 meses (mesma janela e canal). Σ itens = `history` total nos meses M−3..M; em M−4/M−5 pode faltar a categoria que só teve gasto lá (ela não entra na lista — regra de listagem da fatia 6) |
+| Projeção | Só se mês consultado = mês atual (SP). `elapsedDays` = dia de hoje em SP (inclusive); `daysInMonth` = dias do mês. `total` = `round(gasto até hoje × daysInMonth / elapsedDays) + lançado para depois de hoje no mês` em centavos (o agendado — aluguel do dia 25 — entra pelo valor cheio, sem multiplicar; ajuste da revisão); por item, a mesma conta em `projected`. Mês fechado → `projection: null`, `projected: null` |
 | Canal | Tudo acima parte das linhas já filtradas pelo canal efetivo |
 
 ---

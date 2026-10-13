@@ -15,7 +15,12 @@ export class ExpensesRepository {
   }
 
   /** Σ grossValue e Σ feeValue por mês × direção × categoria × canal gravado × conta, em [from, to]. */
-  async monthlyRows (ctx: RequestContext, w: { from: string; to: string }): Promise<ExpenseRow[]> {
+  /**
+   * `after` (opcional): instante a partir do qual o lançamento ainda não aconteceu
+   * (amanhã 00h em SP) — separa `grossAfter`/`feeAfter` para a projeção (fatia 7).
+   */
+  async monthlyRows (ctx: RequestContext, w: { from: string; to: string }, after?: Date): Promise<ExpenseRow[]> {
+    const afterOnly = (field: string) => (after ? { $cond: [{ $gte: ['$date', after] }, { $ifNull: [field, 0] }, 0] } : 0)
     const rows = await this.db(ctx).collection('financial_movements').aggregate([
       { $match: { restaurantId: ctx.restaurantId, status: { $ne: MovementStatus.Cancelled }, date: { $gte: startOfLocalMonth(w.from), $lt: startOfLocalMonth(addMonths(w.to, 1)) } } },
       {
@@ -32,6 +37,8 @@ export class ExpensesRepository {
           },
           gross: { $sum: '$grossValue' },
           fee: { $sum: '$feeValue' },
+          grossAfter: { $sum: afterOnly('$grossValue') },
+          feeAfter: { $sum: afterOnly('$feeValue') },
           categoryName: { $first: '$category.name' },
           accountName: { $first: '$account.name' },
           subcategoryName: { $first: '$subcategory.name' },
@@ -52,6 +59,8 @@ export class ExpensesRepository {
       subcategoryName: r.subcategoryName ?? null,
       gross: decimalToNumber(r.gross),
       fee: decimalToNumber(r.fee),
+      grossAfter: decimalToNumber(r.grossAfter),
+      feeAfter: decimalToNumber(r.feeAfter),
     }))
   }
 

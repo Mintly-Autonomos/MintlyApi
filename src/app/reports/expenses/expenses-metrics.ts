@@ -30,6 +30,9 @@ export interface ExpenseRow {
   subcategoryName: string | null
   gross: number
   fee: number
+  /** Parte de `gross`/`fee` com data depois de hoje (lançamento futuro do mês); ausente = 0. */
+  grossAfter?: number
+  feeAfter?: number
 }
 
 export interface ExpenseCategoryInfo {
@@ -74,11 +77,13 @@ interface MonthBucket {
   platformRevenue: number
   shared: number
   items: Map<string, number>
+  /** Parte de `items` com data depois de hoje — fica fora da base da projeção. */
+  itemsAfter: Map<string, number>
   /** Fatia 7: categoria → subitem → centavos. */
   subs: Map<string, Map<string, number>>
 }
 
-const emptyBucket = (): MonthBucket => ({ revenue: 0, deliveryRevenue: 0, platformRevenue: 0, shared: 0, items: new Map(), subs: new Map() })
+const emptyBucket = (): MonthBucket => ({ revenue: 0, deliveryRevenue: 0, platformRevenue: 0, shared: 0, items: new Map(), itemsAfter: new Map(), subs: new Map() })
 
 /** Filtro da tela: só salão ou delivery — `shared` não é filtro (vai em `sharedExcluded`). */
 export function parseExpensesChannel (value: unknown): MovementChannel | null {
@@ -96,7 +101,8 @@ function bucketize (input: ExpensesInput) {
   const metas = new Map<string, ItemMeta>()
   const subMetas = new Map<string, Map<string, SubMeta>>()
   const withSubcategory = new Set<string>()
-  const add = (b: MonthBucket, meta: ItemMeta, cents: number) => {
+  const add = (b: MonthBucket, meta: ItemMeta, cents: number, afterCents: number) => {
+    b.itemsAfter.set(meta.key, (b.itemsAfter.get(meta.key) ?? 0) + afterCents)
     if (!metas.has(meta.key)) metas.set(meta.key, meta)
     b.items.set(meta.key, (b.items.get(meta.key) ?? 0) + cents)
   }
@@ -121,7 +127,7 @@ function bucketize (input: ExpensesInput) {
           name: `Taxa ${input.accountNames.get(r.accountId) ?? r.accountName}`,
           behavior: CategoryBehavior.Variable,
           dreGroup: null,
-        }, toCents(r.fee))
+        }, toCents(r.fee), toCents(r.feeAfter ?? 0))
       }
       continue
     }
@@ -139,7 +145,7 @@ function bucketize (input: ExpensesInput) {
       // Categoria apagada: leitura conservadora, como no DRE.
       behavior: category?.behavior ?? CategoryBehavior.Fixed,
       dreGroup: category?.dreGroup ?? DreGroup.Opex,
-    }, toCents(r.gross))
+    }, toCents(r.gross), toCents(r.grossAfter ?? 0))
 
     // Fatia 7: acumula também por subitem; "Sem subitem" quando o lançamento não tem.
     const subKey = r.subcategoryId ?? NO_SUBITEM_KEY
@@ -180,6 +186,9 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
 
   const months = Array.from({ length: HISTORY_MONTHS }, (_, i) => addMonths(M, i - (HISTORY_MONTHS - 1)))
   const window = projectionWindow(M, input.today)
+  // Projeção: só o que já aconteceu é extrapolado; o que está lançado para depois
+  // de hoje no mês (aluguel do dia 25) entra pelo valor cheio, sem multiplicar.
+  const projectWithScheduled = (cents: number, afterCents: number) => project(cents - afterCents, window!) + afterCents
   const measure = (get: (b: MonthBucket) => number) => ({ amount: get(cur), previous: get(prev), avg: average(get) })
   const anomalies: ExpenseAnomaly[] = []
   const anomalyOf = (meta: ItemMeta, sub: SubMeta | null, amount: number, avg: number): ExpenseAnomaly => ({
@@ -242,7 +251,7 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
       subitems,
       hasAnomaly,
       history: months.map((m) => ({ month: m, amount: fromCents(get(at(m))) })),
-      projected: window ? fromCents(project(amount, window)) : null,
+      projected: window ? fromCents(projectWithScheduled(amount, cur.itemsAfter.get(meta.key) ?? 0)) : null,
     })
   }
   items.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, 'pt-BR'))
@@ -281,7 +290,7 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
     sharedExcluded: input.channel == null ? null : fromCents(cur.shared),
     history: months.map((m) => ({ month: m, total: fromCents(total(at(m))) })),
     anomalies,
-    projection: window ? { total: fromCents(project(totalCur, window)), ...window } : null,
+    projection: window ? { total: fromCents(projectWithScheduled(totalCur, sum(cur.itemsAfter.values()))), ...window } : null,
     anomalyRule: ANOMALY_RULE,
   }
 }

@@ -244,6 +244,26 @@ describe('computeExpenses — fatia 7: subitens, anomalias, séries, projeção'
     expect(rr.anomalies).toHaveLength(2)
   })
 
+  it('lançamento futuro do mês entra na projeção pelo valor cheio, sem ser multiplicado', () => {
+    const base = { month: M, direction: 'out' as const, accountId: 'c', accountName: 'Caixa', accountType: 'cash', channel: null, subcategoryId: null, subcategoryName: null, fee: 0 }
+    const rows: ExpenseRow[] = [
+      { ...base, categoryId: 'cmv', categoryName: 'CMV', gross: 1_000 },
+      // aluguel do dia 25 já lançado no dia 10: está no mês, mas ainda não aconteceu
+      { ...base, categoryId: 'alu', categoryName: 'Aluguel', gross: 3_000, grossAfter: 3_000 },
+    ]
+    const rr = scenario(null, { rows, categories: new Map(), today: new Date('2026-08-10T15:00:00Z') })
+    expect(rr.total.current).toBe(4_000)
+    expect(rr.projection).toEqual({ total: 6_100, elapsedDays: 10, daysInMonth: 31 })
+    expect(byName(rr, 'Aluguel').projected).toBe(3_000)
+    expect(byName(rr, 'CMV').projected).toBe(3_100)
+  })
+
+  it('taxa de entrada futura do mês também entra pelo valor cheio', () => {
+    const rows: ExpenseRow[] = [{ month: M, direction: 'in', categoryId: 'ven', categoryName: 'Vendas', accountId: 'p1', accountName: 'iFood', accountType: 'platform', channel: null, subcategoryId: null, subcategoryName: null, gross: 1_000, fee: 200, grossAfter: 1_000, feeAfter: 200 }]
+    const rr = scenario(null, { rows, categories: new Map(), today: new Date('2026-08-10T15:00:00Z') })
+    expect(rr.projection!.total).toBe(200)
+  })
+
   it('filtro Delivery: CMV só com Embalagens (média 0), nenhuma anomalia', () => {
     const d = scenario(MovementChannel.Delivery)
     expect(byName(d, 'Exp · CMV').subitems.map((s) => [s.name, s.amount, s.anomaly])).toEqual([['Embalagens', 2_000, false]])

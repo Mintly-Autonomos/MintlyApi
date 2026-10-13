@@ -175,6 +175,40 @@ describe('GET /reports/expenses (Integration)', () => {
     expect(cmv.subitems.map((s: any) => [s.name, s.amount])).toEqual([['Frango inteiro', 6_000], ['Embalagens', 4_400], ['Sem subitem', 3_600]])
   })
 
+  it('mês atual: lançamento com data futura no mês entra na projeção sem ser multiplicado', async () => {
+    const now = new Date()
+    const day = toLocalDay(now)
+    const elapsed = Number(day.slice(8, 10))
+    const days = new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)), 0)).getUTCDate()
+    if (elapsed === days) return // último dia do mês: não há "depois de hoje" no mês
+
+    const { auth, restaurantId } = await signup(freshEnv())
+    const doc = (title: string, date: Date, gross: number) => ({
+      restaurantId,
+      title,
+      direction: 'out',
+      status: 'pending',
+      statusSource: 'auto',
+      date,
+      grossValue: toDecimal128(gross),
+      feeValue: toDecimal128(0),
+      netValue: toDecimal128(gross),
+      account: { _id: 'a', name: 'Caixa', type: 'cash' },
+      category: { _id: 'c', name: 'Aluguel', type: 'expense' },
+      paymentMethod: 'pix',
+      origin: 'manual',
+      history: [],
+      audit: { createdAt: now, updatedAt: now },
+    })
+    const lastDayNoon = new Date(startOfLocalMonth(addMonths(toLocalMonth(now), 1)).getTime() - 12 * 3_600_000)
+    await mongoConnection.getDatabase(auth.env).collection('financial_movements').insertMany([doc('Hoje', now, 310), doc('Aluguel do fim do mês', lastDayNoon, 2_000)])
+
+    const r = (await get(auth, '')).json().payload
+
+    expect(r.total.current).toBe(2_310)
+    expect(r.projection.total).toBe(Math.round(31_000 * days / elapsed) / 100 + 2_000)
+  })
+
   it('mês atual: projeção pelo dia de hoje em SP', async () => {
     const { auth, restaurantId } = await signup(freshEnv())
     const now = new Date()
