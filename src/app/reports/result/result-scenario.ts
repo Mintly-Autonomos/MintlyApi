@@ -11,7 +11,7 @@ import { addMonths, startOfLocalMonth } from '../shared/period'
  *      CMV 21.024 · Pró-labore 8.000 · Aluguel 6.000 · Utilidades 2.200 (misto) · Contador 1.456
  *      Manutenção 1.400 · Taxas de cartão 1.200 · Marketing 1.200 · Simples (tax) 3.700 → fora
  *      → imposto 3.504 · líquida 54.896 · margem bruta 33.872 · despesas 27.500 · lucro 6.372
- *      → fixos 17.656 · variáveis 30.868 · equilíbrio 40.338,10 · atingido no dia 20
+ *      → fixos 17.656 · variáveis 30.868 · equilíbrio 42.912,87 de receita bruta · atingido no dia 20
  *   P: receita 33.000 (dia 5) · CMV 14.000 · Pró-labore 8.000 · Aluguel 6.000 · Marketing 900
  *      → imposto 1.980 · lucro 2.120
  */
@@ -105,7 +105,7 @@ export function resultScenarioExpected (month: string) {
     previous: { grossRevenue: 33_000, taxes: 1_980, netRevenue: 31_020, cmv: 14_000, grossMargin: 17_020, operatingExpenses: 14_900, netProfit: 2_120 },
     effectiveRate: 0.06,
     itemNames: ['Demo · Pró-labore', 'Taxa de plataforma', 'Demo · Aluguel', 'Demo · Utilidades', 'Demo · Contador', 'Demo · Manutenção', 'Demo · Marketing', 'Demo · Taxas de cartão'],
-    breakEven: { fixedCosts: 17_656, variableCosts: 30_868, breakEvenRevenue: 40_338.1, reachedOnDay: 20 },
+    breakEven: { fixedCosts: 17_656, variableCosts: 30_868, breakEvenRevenue: 42_912.87, reachedOnDay: 20 },
     insightKinds: ['profitChanged', 'largestOpexItem'],
   }
 }

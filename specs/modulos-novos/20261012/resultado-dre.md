@@ -97,7 +97,7 @@ interface ResultReport {
     fixedCosts: number
     variableCosts: number
     contributionMarginPct: number | null
-    breakEvenRevenue: number | null
+    breakEvenRevenue: number | null   // receita BRUTA que paga os custos fixos
     reachedOnDay: number | null
   }
   history: Array<{ month: string; grossRevenue: number; netProfit: number; netMargin: number | null }>   // M−5 … M
@@ -146,12 +146,18 @@ taxa em M ou M−1. `kind` da categoria: `labor` se `dreGroup: 'labor'`, senão 
 fixedCosts            = Σ despesas cmv/labor/opex com behavior 'fixed' ou 'mixed'      (R3)
 variableCosts         = Σ despesas cmv/labor/opex com behavior 'variable' + taxa de plataforma
 contributionMarginPct = (netRevenue − variableCosts) / netRevenue          (null se netRevenue ≤ 0)
-breakEvenRevenue      = fixedCosts / contributionMarginPct                 (null se pct null ou ≤ 0)
-reachedOnDay          = primeiro dia d de M com Σ receita bruta até d × (netRevenue / grossRevenue) ≥ breakEvenRevenue
+breakEvenRevenue      = fixedCosts × grossRevenue / (netRevenue − variableCosts)   (null se pct null ou ≤ 0)
+reachedOnDay          = primeiro dia d de M com Σ receita bruta até d ≥ breakEvenRevenue
                         (null se breakEvenRevenue null ou não alcançado)
 ```
 
-`MIXED_BEHAVIOR_AS = 'fixed'` como constante nomeada. Conferência: 15.200 ÷ 49,9% = 30.470,96 (print).
+`breakEvenRevenue` é **receita bruta** — a que o dono compara com o que vende. *Corrigido na revisão
+final: a versão aprovada dividia pela margem sobre a receita líquida (`fixedCosts /
+contributionMarginPct`), o que dava um valor em receita líquida, mostrado ao lado da bruta.*
+
+`MIXED_BEHAVIOR_AS = 'fixed'` como constante nomeada. A conferência pela print (15.200 ÷ 49,9%) não é
+reproduzível — os números da tela são de exemplo e não fecham entre si; a fórmula é conferida pelo
+cenário (`result-scenario.ts`: equilíbrio de R$ 42.912,87 de receita bruta, atingido no dia 20).
 
 ### Insights
 

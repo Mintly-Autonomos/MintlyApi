@@ -182,8 +182,10 @@ describe('buildBreakEven', () => {
     expect(be.fixedCosts).toBe(17_656)
     expect(be.variableCosts).toBe(21_024 + 3_800 + 6_044)
     expect(be.contributionMarginPct).toBeCloseTo((54_896 - 30_868) / 54_896, 10)
-    expect(be.breakEvenRevenue).toBe(40_338.1)
-    expect(be.reachedOnDay).toBe(20) // dia 10: 40.000 × 0,94 = 37.600 < 40.338,10
+    // Receita BRUTA necessária (é o que o dono compara com o que vende):
+    // fixos ÷ ((líquida − variáveis) / bruta) = 17.656 × 58.400 / 24.028 = 42.912,87
+    expect(be.breakEvenRevenue).toBe(42_912.87)
+    expect(be.reachedOnDay).toBe(20) // dia 10: 40.000 < 42.912,87; dia 20: 58.400
   })
 
   it('não alcançado no mês: null', () => {

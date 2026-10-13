@@ -185,22 +185,27 @@ function daysInMonth (month: string): number {
 }
 
 /**
- * Ponto de equilíbrio de M (spec): fixos ÷ margem de contribuição. O dia em que é
- * atingido compara a receita bruta acumulada convertida em líquida pela proporção
- * do mês. Sem margem positiva, nenhuma venda paga os fixos → null.
+ * Ponto de equilíbrio de M (spec): a receita BRUTA que paga os custos fixos —
+ * é o que o dono compara com o que vende. `contributionMarginPct` é sobre a
+ * receita líquida; em receita bruta a margem é (líquida − variáveis) / bruta,
+ * então `breakEvenRevenue = fixos × bruta / (líquida − variáveis)`. O dia em que
+ * é atingido compara a receita bruta acumulada. Sem margem positiva, nenhuma
+ * venda paga os fixos → null.
  */
 export function buildBreakEven (agg: MonthAggregate, lines: ResultLines, month: string, dailyRevenue: Map<string, number>): ResultBreakEven {
   const netCents = toCents(lines.netRevenue)
-  const contributionMarginPct = netCents > 0 ? (netCents - agg.variable) / netCents : null
-  const breakEvenCents = contributionMarginPct != null && contributionMarginPct > 0 ? Math.round(agg.fixed / contributionMarginPct) : null
+  const contributionCents = netCents - agg.variable
+  const contributionMarginPct = netCents > 0 ? contributionCents / netCents : null
+  const breakEvenCents = contributionMarginPct != null && contributionMarginPct > 0
+    ? Math.round(agg.fixed * agg.grossRevenue / contributionCents)
+    : null
 
   let reachedOnDay: number | null = null
-  if (breakEvenCents != null && agg.grossRevenue > 0) {
-    const toNet = netCents / agg.grossRevenue
+  if (breakEvenCents != null) {
     let accumulated = 0
     for (let d = 1; d <= daysInMonth(month); d++) {
       accumulated += toCents(dailyRevenue.get(`${month}-${String(d).padStart(2, '0')}`) ?? 0)
-      if (accumulated * toNet >= breakEvenCents) {
+      if (accumulated >= breakEvenCents) {
         reachedOnDay = d
         break
       }
