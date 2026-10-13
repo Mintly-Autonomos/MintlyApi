@@ -108,8 +108,12 @@ export function computeOverview (input: OverviewInput): OverviewReport {
   const { result, cashFlow, expenses, today } = input
   const month = result.referenceMonth
   const window = projectionWindow(month, today)
-  // Mês atual: receita projetada (linear) — senão o mês pela metade sempre "cai".
-  const revenueBase = window ? fromCents(project(toCents(result.current.grossRevenue), window)) : result.current.grossRevenue
+  // Mês atual: receita projetada — senão o mês pela metade sempre "cai". Vem de
+  // Custos, que extrapola só o que já aconteceu e soma o lançado para depois de
+  // hoje pelo valor cheio (mesma regra da despesa projetada).
+  const revenueBase = window
+    ? (expenses.projection?.revenue ?? fromCents(project(toCents(result.current.grossRevenue), window)))
+    : result.current.grossRevenue
 
   const runway = runwayDays(cashFlow.cashToday, cashFlow.safetyThreshold.avgDailyOutflow)
   const values: Record<HealthPillarKey, number | null> = {

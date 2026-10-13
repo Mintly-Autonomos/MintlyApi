@@ -72,6 +72,8 @@ interface ItemMeta {
 /** Um mês, em centavos, já filtrado pelo canal. */
 interface MonthBucket {
   revenue: number
+  /** Parte de `revenue` com data depois de hoje (fatia 8: base da receita projetada). */
+  revenueAfter: number
   deliveryRevenue: number
   /** Σ bruto das entradas em conta de plataforma — base do % da taxa (decisão A). */
   platformRevenue: number
@@ -83,7 +85,7 @@ interface MonthBucket {
   subs: Map<string, Map<string, number>>
 }
 
-const emptyBucket = (): MonthBucket => ({ revenue: 0, deliveryRevenue: 0, platformRevenue: 0, shared: 0, items: new Map(), itemsAfter: new Map(), subs: new Map() })
+const emptyBucket = (): MonthBucket => ({ revenue: 0, revenueAfter: 0, deliveryRevenue: 0, platformRevenue: 0, shared: 0, items: new Map(), itemsAfter: new Map(), subs: new Map() })
 
 /** Filtro da tela: só salão ou delivery — `shared` não é filtro (vai em `sharedExcluded`). */
 export function parseExpensesChannel (value: unknown): MovementChannel | null {
@@ -116,6 +118,7 @@ function bucketize (input: ExpensesInput) {
     if (r.direction === 'in') {
       if (!passes) continue
       b.revenue += toCents(r.gross)
+      b.revenueAfter += toCents(r.grossAfter ?? 0)
       if (channel === MovementChannel.Delivery) b.deliveryRevenue += toCents(r.gross)
       if (r.accountType === FinancialAccountType.Platform) b.platformRevenue += toCents(r.gross)
       // M6: a taxa é linha sintética, uma por conta de plataforma, no canal da entrada.
@@ -305,7 +308,9 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
     sharedExcluded: input.channel == null ? null : fromCents(cur.shared),
     history: months.map((m) => ({ month: m, total: fromCents(total(at(m))) })),
     anomalies,
-    projection: window ? { total: fromCents(projectWithScheduled(totalCur, sum(cur.itemsAfter.values()))), ...window } : null,
+    projection: window
+      ? { total: fromCents(projectWithScheduled(totalCur, sum(cur.itemsAfter.values()))), revenue: fromCents(projectWithScheduled(cur.revenue, cur.revenueAfter)), ...window }
+      : null,
     anomalyRule: ANOMALY_RULE,
   }
 }

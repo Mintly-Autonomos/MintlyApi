@@ -123,12 +123,23 @@ describe('computeOverview — bordas', () => {
     input.today = new Date('2026-07-10T15:00:00Z')
     ;(input.result.current as any).grossRevenue = 10_000
     ;(input.result as any).history = ['2026-04', '2026-05', '2026-06', '2026-07'].map((month, i) => ({ month, grossRevenue: [30_000, 30_000, 30_000, 10_000][i], netProfit: 0, netMargin: null }))
-    ;(input.expenses as any).projection = { total: 40_000, elapsedDays: 10, daysInMonth: 31 }
+    ;(input.expenses as any).projection = { total: 40_000, revenue: 31_000, elapsedDays: 10, daysInMonth: 31 }
     const r = computeOverview(input)
     const trend = r.health.pillars.find((pl) => pl.key === 'revenueTrend')!
     expect(trend.value).toBeCloseTo(31_000 / 30_000 - 1, 10)
     expect(trend.score).toBe(100)
     expect(r.revenueVsExpense.at(-1)).toEqual({ month: '2026-07', revenue: 31_000, expense: 40_000, projected: true })
+  })
+
+  it('mês atual: receita projetada vem de Custos (venda futura do mês não é multiplicada)', () => {
+    const input = overviewScenario()
+    input.today = new Date('2026-07-10T15:00:00Z')
+    ;(input.result.current as any).grossRevenue = 10_000
+    ;(input.result as any).history = ['2026-04', '2026-05', '2026-06', '2026-07'].map((month, i) => ({ month, grossRevenue: [30_000, 30_000, 30_000, 10_000][i], netProfit: 0, netMargin: null }))
+    ;(input.expenses as any).projection = { total: 40_000, revenue: 15_000, elapsedDays: 10, daysInMonth: 31 }
+    const r = computeOverview(input)
+    expect(r.health.pillars.find((pl) => pl.key === 'revenueTrend')!.value).toBeCloseTo(15_000 / 30_000 - 1, 10)
+    expect(r.revenueVsExpense.at(-1)).toEqual({ month: '2026-07', revenue: 15_000, expense: 40_000, projected: true })
   })
 
   it('mês atual no dia 1: projeta ×dias do mês, sem divisão por zero', () => {
