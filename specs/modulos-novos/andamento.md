@@ -13,7 +13,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 7 — Custos & Despesas, fatia B (subitens, anomalias, evolução)** — campos novos em `GET /reports/expenses`.
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência~~ ✅ (revisor + 2 correções + teste local) → **PR da lib #32 aberto, aguardando merge** → `npm i` da versão publicada → PR da API.
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência~~ ✅ (revisor + 2 correções + teste local) → ~~lib #32~~ ✅ (2.15.0-preview) → **PR da API aberto, aguardando merge**.
 - Spec: `specs/modulos-novos/20261013/custos-despesas-b.md`; plano: `specs/modulos-novos/20261013/plan-custos-despesas-b.md` (5 tarefas). Decidido: tudo no mesmo relatório; anomalia por subitem (categoria sem subitens avaliada inteira; taxa fora), só no mês consultado, ≥ 2 meses na média; projeção linear só no mês atual.
 - Branch: `feat/20261013/custos-despesas-b` (API, a partir de `staging`).
 
@@ -27,7 +27,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 4 | Resultado (DRE) | #29 ✅ mergeado (`2.12.0-preview`) | #42 ✅ mergeado | Concluída |
 | 5 | Subcategoria + `channel` (M3, M4) | #30 ✅ mergeado (`2.13.0-preview`) | #43 ✅ mergeado | Concluída |
 | 6 | Custos & Despesas — fatia A | #31 ✅ mergeado (`2.14.0-preview`) | #44 ✅ mergeado | Concluída |
-| 7 | Custos & Despesas — fatia B | #32 aberto | — | **Em review** — lib #32 aberto; API pronta na branch |
+| 7 | Custos & Despesas — fatia B | #32 ✅ mergeado (`2.15.0-preview`) | PR aberto | **Em review** — PR da API aberto |
 | 8 | Visão Geral | — | — | Na fila |
 | 9 | Receitas, Previsões | — | — | Bloqueado (domínio de vendas) |
 
@@ -35,7 +35,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 1. Rodar o backfill de staging abaixo (o #39 já foi mergeado).
 2. Rodar os comandos da fatia 3 abaixo (o #41 já foi mergeado).
-3. Fatia 7: merge da lib #32 → `npm i mintly-lib@<versão>` → PR da API. Nenhum comando novo no ambiente.
+3. Fatia 7: merge do PR da API. Nenhum comando novo no ambiente.
 
 ## Postar no Jira (quando o MCP do Atlassian voltar)
 
