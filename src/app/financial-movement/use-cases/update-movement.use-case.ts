@@ -5,7 +5,7 @@ import { RequestContext } from '../../../core/context/request-context'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { Resource } from '../../../core/types/resource'
-import { computeSnapshot, balanceImpact, defaultStatus, resolveDueDate, shouldRecomputeStatus, resolveSettledAt } from '../movement-rules'
+import { computeSnapshot, balanceImpact, defaultStatus, resolveDueDate, shouldRecomputeStatus, resolveSettledAt, resolveMovementSubcategory } from '../movement-rules'
 import { applyBalanceImpact } from '../movement-balance'
 import { movementToStorage, movementFromStorage } from '../financial-movement-repository'
 
@@ -22,6 +22,10 @@ export interface UpdateMovementInput {
   counterparty?: { name: string; kind: string; refId?: string }
   fiscalNote?: string
   description?: string
+  /** Fatia 5: `null` remove; ausente mantém (a menos que a categoria mude). */
+  subcategoryId?: string | null
+  /** Fatia 5: `null` remove (volta ao canal efetivo); ausente mantém. */
+  channel?: string | null
 }
 
 const num = (v: any): number => Number((v ?? 0).toString())
@@ -74,12 +78,28 @@ export class UpdateMovementUseCase {
 
         // Categoria nova (viva), se trocada.
         let categorySnap = mov.category
+        let categoryDoc: any = null
         if (changes.categoryId) {
           if (!ObjectId.isValid(changes.categoryId)) throw new NotFoundError(Resource.FinancialCategory, changes.categoryId)
           const cat = await categories.findOne({ _id: new ObjectId(changes.categoryId), restaurantId: ctx.restaurantId }, { session })
           if (!cat) throw new NotFoundError(Resource.FinancialCategory, changes.categoryId)
           categorySnap = { _id: String(cat._id), name: cat.name, type: cat.type }
+          categoryDoc = cat
         }
+
+        // Fatia 5: subcategoria segue a regra pura; o documento da categoria
+        // atual só é lido quando há subcategoria nova para validar.
+        const categoryChanged = changes.categoryId != null && changes.categoryId !== String(mov.category?._id)
+        if (!categoryDoc && changes.subcategoryId) {
+          categoryDoc = await categories.findOne({ _id: new ObjectId(String(mov.category._id)), restaurantId: ctx.restaurantId }, { session })
+        }
+        const subcategory = resolveMovementSubcategory({
+          category: categoryDoc ?? {},
+          current: mov.subcategory ?? undefined,
+          categoryChanged,
+          requested: changes.subcategoryId,
+        })
+        const channel = changes.channel !== undefined ? changes.channel : mov.channel
 
         const newGross = changes.grossValue ?? num(mov.grossValue)
         const newDate = changes.date ? new Date(changes.date) : new Date(mov.date)
@@ -207,6 +227,8 @@ export class UpdateMovementUseCase {
         if (fiscalNote) newDoc.fiscalNote = fiscalNote
         const description = changes.description ?? mov.description
         if (description) newDoc.description = description
+        if (subcategory) newDoc.subcategory = subcategory
+        if (channel != null) newDoc.channel = channel
 
         // Validação Sapphire do doc resultante (categoria×direção, limites...).
         financialMovementSchema.parse(newDoc)

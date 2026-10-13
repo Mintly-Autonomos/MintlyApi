@@ -1,5 +1,6 @@
-import { FinancialAccountType, MovementDirection, MovementStatus } from 'mintly-lib'
+import { FinancialAccountType, MovementDirection, MovementStatus, RecordStatus, Subcategory } from 'mintly-lib'
 import { computeFeeNet } from '../../core/money/money'
+import { ValidationError } from '../../core/errors/core/validation-error'
 
 /**
  * Regras puras de domínio da movimentação (MIN-49/50) — sem Mongo, testáveis
@@ -239,4 +240,27 @@ export function balanceImpact (params: {
   const bucket: BalanceBucket = status === MovementStatus.Settled ? 'available' : 'predicted'
 
   return { bucket, delta }
+}
+
+/**
+ * Subcategoria do documento resultante (fatia 5). Opcional sempre (S3). Sem
+ * pedido, segue a atual — a menos que a categoria tenha mudado (a subcategoria
+ * era da anterior). `null` remove. A mesma já gravada fica mesmo inativa
+ * (editar o título de um lançamento antigo não pode falhar); uma nova tem que
+ * existir na categoria e estar ativa.
+ */
+export function resolveMovementSubcategory (p: {
+  category: { subcategories?: Subcategory[] }
+  current?: { _id: string; name: string }
+  categoryChanged: boolean
+  requested: string | null | undefined
+}): { _id: string; name: string } | undefined {
+  if (p.requested === null) return undefined
+  if (p.requested === undefined) return p.categoryChanged ? undefined : p.current
+  if (!p.categoryChanged && p.current?._id === p.requested) return p.current
+
+  const sub = (p.category.subcategories ?? []).find((s) => s._id === p.requested)
+  if (!sub) throw new ValidationError('Subcategoria não pertence à categoria da movimentação.')
+  if (sub.status !== RecordStatus.Active) throw new ValidationError('Subcategoria inativa não aceita novos lançamentos.')
+  return { _id: sub._id, name: sub.name }
 }

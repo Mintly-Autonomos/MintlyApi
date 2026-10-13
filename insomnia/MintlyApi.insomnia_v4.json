@@ -25,7 +25,9 @@
         "platformAccountId": "6a41d81148d80aed7226e43b",
         "revenueCategoryId": "6a41d79a48d80aed7226e41e",
         "expenseCategoryId": "6a41d79a48d80aed7226e420",
-        "movementId": "6a41d81148d80aed7226e43d"
+        "movementId": "6a41d81148d80aed7226e43d",
+        "categoryId": "",
+        "subcategoryId": ""
       },
       "dataPropertyOrder": null
     },
@@ -648,6 +650,103 @@
         }
       ],
       "description": "Fatia 4. ?month=AAAA-MM opcional (padrão: mês corrente; futuro → 400)."
+    },
+    {
+      "_id": "fld_categories",
+      "_type": "request_group",
+      "parentId": "wrk_mintly",
+      "name": "Financial Categories - subcategorias",
+      "description": "Fatia 5. categoryId: qualquer categoria do restaurante, inclusive de sistema (ex.: CMV/Insumos)."
+    },
+    {
+      "_id": "req_sub_add",
+      "_type": "request",
+      "parentId": "fld_categories",
+      "name": "Criar subcategoria",
+      "method": "POST",
+      "url": "{{ _.base_url }}/financial-categories/{{ _.categoryId }}/subcategories",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"name\": \"Frango\"}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "201 com { _id, name, status }. Nome repetido (sem diferenciar maiúsculas, contando inativas) → 409."
+    },
+    {
+      "_id": "req_sub_rename",
+      "_type": "request",
+      "parentId": "fld_categories",
+      "name": "Renomear subcategoria",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/financial-categories/{{ _.categoryId }}/subcategories/{{ _.subcategoryId }}",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"name\": \"Frango inteiro\"}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "Lançamentos já gravados mantêm o nome antigo."
+    },
+    {
+      "_id": "req_sub_inactivate",
+      "_type": "request",
+      "parentId": "fld_categories",
+      "name": "Inativar subcategoria",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/financial-categories/{{ _.categoryId }}/subcategories/{{ _.subcategoryId }}/inactivate",
+      "headers": [
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ]
+    },
+    {
+      "_id": "req_sub_reactivate",
+      "_type": "request",
+      "parentId": "fld_categories",
+      "name": "Reativar subcategoria",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/financial-categories/{{ _.categoryId }}/subcategories/{{ _.subcategoryId }}/reactivate",
+      "headers": [
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ]
     }
   ]
 }

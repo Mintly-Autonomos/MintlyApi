@@ -5,7 +5,15 @@ import { ConflictError } from '../../core/errors/auth/conflict-error'
 import { NotFoundError } from '../../core/errors/core/not-found-error'
 import { Resource } from '../../core/types/resource'
 import { ensure as ensureFinancialCategoryIndexes } from '../../infrastructure/db/indices/financial-categories'
-import { FinancialCategory, CategoryType, RecordStatus } from 'mintly-lib'
+import { FinancialCategory, CategoryType, RecordStatus, Subcategory } from 'mintly-lib'
+
+/** Documento antigo (antes da fatia 5) não tem o campo: lê como lista vazia. */
+const withSubcategories = (doc: any) => ({ ...doc, subcategories: doc.subcategories ?? [] })
+
+/** Filtro "os nomes das subcategorias são exatamente estes, na mesma ordem". */
+const namesUnchanged = (names: string[]) => ({
+  $expr: { $eq: [{ $map: { input: { $ifNull: ['$subcategories', []] }, in: '$$this.name' } }, names] },
+})
 
 export class FinancialCategoryRepository extends MongodbCrudRepository<FinancialCategory & Document, string> {
   constructor () {
@@ -41,6 +49,8 @@ export class FinancialCategoryRepository extends MongodbCrudRepository<Financial
       isSystem: false,
       usage: 0,
       history: [],
+      // Fatia 5: a lista só muda pelo sub-recurso (/:id/subcategories).
+      subcategories: [],
     }
 
     try {
@@ -84,7 +94,13 @@ export class FinancialCategoryRepository extends MongodbCrudRepository<Financial
       .limit(sizeNum)
       .toArray()
 
-    return result as unknown as FinancialCategory[]
+    return result.map(withSubcategories) as unknown as FinancialCategory[]
+  }
+
+  /** Leitura de uma categoria: documento antigo ganha `subcategories: []` (fatia 5, sem backfill). */
+  async find (filter: any, ctx: RequestContext, options?: { session?: any }): Promise<FinancialCategory | null> {
+    const result = await super.find(filter, ctx, options)
+    return result ? withSubcategories(result) as FinancialCategory : null
   }
 
   /**
@@ -101,7 +117,7 @@ export class FinancialCategoryRepository extends MongodbCrudRepository<Financial
       .limit(limit)
       .toArray()
 
-    return result as unknown as FinancialCategory[]
+    return result.map(withSubcategories) as unknown as FinancialCategory[]
   }
 
   /**
@@ -123,6 +139,32 @@ export class FinancialCategoryRepository extends MongodbCrudRepository<Financial
       { returnDocument: 'after' },
     )
     if (!result) throw new NotFoundError(Resource.FinancialCategory, id)
-    return result as unknown as FinancialCategory
+    return withSubcategories(result) as unknown as FinancialCategory
+  }
+
+  /**
+   * Acrescenta uma subcategoria (fatia 5). O $push cria a lista em documento antigo.
+   * Concorrência otimista: só grava se os nomes ainda são os lidos (`expectedNames`)
+   * — a unicidade sem diferenciar maiúsculas é checada em memória, então duas
+   * gravações simultâneas não podem passar pelo mesmo estado. `false` = mudou.
+   */
+  async pushSubcategory (categoryId: string, sub: Subcategory, entry: Record<string, unknown>, expectedNames: string[], ctx: RequestContext): Promise<boolean> {
+    const result = await this.getCollection(ctx).updateOne(
+      { _id: new ObjectId(categoryId), restaurantId: ctx.restaurantId, ...namesUnchanged(expectedNames) } as any,
+      { $push: { subcategories: sub, history: entry } as any, $set: { 'audit.updatedAt': new Date(), 'audit.updatedBy': ctx.userId } as any },
+    )
+    return result.matchedCount === 1
+  }
+
+  /** Altera campos de UMA subcategoria (arrayFilters), registrando no history. Mesma guarda de concorrência. */
+  async setSubcategoryFields (categoryId: string, subId: string, fields: Partial<Pick<Subcategory, 'name' | 'status'>>, entry: Record<string, unknown>, expectedNames: string[], ctx: RequestContext): Promise<boolean> {
+    const $set: Record<string, unknown> = { 'audit.updatedAt': new Date(), 'audit.updatedBy': ctx.userId }
+    for (const [k, v] of Object.entries(fields)) $set[`subcategories.$[s].${k}`] = v
+    const result = await this.getCollection(ctx).updateOne(
+      { _id: new ObjectId(categoryId), restaurantId: ctx.restaurantId, ...namesUnchanged(expectedNames) } as any,
+      { $set, $push: { history: entry } as any } as any,
+      { arrayFilters: [{ 's._id': subId }] },
+    )
+    return result.matchedCount === 1
   }
 }

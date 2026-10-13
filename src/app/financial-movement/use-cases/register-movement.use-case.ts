@@ -6,7 +6,7 @@ import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { Resource } from '../../../core/types/resource'
 import { FinancialMovementRepository, movementToStorage, movementFromStorage } from '../financial-movement-repository'
-import { computeSnapshot, defaultStatus, balanceImpact, resolveDueDate, resolveSettledAt } from '../movement-rules'
+import { computeSnapshot, defaultStatus, balanceImpact, resolveDueDate, resolveSettledAt, resolveMovementSubcategory } from '../movement-rules'
 import { applyBalanceImpact } from '../movement-balance'
 
 export interface RegisterMovementInput {
@@ -25,6 +25,10 @@ export interface RegisterMovementInput {
   description?: string
   origin?: string
   confirmDuplicate?: boolean
+  /** Fatia 5: subcategoria da categoria escolhida (tem que estar ativa). */
+  subcategoryId?: string
+  /** Fatia 5: canal informado; ausente, os relatórios usam o canal efetivo. */
+  channel?: string
 }
 
 /**
@@ -123,6 +127,10 @@ export class RegisterMovementUseCase {
         if (input.counterparty) doc.counterparty = input.counterparty
         if (input.fiscalNote) doc.fiscalNote = input.fiscalNote
         if (input.description) doc.description = input.description
+        // Fatia 5: subcategoria (opcional, da categoria e ativa) e canal.
+        const subcategory = resolveMovementSubcategory({ category: category as any, categoryChanged: true, requested: input.subcategoryId })
+        if (subcategory) doc.subcategory = subcategory
+        if (input.channel != null) doc.channel = input.channel
 
         // 5. Validação Sapphire (categoria×direção, limites, grossValue>0...) -> 400.
         financialMovementSchema.parse(doc)
