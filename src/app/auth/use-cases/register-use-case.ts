@@ -131,6 +131,7 @@ export class RegisterUseCase {
           isSystem: true,
           usage: 0,
           history: [],
+          subcategories: [],
           audit,
         }))
         await db.collection('financial_categories').insertMany(categoryDocs, { session })

@@ -3,7 +3,7 @@ import { StatusCodes } from 'http-status-codes'
 import { CrudController } from '../../core/crud/crud-controller'
 import { ContextSource, buildRequestContext } from '../../core/context/build-request-context'
 import { ResponseBuilder, ResponseStructure } from '../../core/builders/response-builder/response-builder'
-import { financialCategoryInsertSchema, financialCategorySchema, financialCategoryUpdateSchema, FinancialCategory, MovementDirection } from 'mintly-lib'
+import { financialCategoryInsertSchema, financialCategorySchema, financialCategoryUpdateSchema, FinancialCategory, MovementDirection, RecordStatus } from 'mintly-lib'
 import { FinancialCategoryRepository } from './financial-category-repository'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
 import { NotFoundError } from '../../core/errors/core/not-found-error'
@@ -11,6 +11,7 @@ import { Resource } from '../../core/types/resource'
 import { escapeRegex } from '../../core/util/escape-regex'
 import { InactivateCategoryUseCase } from './use-cases/inactivate-category.use-case'
 import { SuggestCategoriesQuery } from './use-cases/suggest-categories.query'
+import { SubcategoryUseCase } from './use-cases/subcategory.use-case'
 import { resolveCategoryUpdate, resolveInsertDreGroup } from './category-rules'
 
 const s = new Sapphire()
@@ -21,6 +22,7 @@ export class FinancialCategoryController extends CrudController<FinancialCategor
     private readonly repo: FinancialCategoryRepository,
     private readonly inactivateUseCase: InactivateCategoryUseCase,
     private readonly suggestQuery: SuggestCategoriesQuery,
+    private readonly subcategories: SubcategoryUseCase = new SubcategoryUseCase(repo),
   ) {
     super(
       repo,
@@ -94,6 +96,25 @@ export class FinancialCategoryController extends CrudController<FinancialCategor
       .status(StatusCodes.OK)
       .payload({ message: 'Categoria reativada com sucesso.' })
       .send(reply)
+  }
+
+  /** Sub-recurso de subcategorias (fatia 5): 201 com a subcategoria criada. */
+  async addSubcategory (request: any, reply: any) {
+    const ctx = buildRequestContext(request)
+    const sub = await this.subcategories.add(request.params.id, request.body, ctx)
+    return new ResponseBuilder().status(StatusCodes.CREATED).payload(sub).send(reply)
+  }
+
+  async renameSubcategory (request: any, reply: any) {
+    const ctx = buildRequestContext(request)
+    const sub = await this.subcategories.rename(request.params.id, request.params.subId, request.body, ctx)
+    return new ResponseBuilder().status(StatusCodes.OK).payload(sub).send(reply)
+  }
+
+  async setSubcategoryStatus (request: any, reply: any, status: RecordStatus) {
+    const ctx = buildRequestContext(request)
+    const sub = await this.subcategories.setStatus(request.params.id, request.params.subId, status, ctx)
+    return new ResponseBuilder().status(StatusCodes.OK).payload(sub).send(reply)
   }
 
   async suggestions (request: any, reply: any) {
