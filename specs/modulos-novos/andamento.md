@@ -13,8 +13,8 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 4 — Resultado (DRE)** — `GET /reports/result`. Consome o `dreGroup` e o perfil tributário da fatia 3.
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ (aguardando revisão) → plano → TDD → conferência → PR.
-- Spec: `specs/modulos-novos/20261012/resultado-dre.md`. Decidido: taxa de plataforma dentro de despesas operacionais (como nas prints); insights `profitChanged`/`largestOpexItem`; misto como fixo (fecha N8).
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ (aguardando revisão) → TDD → conferência → PR.
+- Spec: `specs/modulos-novos/20261012/resultado-dre.md`; plano: `specs/modulos-novos/20261012/plan-resultado-dre.md` (7 tarefas). Decidido: taxa de plataforma dentro de despesas operacionais (como nas prints); insights `profitChanged`/`largestOpexItem`; misto como fixo (fecha N8).
 - Branch: `feat/20261012/resultado-dre` (API, a partir de `staging`).
 - Prints: `Mintly/prints modulos novos/` 095812 a 095939 (7 telas).
 
@@ -25,7 +25,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 ✅ mergeado | Concluída — falta o backfill em staging |
 | 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | #40 ✅ mergeado | Concluída |
 | 3 | `dreGroup` + `mixed` + alíquota (M2, M5) — MIN-23 | #28 ✅ mergeado (`2.11.0-preview`) | #41 ✅ mergeado | Concluída — faltam os comandos de staging |
-| 4 | Resultado (DRE) | — | — | **Em andamento** — spec escrita |
+| 4 | Resultado (DRE) | — | — | **Em andamento** — spec e plano escritos |
 | 5 | Subcategoria + `channel` (M3, M4) | — | — | Na fila |
 | 6 | Custos & Despesas — fatia A | — | — | Na fila |
 | 7 | Custos & Despesas — fatia B | — | — | Na fila |
