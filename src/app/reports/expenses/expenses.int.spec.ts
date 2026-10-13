@@ -235,7 +235,7 @@ describe('GET /reports/expenses (Integration)', () => {
     const elapsed = Number(day.slice(8, 10))
     const days = new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)), 0)).getUTCDate()
 
-    expect(r.projection).toEqual({ total: Math.round(31_000 * days / elapsed) / 100, elapsedDays: elapsed, daysInMonth: days })
+    expect(r.projection).toEqual({ total: Math.round(31_000 * days / elapsed) / 100, revenue: 0, elapsedDays: elapsed, daysInMonth: days })
     expect(r.items[0].projected).toBe(r.projection.total)
   })
 })

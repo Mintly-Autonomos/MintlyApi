@@ -238,7 +238,7 @@ describe('computeExpenses — fatia 7: subitens, anomalias, séries, projeção'
 
   it('mês atual (dia 10 de 31): projeção linear do total e de cada item', () => {
     const rr = scenario(null, { today: new Date('2026-08-10T15:00:00Z') })
-    expect(rr.projection).toEqual({ total: 100_130, elapsedDays: 10, daysInMonth: 31 })
+    expect(rr.projection).toEqual({ total: 100_130, revenue: 139_500, elapsedDays: 10, daysInMonth: 31 })
     expect(byName(rr, 'Exp · CMV').projected).toBe(43_400)
     expect(rr.total.current).toBe(32_300)
     expect(rr.anomalies).toHaveLength(2)
@@ -253,9 +253,16 @@ describe('computeExpenses — fatia 7: subitens, anomalias, séries, projeção'
     ]
     const rr = scenario(null, { rows, categories: new Map(), today: new Date('2026-08-10T15:00:00Z') })
     expect(rr.total.current).toBe(4_000)
-    expect(rr.projection).toEqual({ total: 6_100, elapsedDays: 10, daysInMonth: 31 })
+    expect(rr.projection).toEqual({ total: 6_100, revenue: 0, elapsedDays: 10, daysInMonth: 31 })
     expect(byName(rr, 'Aluguel').projected).toBe(3_000)
     expect(byName(rr, 'CMV').projected).toBe(3_100)
+  })
+
+  it('receita projetada (fatia 8): venda futura do mês entra pelo valor cheio', () => {
+    const base = { month: M, direction: 'in' as const, categoryId: 'ven', categoryName: 'Vendas', accountId: 'c', accountName: 'Caixa', accountType: 'cash', channel: null, subcategoryId: null, subcategoryName: null, fee: 0 }
+    const rows: ExpenseRow[] = [{ ...base, gross: 1_000 }, { ...base, gross: 10_000, grossAfter: 10_000 }]
+    const rr = scenario(null, { rows, categories: new Map(), today: new Date('2026-08-10T15:00:00Z') })
+    expect(rr.projection!.revenue).toBe(13_100)
   })
 
   it('taxa de entrada futura do mês também entra pelo valor cheio', () => {
