@@ -13,7 +13,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 8 — Visão Geral** — `GET /dashboard/overview`.
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência~~ ✅ (revisor + 2 correções + teste local) → **PR da lib #33 aberto, aguardando merge** → `npm i` da versão publicada → PR da API.
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência~~ ✅ (revisor + 2 correções + teste local) → ~~lib #33~~ ✅ (2.16.0-preview) → **PR da API aberto, aguardando merge**.
 - Spec: `specs/modulos-novos/20261013/visao-geral.md`; plano: `specs/modulos-novos/20261013/plan-visao-geral.md` (5 tarefas). Decidido: score com a proposta do design (palpite N5), pilares lineares, pilar sem dado sai; `?month=` com caixa sempre de hoje; catálogo fixo de insights (máx. 4); composição das consultas existentes.
 - Branch: `feat/20261013/visao-geral` (API, a partir de `staging`).
 
@@ -28,14 +28,14 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 5 | Subcategoria + `channel` (M3, M4) | #30 ✅ mergeado (`2.13.0-preview`) | #43 ✅ mergeado | Concluída |
 | 6 | Custos & Despesas — fatia A | #31 ✅ mergeado (`2.14.0-preview`) | #44 ✅ mergeado | Concluída |
 | 7 | Custos & Despesas — fatia B | #32 ✅ mergeado (`2.15.0-preview`) | #45 ✅ mergeado | Concluída |
-| 8 | Visão Geral | #33 aberto | — | **Em review** — lib #33 aberto; API pronta na branch |
+| 8 | Visão Geral | #33 ✅ mergeado (`2.16.0-preview`) | PR aberto | **Em review** — PR da API aberto |
 | 9 | Receitas, Previsões | — | — | Bloqueado (domínio de vendas) |
 
 ## Próximos passos
 
 1. Rodar o backfill de staging abaixo (o #39 já foi mergeado).
 2. Rodar os comandos da fatia 3 abaixo (o #41 já foi mergeado).
-3. Fatia 8: merge da lib #33 (aprovar o deploy no Actions) → `npm i mintly-lib@<versão>` → PR da API. Nenhum comando novo no ambiente.
+3. Fatia 8: merge do PR da API. Nenhum comando novo no ambiente. Com isso, a trilha implementável termina (fatia 9 segue bloqueada pelo domínio de vendas — N1).
 
 ## Postar no Jira (quando o MCP do Atlassian voltar)
 
