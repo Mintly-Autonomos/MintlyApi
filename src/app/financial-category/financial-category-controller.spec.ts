@@ -55,14 +55,28 @@ describe('FinancialCategoryController (MIN-71)', () => {
   })
 
   it('deve permitir editar campos de uma categoria custom (não-isSystem)', async () => {
-    mockRepository.find.mockResolvedValue({ _id: 'cat-1', isSystem: false })
-    const superUpdateSpy = vi.spyOn(CrudController.prototype, 'update')
-      .mockResolvedValue({ payload: { success: true } } as any)
+    // Fatia 3: o update passa pela regra do dreGroup e grava via updateCategory
+    // (não mais pelo update genérico), validando o documento resultante.
+    mockRepository.find.mockResolvedValue({
+      _id: 'cat-1',
+      restaurantId: 'rest-1',
+      name: 'Gás',
+      type: 'expense',
+      dreGroup: 'opex',
+      behavior: 'variable',
+      operationalNature: 'operational',
+      status: 'active',
+      isSystem: false,
+      usage: 0,
+      history: [],
+      audit: { createdAt: new Date(), updatedAt: new Date() },
+    })
+    mockRepository.updateCategory = vi.fn().mockResolvedValue({ _id: 'cat-1', name: 'Novo nome' })
 
-    await controller.update('cat-1', { name: 'Novo nome' }, { env: 'test' } as any)
+    const result = await controller.update('cat-1', { name: 'Novo nome' }, { env: 'test' } as any)
 
-    expect(superUpdateSpy).toHaveBeenCalled()
-    superUpdateSpy.mockRestore()
+    expect(mockRepository.updateCategory).toHaveBeenCalledWith('cat-1', { name: 'Novo nome', dreGroup: 'opex' }, false, expect.anything())
+    expect(result.payload).toEqual({ _id: 'cat-1', name: 'Novo nome' })
   })
 
   it('findAll transforma filtro de name em regex case-insensitive', async () => {
