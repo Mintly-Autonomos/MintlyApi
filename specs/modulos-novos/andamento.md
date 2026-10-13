@@ -13,10 +13,13 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 4 — Resultado (DRE)** — `GET /reports/result`. Consome o `dreGroup` e o perfil tributário da fatia 3.
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ (aguardando revisão) → TDD → conferência → PR.
-- Spec: `specs/modulos-novos/20261012/resultado-dre.md`; plano: `specs/modulos-novos/20261012/plan-resultado-dre.md` (7 tarefas). Decidido: taxa de plataforma dentro de despesas operacionais (como nas prints); insights `profitChanged`/`largestOpexItem`; misto como fixo (fecha N8).
-- Branch: `feat/20261012/resultado-dre` (API, a partir de `staging`).
-- Prints: `Mintly/prints modulos novos/` 095812 a 095939 (7 telas).
+- Etapa: ~~perguntas~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~revisão final~~ ✅ → ~~teste local~~ ✅ →
+  **PR da lib aberto (MintlyLib#29)**. Falta: merge do #29 → `npm i` da versão publicada → PR da API.
+- Spec: `specs/modulos-novos/20261012/resultado-dre.md`; plano: `specs/modulos-novos/20261012/plan-resultado-dre.md`.
+- Branch: `feat/20261012/resultado-dre` (lib e API).
+- Validação: suíte 798/798 (cobertura 98,5 / 97,8 / 99,0 / 98,9); `result-metrics.ts` com 100%; E2E contra o
+  Atlas 6/6; seed `SEED_SCENARIO=result` e backend local dirigidos por HTTP.
+- A revisão final corrigiu a spec: o ponto de equilíbrio é **receita bruta** (antes saía em receita líquida).
 
 ## Fatias
 
@@ -25,7 +28,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 ✅ mergeado | Concluída — falta o backfill em staging |
 | 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | #40 ✅ mergeado | Concluída |
 | 3 | `dreGroup` + `mixed` + alíquota (M2, M5) — MIN-23 | #28 ✅ mergeado (`2.11.0-preview`) | #41 ✅ mergeado | Concluída — faltam os comandos de staging |
-| 4 | Resultado (DRE) | — | — | **Em andamento** — spec e plano escritos |
+| 4 | Resultado (DRE) | #29 aberto | branch pronta, PR após publicar a lib | **Em andamento** — implementada e revisada |
 | 5 | Subcategoria + `channel` (M3, M4) | — | — | Na fila |
 | 6 | Custos & Despesas — fatia A | — | — | Na fila |
 | 7 | Custos & Despesas — fatia B | — | — | Na fila |
@@ -36,7 +39,8 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 1. Rodar o backfill de staging abaixo (o #39 já foi mergeado).
 2. Rodar os comandos da fatia 3 abaixo (o #41 já foi mergeado).
-3. Fatia 4: perguntas, spec, plano, implementação.
+3. Merge do MintlyLib#29 → `npm i` na API → PR da API da fatia 4.
+4. Fatia 5: subcategoria + `channel` (M3, M4).
 
 ## Postar no Jira (quando o MCP do Atlassian voltar)
 
@@ -52,6 +56,7 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
 - [ ] **MIN-23**: comentário dizendo que a fatia 3 implementa o cálculo (sem `daily_sales`: RBT12 de
       `financial_movements`), com a spec `specs/modulos-novos/20261012/classificacao-contabil.md`.
 - [ ] **Fatia 3**: história/subtarefas para lib e API (ainda não existem no Jira).
+- [ ] **Fatia 4 (Resultado/DRE)**: épico/história e subtarefas (ainda não existem no Jira) + spec `20261012/resultado-dre.md`.
 
 ## Em aberto (não bloqueia a fatia atual)
 
@@ -66,6 +71,14 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
   lidas como meia-noite UTC — 21h do dia anterior em São Paulo. A fatia 2 corrigiu isso só para o
   `settledAt` do PATCH de status; no POST/PATCH de movimentação é comportamento das fatias
   anteriores. Conferir como o MintlyWeb envia essas datas antes de mexer.
+
+### Pendências da fatia 4
+
+- **Histórico de regime tributário:** o regime atual vale para os 6 meses do histórico do DRE.
+- Menores da revisão: o campo `tax` do mês pode contradizer a linha de imposto (MEI mostra o DAS
+  vigente num mês anterior à primeira movimentação, em que o imposto é 0); a consulta de categorias
+  não projeta `type`; saída sem categoria vira item de nome vazio; 6 consultas ao `tax_settings` no
+  MEI; com custo fixo zero, `reachedOnDay` é 1 mesmo se a primeira venda for depois.
 
 ### Pendências da fatia 3
 

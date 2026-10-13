@@ -151,7 +151,7 @@ mão, o valor conta duas vezes: uma vez no `feeValue` e outra na categoria de de
 
 ## ~~N8. Despesa mista no ponto de equilíbrio~~ ✅ DECIDIDO (fatia 4)
 
-**Status:** aberto, com palpite em produção.
+**Status:** decidido em 12/10/2026 — misto conta como fixo.
 
 **O quê.** `behavior` ganha o valor `mixed` (M2 do design), porque as telas mostram "Misto" —
 Utilidades, por exemplo, tem parte fixa e parte que varia com o movimento. Mas o ponto de
@@ -161,8 +161,10 @@ equilíbrio precisa de uma divisão binária entre fixo e variável.
 mais alto, o dono não se ilude. A alternativa seria o dono informar a proporção fixa de cada
 categoria mista.
 
+**Decisão (12/10/2026, fatia 4):** misto conta como **fixo** no ponto de equilíbrio (leitura
+conservadora). Constante `MIXED_BEHAVIOR_AS` em `result-metrics.ts`; spec
+`specs/modulos-novos/20261012/resultado-dre.md` (R3).
 
-**Decisão (12/10/2026, fatia 4):** misto conta como **fixo** no ponto de equilíbrio (leitura conservadora). Constante `MIXED_BEHAVIOR_AS` em `result-metrics.ts`; spec `specs/modulos-novos/20261012/resultado-dre.md` (R3).
 ---
 
 ## N9. Adaptação do MintlyWeb ao contrato com número cru
