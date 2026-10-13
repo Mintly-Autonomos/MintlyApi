@@ -67,3 +67,24 @@ export function startOfLocalDay (day: string): Date {
   const [y, m, d] = parts(day)
   return new Date(Date.UTC(y, m - 1, d) - offsetMinutes(day) * 60 * 1000)
 }
+
+/** Mês civil local (`AAAA-MM`) de um instante — o mês da competência. */
+export function toLocalMonth (instant: Date): string {
+  return toLocalDay(instant).slice(0, 7)
+}
+
+export function addMonths (month: string, n: number): string {
+  const [y, m] = month.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7)
+}
+
+export function diffMonths (from: string, to: string): number {
+  const [fy, fm] = from.split('-').map(Number)
+  const [ty, tm] = to.split('-').map(Number)
+  return (ty * 12 + tm) - (fy * 12 + fm)
+}
+
+/** Primeiro instante do mês local — limite de filtro no Mongo. */
+export function startOfLocalMonth (month: string): Date {
+  return startOfLocalDay(`${month}-01`)
+}
