@@ -5,17 +5,17 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 `specs/modulos-novos/20260929/design.md`, Parte 5; as decisões de negócio em aberto, em
 `specs/modulos-novos/pendencias-negocio.md`.
 
-Última atualização: **12/10/2026**.
+Última atualização: **13/10/2026**.
 
 ---
 
 ## Passo atual
 
-**Fatia 5 — Subcategoria + `channel` (M3, M4)** — fundação das fatias 6 e 7 (Custos & Despesas).
+**Fatia 6 — Custos & Despesas, fatia A (nível de categoria)** — `GET /reports/expenses`.
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência~~ ✅ (revisor + teste local) → ~~lib #30~~ ✅ (2.13.0-preview) → **PR da API #43 aberto (checks verdes), aguardando merge**.
-- Spec: `specs/modulos-novos/20261013/subcategoria-canal.md`; plano: `specs/modulos-novos/20261013/plan-subcategoria-canal.md` (6 tarefas). Decidido: subcategoria em qualquer categoria (inclusive de sistema), opcional no lançamento; canal efetivo resolvido na leitura.
-- Branch: `feat/20261013/subcategoria-canal` (API, a partir de `staging`).
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ (aguardando revisão) → plano → TDD → conferência → PR.
+- Spec: `specs/modulos-novos/20261013/custos-despesas.md`. Decidido: só mês; todas as saídas no total (imposto incluso); filtro de canal pelo canal efetivo com `sharedExcluded`; uma linha de taxa por conta de plataforma.
+- Branch: `feat/20261013/custos-despesas` (API, a partir de `staging`).
 
 ## Fatias
 
@@ -25,8 +25,8 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | #40 ✅ mergeado | Concluída |
 | 3 | `dreGroup` + `mixed` + alíquota (M2, M5) — MIN-23 | #28 ✅ mergeado (`2.11.0-preview`) | #41 ✅ mergeado | Concluída — faltam os comandos de staging |
 | 4 | Resultado (DRE) | #29 ✅ mergeado (`2.12.0-preview`) | #42 ✅ mergeado | Concluída |
-| 5 | Subcategoria + `channel` (M3, M4) | #30 ✅ mergeado (`2.13.0-preview`) | #43 aberto (checks verdes) | **Em review** — aguardando merge da API |
-| 6 | Custos & Despesas — fatia A | — | — | Na fila |
+| 5 | Subcategoria + `channel` (M3, M4) | #30 ✅ mergeado (`2.13.0-preview`) | #43 ✅ mergeado | Concluída |
+| 6 | Custos & Despesas — fatia A | — | — | **Em andamento** — spec escrita |
 | 7 | Custos & Despesas — fatia B | — | — | Na fila |
 | 8 | Visão Geral | — | — | Na fila |
 | 9 | Receitas, Previsões | — | — | Bloqueado (domínio de vendas) |
@@ -35,7 +35,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 1. Rodar o backfill de staging abaixo (o #39 já foi mergeado).
 2. Rodar os comandos da fatia 3 abaixo (o #41 já foi mergeado).
-3. Fatia 5: merge do PR da API. Nenhum comando novo no ambiente (categorias antigas são lidas com `subcategories: []`).
+3. Fatia 6: spec, plano, implementação.
 
 ## Postar no Jira (quando o MCP do Atlassian voltar)
 
