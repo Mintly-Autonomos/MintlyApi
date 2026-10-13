@@ -13,7 +13,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 7 — Custos & Despesas, fatia B (subitens, anomalias, evolução)** — campos novos em `GET /reports/expenses`.
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência~~ ✅ (revisor + 2 correções + teste local) → ~~lib #32~~ ✅ (2.15.0-preview) → **PR da API aberto, aguardando merge**.
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência~~ ✅ (revisor + 2 correções + teste local) → ~~lib #32~~ ✅ (2.15.0-preview) → **PR da API #45 aberto, aguardando merge**.
 - Spec: `specs/modulos-novos/20261013/custos-despesas-b.md`; plano: `specs/modulos-novos/20261013/plan-custos-despesas-b.md` (5 tarefas). Decidido: tudo no mesmo relatório; anomalia por subitem (categoria sem subitens avaliada inteira; taxa fora), só no mês consultado, ≥ 2 meses na média; projeção linear só no mês atual.
 - Branch: `feat/20261013/custos-despesas-b` (API, a partir de `staging`).
 
@@ -27,7 +27,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 4 | Resultado (DRE) | #29 ✅ mergeado (`2.12.0-preview`) | #42 ✅ mergeado | Concluída |
 | 5 | Subcategoria + `channel` (M3, M4) | #30 ✅ mergeado (`2.13.0-preview`) | #43 ✅ mergeado | Concluída |
 | 6 | Custos & Despesas — fatia A | #31 ✅ mergeado (`2.14.0-preview`) | #44 ✅ mergeado | Concluída |
-| 7 | Custos & Despesas — fatia B | #32 ✅ mergeado (`2.15.0-preview`) | PR aberto | **Em review** — PR da API aberto |
+| 7 | Custos & Despesas — fatia B | #32 ✅ mergeado (`2.15.0-preview`) | #45 aberto | **Em review** — PR da API aberto |
 | 8 | Visão Geral | — | — | Na fila |
 | 9 | Receitas, Previsões | — | — | Bloqueado (domínio de vendas) |
 
@@ -52,7 +52,7 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
       `financial_movements`), com a spec `specs/modulos-novos/20261012/classificacao-contabil.md`.
 - [ ] **Fatia 3**: história/subtarefas para lib e API (ainda não existem no Jira).
 - [ ] **Fatia 4 (Resultado/DRE)**: épico/história e subtarefas (ainda não existem no Jira) + spec `20261012/resultado-dre.md`.
-- [ ] **Fatia 7 (Custos & Despesas, fatia B)**: história/subtarefas (lib #32, API) + spec `20261013/custos-despesas-b.md`; N4 (limiares) segue aberto.
+- [ ] **Fatia 7 (Custos & Despesas, fatia B)**: história/subtarefas (lib #32, API #45) + spec `20261013/custos-despesas-b.md`; N4 (limiares) segue aberto.
 - [ ] **Fatia 6 (Custos & Despesas, fatia A)**: história/subtarefas (lib #31, API #44) + spec `20261013/custos-despesas.md`.
 - [ ] **Fatia 5 (Subcategoria + canal)**: história/subtarefas (lib #30, API #43) + spec `20261013/subcategoria-canal.md`; mínimos adiados da revisão (NFC no nome, max(60) antes do trim, `null` no `updateMovementSchema` da lib).
 
