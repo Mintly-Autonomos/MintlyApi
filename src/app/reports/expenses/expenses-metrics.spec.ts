@@ -264,6 +264,31 @@ describe('computeExpenses — fatia 7: subitens, anomalias, séries, projeção'
     expect(rr.projection!.total).toBe(200)
   })
 
+  describe('adoção gradual de subcategoria (decisão A da revisão)', () => {
+    const row = (m: number, sub: string | null, gross: number): ExpenseRow => ({ month: addMonths(M, m), direction: 'out', categoryId: 'cmv', categoryName: 'CMV', accountId: 'c', accountName: 'Caixa', accountType: 'cash', channel: null, subcategoryId: sub, subcategoryName: sub, gross, fee: 0 })
+
+    it('subitem que começou em M−1 (0, 0, 500 → 1.000): só 1 mês dele na base, não dispara', () => {
+      const rows = [-3, -2, -1, 0].map((m) => row(m, null, 2_000)).concat([row(-1, 'Frango', 500), row(0, 'Frango', 1_000)])
+      const rr = scenario(null, { rows, categories: new Map() })
+      expect(rr.anomalies).toEqual([])
+      expect(byName(rr, 'CMV').subitems.find((s) => s.name === 'Frango')).toMatchObject({ average3: 166.67, anomaly: false })
+    })
+
+    it('subitem que começou em M−2 (400, 400 → 1.000): média própria de 400 dispara; o subitem mantém a média da fatia 6', () => {
+      const rows = [-3, -2, -1, 0].map((m) => row(m, null, 2_000)).concat([row(-2, 'Frango', 400), row(-1, 'Frango', 400), row(0, 'Frango', 1_000)])
+      const rr = scenario(null, { rows, categories: new Map() })
+      expect(rr.anomalies).toMatchObject([{ name: 'Frango', amount: 1_000, average3: 400, excess: 600, pctAbove: 1.5 }])
+      expect(byName(rr, 'CMV').subitems.find((s) => s.name === 'Frango')).toMatchObject({ average3: 266.67, anomaly: true })
+    })
+
+    it('categoria inteira nova (começou em M−1) também não dispara', () => {
+      const rows: ExpenseRow[] = [row(-3, null, 100), row(-1, null, 500), row(0, null, 1_000)].map((r) => ({ ...r, categoryId: 'gas', categoryName: 'Gás' }))
+      const rows2: ExpenseRow[] = [row(-1, null, 500), row(0, null, 1_000)].map((r) => ({ ...r, categoryId: 'nova', categoryName: 'Nova' }))
+      const rr = scenario(null, { rows: [...rows, ...rows2], categories: new Map() })
+      expect(rr.anomalies.map((x) => x.name)).toEqual(['Gás'])
+    })
+  })
+
   it('filtro Delivery: CMV só com Embalagens (média 0), nenhuma anomalia', () => {
     const d = scenario(MovementChannel.Delivery)
     expect(byName(d, 'Exp · CMV').subitems.map((s) => [s.name, s.amount, s.anomaly])).toEqual([['Embalagens', 2_000, false]])

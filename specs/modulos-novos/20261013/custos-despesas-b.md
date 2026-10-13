@@ -102,7 +102,7 @@ Puras em `src/app/reports/expenses/expenses-detail.ts`; somas em centavos.
 | Valores do subitem | Mesmas regras da fatia 6 (média desde o primeiro lançamento; base 0 → variação `null`) |
 | Subitens listados | Com valor no mês, no anterior ou na média; ordem: valor desc., nome; "Sem subitem" sempre por último. Σ subitens = valor da categoria |
 | Unidade avaliada | Com subitens: cada subitem (inclusive "Sem subitem"). Sem subitens: a categoria inteira. Taxa de plataforma: nunca |
-| Anomalia | ≥ 2 meses elegíveis entre M−1..M−3 **e** média > 0 **e** `valor − média ≥ R$ 100` **e** `(valor − média) / média ≥ 0,5`. Valor = real do mês consultado |
+| Anomalia | ≥ 2 meses elegíveis entre M−1..M−3 — contados desde o primeiro lançamento do restaurante **e** desde o primeiro mês com gasto **daquela unidade** na janela (decisão A da revisão: adoção gradual de subcategoria não gera alerta falso); média própria da unidade nesses meses, que é a `average3` da anomalia — **e** média > 0 **e** `valor − média ≥ R$ 100` **e** `(valor − média) / média ≥ 0,5`. Valor = real do mês consultado |
 | `hasAnomaly` | A categoria inteira ou algum subitem dela é anômalo |
 | `anomalies` | Todas as unidades anômalas; ordem: `excess` desc., depois `name` |
 | `history` do item | 6 meses (mesma janela e canal). Σ itens = `history` total nos meses M−3..M; em M−4/M−5 pode faltar a categoria que só teve gasto lá (ela não entra na lista — regra de listagem da fatia 6) |

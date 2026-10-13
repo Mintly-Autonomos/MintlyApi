@@ -191,6 +191,16 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   const projectWithScheduled = (cents: number, afterCents: number) => project(cents - afterCents, window!) + afterCents
   const measure = (get: (b: MonthBucket) => number) => ({ amount: get(cur), previous: get(prev), avg: average(get) })
   const anomalies: ExpenseAnomaly[] = []
+  // Base da anomalia (decisão A da revisão): os meses elegíveis contam a partir do
+  // primeiro mês em que AQUELA unidade (subitem ou categoria) teve gasto na janela —
+  // quem começou a marcar "Frango" há 1 mês não tem histórico de zeros para comparar.
+  // A média exibida no item/subitem segue a regra da fatia 6.
+  const unitBase = (get: (b: MonthBucket) => number): { avg: number | null; months: number } => {
+    const firstSpend = months.find((m) => get(at(m)) > 0)
+    const unitMonths = firstSpend == null ? [] : eligible.filter((m) => m >= firstSpend)
+    if (unitMonths.length === 0) return { avg: null, months: 0 }
+    return { avg: Math.round(sum(unitMonths.map((m) => get(at(m)))) / unitMonths.length), months: unitMonths.length }
+  }
   const anomalyOf = (meta: ItemMeta, sub: SubMeta | null, amount: number, avg: number): ExpenseAnomaly => ({
     itemKey: meta.key,
     categoryId: meta.categoryId,
@@ -215,12 +225,14 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
     let hasAnomaly = false
     if (meta.kind === 'category' && withSubcategory.has(meta.key)) {
       for (const sub of subMetas.get(meta.key)!.values()) {
-        const s = measure((b) => b.subs.get(meta.key)?.get(sub.key) ?? 0)
+        const getSub = (b: MonthBucket) => b.subs.get(meta.key)?.get(sub.key) ?? 0
+        const s = measure(getSub)
         if (s.amount === 0 && s.previous === 0 && !s.avg) continue
-        const anomaly = isAnomaly(s.amount, s.avg, eligible.length)
+        const base = unitBase(getSub)
+        const anomaly = isAnomaly(s.amount, base.avg, base.months)
         if (anomaly) {
           hasAnomaly = true
-          anomalies.push(anomalyOf(meta, sub, s.amount, s.avg!))
+          anomalies.push(anomalyOf(meta, sub, s.amount, base.avg!))
         }
         subitems.push({
           key: sub.key,
@@ -235,9 +247,12 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
         })
       }
       subitems = sortSubitems(subitems)
-    } else if (meta.kind === 'category' && isAnomaly(amount, avg, eligible.length)) {
-      hasAnomaly = true
-      anomalies.push(anomalyOf(meta, null, amount, avg!))
+    } else if (meta.kind === 'category') {
+      const base = unitBase(get)
+      if (isAnomaly(amount, base.avg, base.months)) {
+        hasAnomaly = true
+        anomalies.push(anomalyOf(meta, null, amount, base.avg!))
+      }
     }
 
     items.push({
