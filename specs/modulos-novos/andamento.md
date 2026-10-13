@@ -13,8 +13,8 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 8 — Visão Geral** — `GET /dashboard/overview`.
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ (aguardando revisão) → plano → TDD → conferência → PR.
-- Spec: `specs/modulos-novos/20261013/visao-geral.md`. Decidido: score com a proposta do design (palpite N5), pilares lineares, pilar sem dado sai; `?month=` com caixa sempre de hoje; catálogo fixo de insights (máx. 4); composição das consultas existentes.
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ (aguardando revisão) → TDD → conferência → PR.
+- Spec: `specs/modulos-novos/20261013/visao-geral.md`; plano: `specs/modulos-novos/20261013/plan-visao-geral.md` (5 tarefas). Decidido: score com a proposta do design (palpite N5), pilares lineares, pilar sem dado sai; `?month=` com caixa sempre de hoje; catálogo fixo de insights (máx. 4); composição das consultas existentes.
 - Branch: `feat/20261013/visao-geral` (API, a partir de `staging`).
 
 ## Fatias
@@ -28,7 +28,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 5 | Subcategoria + `channel` (M3, M4) | #30 ✅ mergeado (`2.13.0-preview`) | #43 ✅ mergeado | Concluída |
 | 6 | Custos & Despesas — fatia A | #31 ✅ mergeado (`2.14.0-preview`) | #44 ✅ mergeado | Concluída |
 | 7 | Custos & Despesas — fatia B | #32 ✅ mergeado (`2.15.0-preview`) | #45 ✅ mergeado | Concluída |
-| 8 | Visão Geral | — | — | **Em andamento** — spec escrita |
+| 8 | Visão Geral | — | — | **Em andamento** — spec e plano escritos |
 | 9 | Receitas, Previsões | — | — | Bloqueado (domínio de vendas) |
 
 ## Próximos passos
