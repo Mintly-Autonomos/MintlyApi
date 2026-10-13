@@ -13,8 +13,8 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 6 — Custos & Despesas, fatia A (nível de categoria)** — `GET /reports/expenses`.
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ (aguardando revisão) → plano → TDD → conferência → PR.
-- Spec: `specs/modulos-novos/20261013/custos-despesas.md`. Decidido: só mês; todas as saídas no total (imposto incluso); filtro de canal pelo canal efetivo com `sharedExcluded`; uma linha de taxa por conta de plataforma.
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ (aguardando revisão) → TDD → conferência → PR.
+- Spec: `specs/modulos-novos/20261013/custos-despesas.md`; plano: `specs/modulos-novos/20261013/plan-custos-despesas.md` (5 tarefas). Decidido: só mês; todas as saídas no total (imposto incluso); filtro de canal pelo canal efetivo com `sharedExcluded`; uma linha de taxa por conta de plataforma.
 - Branch: `feat/20261013/custos-despesas` (API, a partir de `staging`).
 
 ## Fatias
@@ -26,7 +26,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 3 | `dreGroup` + `mixed` + alíquota (M2, M5) — MIN-23 | #28 ✅ mergeado (`2.11.0-preview`) | #41 ✅ mergeado | Concluída — faltam os comandos de staging |
 | 4 | Resultado (DRE) | #29 ✅ mergeado (`2.12.0-preview`) | #42 ✅ mergeado | Concluída |
 | 5 | Subcategoria + `channel` (M3, M4) | #30 ✅ mergeado (`2.13.0-preview`) | #43 ✅ mergeado | Concluída |
-| 6 | Custos & Despesas — fatia A | — | — | **Em andamento** — spec escrita |
+| 6 | Custos & Despesas — fatia A | — | — | **Em andamento** — spec e plano escritos |
 | 7 | Custos & Despesas — fatia B | — | — | Na fila |
 | 8 | Visão Geral | — | — | Na fila |
 | 9 | Receitas, Previsões | — | — | Bloqueado (domínio de vendas) |
