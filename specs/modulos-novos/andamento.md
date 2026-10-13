@@ -13,7 +13,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 6 — Custos & Despesas, fatia A (nível de categoria)** — `GET /reports/expenses`.
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ (aguardando revisão) → TDD → conferência → PR.
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência~~ ✅ (revisor sem achados críticos/importantes + teste local) → **PR da lib #31 aberto, aguardando merge** → `npm i` da versão publicada → PR da API.
 - Spec: `specs/modulos-novos/20261013/custos-despesas.md`; plano: `specs/modulos-novos/20261013/plan-custos-despesas.md` (5 tarefas). Decidido: só mês; todas as saídas no total (imposto incluso); filtro de canal pelo canal efetivo com `sharedExcluded`; uma linha de taxa por conta de plataforma.
 - Branch: `feat/20261013/custos-despesas` (API, a partir de `staging`).
 
@@ -26,7 +26,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 3 | `dreGroup` + `mixed` + alíquota (M2, M5) — MIN-23 | #28 ✅ mergeado (`2.11.0-preview`) | #41 ✅ mergeado | Concluída — faltam os comandos de staging |
 | 4 | Resultado (DRE) | #29 ✅ mergeado (`2.12.0-preview`) | #42 ✅ mergeado | Concluída |
 | 5 | Subcategoria + `channel` (M3, M4) | #30 ✅ mergeado (`2.13.0-preview`) | #43 ✅ mergeado | Concluída |
-| 6 | Custos & Despesas — fatia A | — | — | **Em andamento** — spec e plano escritos |
+| 6 | Custos & Despesas — fatia A | — | — | **Em review** — lib #31 aberto; API pronta na branch |
 | 7 | Custos & Despesas — fatia B | — | — | Na fila |
 | 8 | Visão Geral | — | — | Na fila |
 | 9 | Receitas, Previsões | — | — | Bloqueado (domínio de vendas) |
@@ -35,7 +35,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 1. Rodar o backfill de staging abaixo (o #39 já foi mergeado).
 2. Rodar os comandos da fatia 3 abaixo (o #41 já foi mergeado).
-3. Fatia 6: spec, plano, implementação.
+3. Fatia 6: merge da lib #31 → `npm i mintly-lib@<versão>` → PR da API. Nenhum comando novo no ambiente.
 
 ## Postar no Jira (quando o MCP do Atlassian voltar)
 
@@ -52,6 +52,7 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
       `financial_movements`), com a spec `specs/modulos-novos/20261012/classificacao-contabil.md`.
 - [ ] **Fatia 3**: história/subtarefas para lib e API (ainda não existem no Jira).
 - [ ] **Fatia 4 (Resultado/DRE)**: épico/história e subtarefas (ainda não existem no Jira) + spec `20261012/resultado-dre.md`.
+- [ ] **Fatia 6 (Custos & Despesas, fatia A)**: história/subtarefas (lib #31, API) + spec `20261013/custos-despesas.md`; pendência do % da taxa sobre o delivery.
 - [ ] **Fatia 5 (Subcategoria + canal)**: história/subtarefas (lib #30, API #43) + spec `20261013/subcategoria-canal.md`; mínimos adiados da revisão (NFC no nome, max(60) antes do trim, `null` no `updateMovementSchema` da lib).
 
 ## Em aberto (não bloqueia a fatia atual)
@@ -67,6 +68,12 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
   lidas como meia-noite UTC — 21h do dia anterior em São Paulo. A fatia 2 corrigiu isso só para o
   `settledAt` do PATCH de status; no POST/PATCH de movimentação é comportamento das fatias
   anteriores. Conferir como o MintlyWeb envia essas datas antes de mexer.
+
+### Pendências da fatia 6
+
+- **% da taxa sobre o delivery em "Geral":** se o dono marca uma entrada de plataforma (iFood) como `dineIn`, a taxa dela conta no card, mas a receita não entra no `deliveryRevenue` — o % fica alto. Decidir antes do card do front: denominador = bruto das contas de plataforma, ou manter a regra do canal efetivo.
+- **Nome de categoria/conta apagada:** vem de um lançamento qualquer da janela de 6 meses; preferir o do mês mais recente (cosmético).
+- Arredondamento: `total.average3` pode diferir de Σ `items[].average3` por centavos; item cuja única atividade na média é 1 centavo some da lista.
 
 ### Pendências da fatia 4
 
