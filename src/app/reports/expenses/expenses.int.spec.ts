@@ -4,7 +4,7 @@ import { FastifyInstance } from 'fastify'
 import { mongoConnection } from '../../../infrastructure/db/mongodb'
 import { buildServer } from '../../../infrastructure/server/build-server'
 import { toDecimal128 } from '../../../core/money/money'
-import { addMonths, startOfLocalMonth, toLocalMonth } from '../shared/period'
+import { addMonths, startOfLocalMonth, toLocalDay, toLocalMonth } from '../shared/period'
 import { expensesScenario } from './expenses-scenario'
 
 let envCounter = 0
@@ -146,5 +146,62 @@ describe('GET /reports/expenses (Integration)', () => {
     const { auth } = await signup(freshEnv())
     expect((await get(auth, '')).json().payload.referenceMonth).toBe(toLocalMonth(new Date()))
     expect((await app.inject({ method: 'GET', url: '/reports/expenses', headers: { env: freshEnv() } })).statusCode).toBe(401)
+  })
+
+  it('fatia 7: subitens do CMV e anomalias por HTTP', async () => {
+    const env = freshEnv()
+    const { auth, restaurantId } = await signup(env)
+    await plant(env, restaurantId)
+
+    const r = (await get(auth)).json().payload
+    const cmv = r.items.find((i: any) => i.name === 'Exp · CMV')
+
+    expect(cmv.subitems.map((s: any) => [s.name, s.amount])).toEqual([['Frango', 6_000], ['Embalagens', 4_400], ['Óleo', 1_500], ['Sem subitem', 2_100]])
+    expect(r.anomalies.map((a: any) => [a.name, a.excess])).toEqual([['Embalagens', 2_900], ['Exp · Marketing', 300]])
+    expect(r.items.filter((i: any) => i.hasAnomaly).map((i: any) => i.name)).toEqual(['Exp · CMV', 'Exp · Marketing'])
+    expect(r.projection).toBeNull()
+  })
+
+  it('subcategoria renomeada mostra o nome atual; lançamento sem o campo vai para "Sem subitem"', async () => {
+    const env = freshEnv()
+    const { auth, restaurantId } = await signup(env)
+    await plant(env, restaurantId)
+    const db = mongoConnection.getDatabase(env)
+    await db.collection('financial_categories').updateOne({ restaurantId, name: 'Exp · CMV' }, { $set: { 'subcategories.$[s].name': 'Frango inteiro' } }, { arrayFilters: [{ 's._id': 'sub-fra' }] })
+    await db.collection('financial_movements').updateMany({ restaurantId, 'subcategory._id': 'sub-ole' }, { $unset: { subcategory: '' } })
+
+    const cmv = (await get(auth)).json().payload.items.find((i: any) => i.name === 'Exp · CMV')
+
+    expect(cmv.subitems.map((s: any) => [s.name, s.amount])).toEqual([['Frango inteiro', 6_000], ['Embalagens', 4_400], ['Sem subitem', 3_600]])
+  })
+
+  it('mês atual: projeção pelo dia de hoje em SP', async () => {
+    const { auth, restaurantId } = await signup(freshEnv())
+    const now = new Date()
+    await mongoConnection.getDatabase(auth.env).collection('financial_movements').insertOne({
+      restaurantId,
+      title: 'Hoje',
+      direction: 'out',
+      status: 'settled',
+      statusSource: 'auto',
+      date: now,
+      grossValue: toDecimal128(310),
+      feeValue: toDecimal128(0),
+      netValue: toDecimal128(310),
+      account: { _id: 'a', name: 'Caixa', type: 'cash' },
+      category: { _id: 'c', name: 'Gás', type: 'expense' },
+      paymentMethod: 'pix',
+      origin: 'manual',
+      history: [],
+      audit: { createdAt: now, updatedAt: now },
+    })
+
+    const r = (await get(auth, '')).json().payload
+    const day = toLocalDay(now)
+    const elapsed = Number(day.slice(8, 10))
+    const days = new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)), 0)).getUTCDate()
+
+    expect(r.projection).toEqual({ total: Math.round(31_000 * days / elapsed) / 100, elapsedDays: elapsed, daysInMonth: days })
+    expect(r.items[0].projected).toBe(r.projection.total)
   })
 })

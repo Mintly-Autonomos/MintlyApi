@@ -27,11 +27,14 @@ export class ExpensesRepository {
             channel: { $ifNull: ['$channel', null] },
             accountId: '$account._id',
             accountType: '$account.type',
+            // Fatia 7. $ifNull junta ausente e null no mesmo grupo (lançamento antigo sem o campo).
+            subcategoryId: { $ifNull: ['$subcategory._id', null] },
           },
           gross: { $sum: '$grossValue' },
           fee: { $sum: '$feeValue' },
           categoryName: { $first: '$category.name' },
           accountName: { $first: '$account.name' },
+          subcategoryName: { $first: '$subcategory.name' },
         },
       },
     ]).toArray()
@@ -45,6 +48,8 @@ export class ExpensesRepository {
       accountName: r.accountName ?? '',
       accountType: r._id.accountType ?? '',
       channel: r._id.channel ?? null,
+      subcategoryId: r._id.subcategoryId ?? null,
+      subcategoryName: r.subcategoryName ?? null,
       gross: decimalToNumber(r.gross),
       fee: decimalToNumber(r.fee),
     }))
@@ -53,9 +58,14 @@ export class ExpensesRepository {
   /** Todas as categorias do restaurante (inativa também pode ter lançamento antigo). */
   async categories (ctx: RequestContext): Promise<Map<string, ExpenseCategoryInfo>> {
     const docs = await this.db(ctx).collection('financial_categories')
-      .find({ restaurantId: ctx.restaurantId }, { projection: { name: 1, dreGroup: 1, behavior: 1 } })
+      .find({ restaurantId: ctx.restaurantId }, { projection: { name: 1, dreGroup: 1, behavior: 1, subcategories: 1 } })
       .toArray()
-    return new Map(docs.map((d) => [String(d._id), { name: d.name, behavior: d.behavior, dreGroup: d.dreGroup }]))
+    return new Map(docs.map((d) => [String(d._id), {
+      name: d.name,
+      behavior: d.behavior,
+      dreGroup: d.dreGroup,
+      subcategories: (d.subcategories ?? []).map((s: any) => ({ _id: s._id, name: s.name })),
+    }]))
   }
 
   /** Nome atual das contas (a linha da taxa usa o nome vivo). */

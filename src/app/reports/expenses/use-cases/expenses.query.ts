@@ -14,7 +14,8 @@ export class ExpensesQuery {
   ) {}
 
   async execute (ctx: RequestContext, month?: string, channel?: unknown): Promise<ExpensesReport> {
-    const referenceMonth = parseReferenceMonth(month, this.clock())
+    const now = this.clock()
+    const referenceMonth = parseReferenceMonth(month, now)
     const filter = parseExpensesChannel(channel)
     const [rows, categories, accountNames, firstMonth] = await Promise.all([
       this.repo.monthlyRows(ctx, { from: addMonths(referenceMonth, -(HISTORY_MONTHS - 1)), to: referenceMonth }),
@@ -22,6 +23,6 @@ export class ExpensesQuery {
       this.repo.accountNames(ctx),
       this.taxRepo.firstMovementMonth(ctx),
     ])
-    return computeExpenses({ referenceMonth, channel: filter, rows, categories, accountNames, firstMonth })
+    return computeExpenses({ referenceMonth, channel: filter, rows, categories, accountNames, firstMonth, today: now })
   }
 }
