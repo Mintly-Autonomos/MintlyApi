@@ -1,6 +1,7 @@
-import { CategoryBehavior, DreGroup, ResultLineKey, ResultLines, TaxRegime } from 'mintly-lib'
+import { CategoryBehavior, DreGroup, OpexItem, ResultBreakEven, ResultInsight, ResultLineKey, ResultLines, ResultReport, TaxRegime } from 'mintly-lib'
 import { fromCents, toCents } from '../../../core/money/money'
 import { buildTaxProfile } from '../../tax/tax-rules'
+import { addMonths } from '../shared/period'
 
 /**
  * Regra pura do Resultado (DRE, fatia 4). Somas em centavos. A classificação vem
@@ -150,4 +151,135 @@ const LINE_KEYS: ResultLineKey[] = ['grossRevenue', 'taxes', 'netRevenue', 'cmv'
 
 export function buildDeltas (current: ResultLines, previous: ResultLines): Record<ResultLineKey, number | null> {
   return Object.fromEntries(LINE_KEYS.map((k) => [k, relativeDelta(current[k], previous[k])])) as Record<ResultLineKey, number | null>
+}
+
+function opexItem (base: { categoryId: string | null; name: string; kind: OpexItem['kind']; behavior: CategoryBehavior }, amountCents: number, previousCents: number, grossRevenueCents: number): OpexItem {
+  return {
+    ...base,
+    amount: fromCents(amountCents),
+    previousAmount: fromCents(previousCents),
+    delta: relativeDelta(amountCents, previousCents),
+    revenuePct: grossRevenueCents > 0 ? amountCents / grossRevenueCents : null,
+  }
+}
+
+/** Composição das despesas operacionais de M (com o valor de M−1), do maior para o menor. */
+export function buildOpexItems (current: MonthAggregate, previous: MonthAggregate): OpexItem[] {
+  const ids = new Set([...current.opexCategories.keys(), ...previous.opexCategories.keys()])
+  const items: OpexItem[] = []
+  for (const id of ids) {
+    const c = current.opexCategories.get(id)
+    const p = previous.opexCategories.get(id)
+    const base = (c ?? p)!
+    items.push(opexItem({ categoryId: base.categoryId, name: base.name, kind: base.kind, behavior: base.behavior }, c?.cents ?? 0, p?.cents ?? 0, current.grossRevenue))
+  }
+  if (current.platformFee > 0 || previous.platformFee > 0) {
+    items.push(opexItem({ categoryId: null, name: PLATFORM_FEE_NAME, kind: 'platformFee', behavior: CategoryBehavior.Variable }, current.platformFee, previous.platformFee, current.grossRevenue))
+  }
+  return items.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, 'pt-BR'))
+}
+
+function daysInMonth (month: string): number {
+  const [y, m] = month.split('-').map(Number)
+  return new Date(Date.UTC(y, m, 0)).getUTCDate()
+}
+
+/**
+ * Ponto de equilíbrio de M (spec): fixos ÷ margem de contribuição. O dia em que é
+ * atingido compara a receita bruta acumulada convertida em líquida pela proporção
+ * do mês. Sem margem positiva, nenhuma venda paga os fixos → null.
+ */
+export function buildBreakEven (agg: MonthAggregate, lines: ResultLines, month: string, dailyRevenue: Map<string, number>): ResultBreakEven {
+  const netCents = toCents(lines.netRevenue)
+  const contributionMarginPct = netCents > 0 ? (netCents - agg.variable) / netCents : null
+  const breakEvenCents = contributionMarginPct != null && contributionMarginPct > 0 ? Math.round(agg.fixed / contributionMarginPct) : null
+
+  let reachedOnDay: number | null = null
+  if (breakEvenCents != null && agg.grossRevenue > 0) {
+    const toNet = netCents / agg.grossRevenue
+    let accumulated = 0
+    for (let d = 1; d <= daysInMonth(month); d++) {
+      accumulated += toCents(dailyRevenue.get(`${month}-${String(d).padStart(2, '0')}`) ?? 0)
+      if (accumulated * toNet >= breakEvenCents) {
+        reachedOnDay = d
+        break
+      }
+    }
+  }
+
+  return {
+    fixedCosts: fromCents(agg.fixed),
+    variableCosts: fromCents(agg.variable),
+    contributionMarginPct,
+    breakEvenRevenue: breakEvenCents == null ? null : fromCents(breakEvenCents),
+    reachedOnDay,
+  }
+}
+
+/** "Leitura do mês" determinística (R2) + aviso de regime não configurado. */
+export function buildInsights (p: { regime: TaxRegime | null; current: ResultLines; previous: ResultLines; previousHasActivity: boolean; items: OpexItem[] }): ResultInsight[] {
+  const insights: ResultInsight[] = []
+  if (p.previousHasActivity && p.current.netProfit !== p.previous.netProfit) {
+    const difference = fromCents(toCents(p.current.netProfit) - toCents(p.previous.netProfit))
+    insights.push({
+      kind: 'profitChanged',
+      severity: difference > 0 ? 'positive' : 'warning',
+      difference,
+      previousProfit: p.previous.netProfit,
+      currentProfit: p.current.netProfit,
+      previousMargin: p.previous.netMargin,
+      currentMargin: p.current.netMargin,
+    })
+  }
+  const largest = p.items.find((i) => i.amount > 0)
+  if (largest) insights.push({ kind: 'largestOpexItem', severity: 'warning', name: largest.name, amount: largest.amount, revenuePct: largest.revenuePct })
+  if (p.regime == null) insights.push({ kind: 'taxRegimeNotConfigured', severity: 'info' })
+  return insights
+}
+
+export interface ResultInput {
+  referenceMonth: string
+  regime: TaxRegime | null
+  rows: MonthlyTotalRow[]
+  categories: Map<string, CategoryInfo>
+  taxByMonth: Map<string, MonthTax>
+  meiMonthlyDas: number | null
+  dailyRevenue: Map<string, number>
+}
+
+const NO_TAX: MonthTax = { effectiveRate: null, fixedAmount: null }
+
+/** O relatório inteiro a partir das somas, das categorias e do imposto de cada mês. */
+export function computeResult (input: ResultInput): ResultReport {
+  const months = Array.from({ length: HISTORY_MONTHS }, (_, i) => addMonths(input.referenceMonth, i - (HISTORY_MONTHS - 1)))
+  const previousMonth = addMonths(input.referenceMonth, -1)
+  const aggs = new Map(months.map((m) => [m, aggregateMonth(input.rows, m, input.categories)]))
+  const linesOf = (m: string) => buildLines(aggs.get(m)!, input.taxByMonth.get(m) ?? NO_TAX)
+
+  const current = linesOf(input.referenceMonth)
+  const previous = linesOf(previousMonth)
+  const currentAgg = aggs.get(input.referenceMonth)!
+  const previousAgg = aggs.get(previousMonth)!
+  const items = buildOpexItems(currentAgg, previousAgg)
+  const tax = input.taxByMonth.get(input.referenceMonth) ?? NO_TAX
+
+  return {
+    referenceMonth: input.referenceMonth,
+    previousMonth,
+    current,
+    previous,
+    deltas: buildDeltas(current, previous),
+    tax: {
+      regime: input.regime,
+      effectiveRate: tax.effectiveRate,
+      meiMonthlyDas: input.regime === TaxRegime.Mei ? input.meiMonthlyDas : null,
+    },
+    operatingExpenseItems: items,
+    breakEven: buildBreakEven(currentAgg, current, input.referenceMonth, input.dailyRevenue),
+    history: months.map((m) => {
+      const l = linesOf(m)
+      return { month: m, grossRevenue: l.grossRevenue, netProfit: l.netProfit, netMargin: l.netMargin }
+    }),
+    insights: buildInsights({ regime: input.regime, current, previous, previousHasActivity: hasActivity(previousAgg), items }),
+  }
 }

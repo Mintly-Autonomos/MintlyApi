@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CategoryBehavior, DreGroup, TaxRegime } from 'mintly-lib'
-import { CategoryInfo, MonthlyTotalRow, aggregateMonth, buildDeltas, buildLines, hasActivity, monthTax, relativeDelta } from './result-metrics'
+import { CategoryInfo, MonthlyTotalRow, aggregateMonth, buildBreakEven, buildDeltas, buildInsights, buildLines, buildOpexItems, computeResult, hasActivity, monthTax, relativeDelta } from './result-metrics'
 
 const M = '2026-07'
 const cat = (id: string, dreGroup: DreGroup | undefined, behavior: CategoryBehavior, name = id): [string, CategoryInfo] => [id, { id, name, dreGroup, behavior }]
@@ -122,5 +122,141 @@ describe('variações', () => {
     const deltas = buildDeltas(lines(120), lines(100))
     expect(Object.keys(deltas)).toEqual(['grossRevenue', 'taxes', 'netRevenue', 'cmv', 'grossMargin', 'operatingExpenses', 'netProfit'])
     for (const v of Object.values(deltas)) expect(v).toBeCloseTo(0.2, 10)
+  })
+})
+
+describe('buildOpexItems', () => {
+  const cur = aggregateMonth([
+    row({ direction: 'in', categoryId: 'ven', gross: 10_000, fee: 600 }),
+    row({ categoryId: 'pro', gross: 800 }),
+    row({ categoryId: 'mkt', gross: 120 }),
+    row({ categoryId: 'alu', gross: 120 }),
+  ], M, CATS)
+  const prev = aggregateMonth([
+    row({ month: '2026-06', categoryId: 'pro', gross: 800 }),
+    row({ month: '2026-06', categoryId: 'uti', gross: 200 }),
+    row({ month: '2026-06', categoryId: 'mkt', gross: 90 }),
+  ], '2026-06', CATS)
+
+  it('categorias de M e M−1 + taxa de plataforma, do maior para o menor, empate por nome', () => {
+    const items = buildOpexItems(cur, prev)
+    expect(items.map((i) => [i.name, i.amount, i.previousAmount])).toEqual([
+      ['Pró-labore', 800, 800],
+      ['Taxa de plataforma', 600, 0],
+      ['Aluguel', 120, 0],
+      ['Marketing', 120, 90],
+      ['Utilidades', 0, 200],
+    ])
+  })
+
+  it('item com variação, % da receita, tipo e comportamento', () => {
+    const items = buildOpexItems(cur, prev)
+    expect(items[1]).toEqual({ categoryId: null, name: 'Taxa de plataforma', kind: 'platformFee', behavior: 'variable', amount: 600, previousAmount: 0, delta: null, revenuePct: 0.06 })
+    expect(items[3]).toMatchObject({ categoryId: 'mkt', kind: 'opex' })
+    expect(items[3].delta).toBeCloseTo(30 / 90, 10)
+    expect(items[0]).toMatchObject({ kind: 'labor', delta: 0, revenuePct: 0.08 })
+  })
+
+  it('sem taxa nos dois meses: sem item sintético; sem receita: % null', () => {
+    const items = buildOpexItems(prev, prev)
+    expect(items.some((i) => i.kind === 'platformFee')).toBe(false)
+    expect(items[0].revenuePct).toBeNull()
+  })
+})
+
+describe('buildBreakEven', () => {
+  // Fixos 17.656 (pró-labore 8.000 + aluguel/contador 7.456 + utilidades 2.200 misto)
+  const agg = aggregateMonth([
+    row({ direction: 'in', categoryId: 'ven', gross: 58_400, fee: 6_044 }),
+    row({ categoryId: 'cmv', gross: 21_024 }),
+    row({ categoryId: 'pro', gross: 8_000 }),
+    row({ categoryId: 'alu', gross: 7_456 }),
+    row({ categoryId: 'uti', gross: 2_200 }),
+    row({ categoryId: 'mkt', gross: 3_800 }),
+  ], M, CATS)
+  const lines = buildLines(agg, { effectiveRate: 0.06, fixedAmount: null })
+  const daily = new Map([['2026-07-01', 20_000], ['2026-07-10', 20_000], ['2026-07-20', 18_400]])
+
+  it('margem de contribuição, ponto de equilíbrio e dia em que é atingido', () => {
+    const be = buildBreakEven(agg, lines, M, daily)
+    expect(be.fixedCosts).toBe(17_656)
+    expect(be.variableCosts).toBe(21_024 + 3_800 + 6_044)
+    expect(be.contributionMarginPct).toBeCloseTo((54_896 - 30_868) / 54_896, 10)
+    expect(be.breakEvenRevenue).toBe(40_338.1)
+    expect(be.reachedOnDay).toBe(20) // dia 10: 40.000 × 0,94 = 37.600 < 40.338,10
+  })
+
+  it('não alcançado no mês: null', () => {
+    expect(buildBreakEven(agg, lines, M, new Map([['2026-07-01', 1_000]])).reachedOnDay).toBeNull()
+  })
+
+  it('sem custo fixo: alcançado no dia 1', () => {
+    const variableOnly = aggregateMonth([row({ direction: 'in', categoryId: 'ven', gross: 1_000 }), row({ categoryId: 'mkt', gross: 100 })], M, CATS)
+    expect(buildBreakEven(variableOnly, buildLines(variableOnly, { effectiveRate: null, fixedAmount: null }), M, new Map([['2026-07-01', 1_000]])))
+      .toMatchObject({ breakEvenRevenue: 0, reachedOnDay: 1 })
+  })
+
+  it('margem de contribuição ≤ 0 ou sem receita: null', () => {
+    const loss = aggregateMonth([row({ direction: 'in', categoryId: 'ven', gross: 100 }), row({ categoryId: 'mkt', gross: 500 })], M, CATS)
+    expect(buildBreakEven(loss, buildLines(loss, { effectiveRate: null, fixedAmount: null }), M, new Map()))
+      .toMatchObject({ contributionMarginPct: -4, breakEvenRevenue: null, reachedOnDay: null })
+    const none = aggregateMonth([], M, CATS)
+    expect(buildBreakEven(none, buildLines(none, { effectiveRate: null, fixedAmount: null }), M, new Map()))
+      .toMatchObject({ contributionMarginPct: null, breakEvenRevenue: null, reachedOnDay: null })
+  })
+})
+
+describe('buildInsights', () => {
+  const lines = (netProfit: number, grossRevenue = 1_000) => ({ grossRevenue, taxes: 0, netRevenue: grossRevenue, cmv: 0, grossMargin: grossRevenue, operatingExpenses: grossRevenue - netProfit, netProfit, netMargin: grossRevenue > 0 ? netProfit / grossRevenue : null })
+  const items = [{ categoryId: 'pro', name: 'Pró-labore', kind: 'labor' as const, behavior: CategoryBehavior.Fixed, amount: 800, previousAmount: 800, delta: 0, revenuePct: 0.08 }]
+
+  it('lucro subiu: positive; maior despesa; regime configurado', () => {
+    expect(buildInsights({ regime: TaxRegime.Mei, current: lines(300), previous: lines(100), previousHasActivity: true, items })).toEqual([
+      { kind: 'profitChanged', severity: 'positive', difference: 200, previousProfit: 100, currentProfit: 300, previousMargin: 0.1, currentMargin: 0.3 },
+      { kind: 'largestOpexItem', severity: 'warning', name: 'Pró-labore', amount: 800, revenuePct: 0.08 },
+    ])
+  })
+
+  it('lucro caiu: warning; sem mês anterior: sem profitChanged; sem regime: aviso', () => {
+    expect(buildInsights({ regime: TaxRegime.Mei, current: lines(50), previous: lines(100), previousHasActivity: true, items: [] })[0]).toMatchObject({ kind: 'profitChanged', severity: 'warning', difference: -50 })
+    expect(buildInsights({ regime: null, current: lines(50), previous: lines(0, 0), previousHasActivity: false, items: [] }))
+      .toEqual([{ kind: 'taxRegimeNotConfigured', severity: 'info' }])
+  })
+})
+
+describe('computeResult', () => {
+  it('monta o relatório com 6 meses de histórico (meses vazios inclusive)', () => {
+    const report = computeResult({
+      referenceMonth: M,
+      regime: TaxRegime.SimplesNacionalAnexoI,
+      rows: [
+        row({ direction: 'in', categoryId: 'ven', gross: 58_400, fee: 6_044 }),
+        row({ categoryId: 'cmv', gross: 21_024 }),
+        row({ categoryId: 'pro', gross: 21_456 }),
+        row({ month: '2026-06', direction: 'in', categoryId: 'ven', gross: 33_000 }),
+      ],
+      categories: CATS,
+      taxByMonth: new Map([[M, { effectiveRate: 0.06, fixedAmount: null }], ['2026-06', { effectiveRate: 0.06, fixedAmount: null }]]),
+      meiMonthlyDas: null,
+      dailyRevenue: new Map([['2026-07-05', 58_400]]),
+    })
+
+    expect(report).toMatchObject({
+      referenceMonth: M,
+      previousMonth: '2026-06',
+      current: { grossRevenue: 58_400, taxes: 3_504, netProfit: 6_372 },
+      previous: { grossRevenue: 33_000, taxes: 1_980, netProfit: 31_020 },
+      tax: { regime: TaxRegime.SimplesNacionalAnexoI, effectiveRate: 0.06, meiMonthlyDas: null },
+    })
+    expect(report.history.map((h) => h.month)).toEqual(['2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07'])
+    expect(report.history[0]).toEqual({ month: '2026-02', grossRevenue: 0, netProfit: 0, netMargin: null })
+    expect(report.deltas.grossRevenue).toBeCloseTo((58_400 - 33_000) / 33_000, 10)
+    expect(report.insights.map((i) => i.kind)).toEqual(['profitChanged', 'largestOpexItem'])
+  })
+
+  it('MEI: DAS do mês no campo tax; mês sem imposto informado usa "sem regime"', () => {
+    const report = computeResult({ referenceMonth: M, regime: TaxRegime.Mei, rows: [], categories: CATS, taxByMonth: new Map(), meiMonthlyDas: 82.05, dailyRevenue: new Map() })
+    expect(report.tax).toEqual({ regime: TaxRegime.Mei, effectiveRate: null, meiMonthlyDas: 82.05 })
+    expect(report.current.taxes).toBe(0)
   })
 })
