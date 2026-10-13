@@ -52,7 +52,7 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
       `financial_movements`), com a spec `specs/modulos-novos/20261012/classificacao-contabil.md`.
 - [ ] **Fatia 3**: história/subtarefas para lib e API (ainda não existem no Jira).
 - [ ] **Fatia 4 (Resultado/DRE)**: épico/história e subtarefas (ainda não existem no Jira) + spec `20261012/resultado-dre.md`.
-- [ ] **Fatia 6 (Custos & Despesas, fatia A)**: história/subtarefas (lib #31, API) + spec `20261013/custos-despesas.md`; pendência do % da taxa sobre o delivery.
+- [ ] **Fatia 6 (Custos & Despesas, fatia A)**: história/subtarefas (lib #31, API) + spec `20261013/custos-despesas.md`.
 - [ ] **Fatia 5 (Subcategoria + canal)**: história/subtarefas (lib #30, API #43) + spec `20261013/subcategoria-canal.md`; mínimos adiados da revisão (NFC no nome, max(60) antes do trim, `null` no `updateMovementSchema` da lib).
 
 ## Em aberto (não bloqueia a fatia atual)
@@ -71,7 +71,7 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
 
 ### Pendências da fatia 6
 
-- **% da taxa sobre o delivery em "Geral":** se o dono marca uma entrada de plataforma (iFood) como `dineIn`, a taxa dela conta no card, mas a receita não entra no `deliveryRevenue` — o % fica alto. Decidir antes do card do front: denominador = bruto das contas de plataforma, ou manter a regra do canal efetivo.
+- ~~% da taxa sobre o delivery~~ — **decidido (A, 13/10/2026):** `pctOfDelivery` usa o bruto das contas de plataforma; `deliveryRevenue` segue pelo canal efetivo. A doc do campo na lib ainda descreve só o `deliveryRevenue` — ajustar o comentário de `pctOfDelivery` na próxima mudança da lib.
 - **Nome de categoria/conta apagada:** vem de um lançamento qualquer da janela de 6 meses; preferir o do mês mais recente (cosmético).
 - Arredondamento: `total.average3` pode diferir de Σ `items[].average3` por centavos; item cuja única atividade na média é 1 centavo some da lista.
 

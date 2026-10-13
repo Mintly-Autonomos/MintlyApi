@@ -44,7 +44,9 @@ describe('computeExpenses — cenário Geral', () => {
   it('taxa de plataforma', () => {
     expect(r.platformFee).toMatchObject({ amount: 2_900, previous: 1_840, deliveryRevenue: 15_000 })
     expect(r.platformFee.deltaPrevious).toBeCloseTo(1_060 / 1_840, 10)
-    expect(r.platformFee.pctOfDelivery).toBeCloseTo(2_900 / 15_000, 10)
+    // Decisão A (13/10/2026): % sobre a receita bruta das contas de plataforma (iFood 10.000 + Rappi 4.000),
+    // não sobre o canal efetivo — a venda própria marcada delivery (1.000) não paga taxa.
+    expect(r.platformFee.pctOfDelivery).toBeCloseTo(2_900 / 14_000, 10)
   })
 
   it('quebra por comportamento com misto separado; histórico de 6 meses', () => {
@@ -95,6 +97,7 @@ describe('computeExpenses — filtro de canal', () => {
     expect(r.cmv.pctOfRevenue).toBeCloseTo(2_000 / 15_000, 10)
     expect(r.primeCost).toMatchObject({ amount: 2_000, labor: 0 })
     expect(r.byBehavior).toEqual({ fixed: 0, variable: 6_600, mixed: 0 })
+    expect(r.platformFee.pctOfDelivery).toBeCloseTo(2_900 / 14_000, 10)
   })
 
   it('Salão: sem despesas próprias; taxa e receita delivery zeradas', () => {
@@ -111,6 +114,9 @@ describe('computeExpenses — filtro de canal', () => {
     expect(dineIn.platformFee.amount).toBe(120)
     expect(dineIn.platformFee.deliveryRevenue).toBe(0)
     expect(delivery.platformFee.amount).toBe(0)
+    // A taxa e a venda que a gerou ficam juntas: o % não infla (decisão A).
+    expect(dineIn.platformFee.pctOfDelivery).toBeCloseTo(0.12, 10)
+    expect(scenario(null, { rows }).platformFee.pctOfDelivery).toBeCloseTo(0.12, 10)
   })
 })
 

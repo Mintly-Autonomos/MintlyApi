@@ -98,6 +98,7 @@ Puras em `src/app/reports/expenses/expenses-metrics.ts`; somas em centavos (`toC
 | `sharedExcluded` | Com filtro: Σ saídas de canal efetivo `shared` no mês. Sem filtro: `null` |
 | Receita | `Σ grossValue` das entradas do mês (do canal, se filtrado) |
 | `deliveryRevenue` | `Σ grossValue` das entradas de canal efetivo `delivery` (no filtro Salão, 0) |
+| `pctOfDelivery` | `taxa / Σ grossValue das entradas em conta de plataforma` (do canal, se filtrado). **Decisão A (13/10/2026):** a taxa e a venda que a gerou ficam no mesmo denominador, mesmo se o dono marcou outro canal; venda própria marcada `delivery` não paga taxa e não entra |
 | Média de 3 meses | Média de M−1, M−2, M−3 **a partir do mês do primeiro lançamento** do restaurante; mês sem gasto dentro disso conta 0; nenhum mês elegível → `null` |
 | Variação | `(atual − base) / base`; base 0 → `null` |
 | % da receita | `valor / receita`; receita 0 → `null` |

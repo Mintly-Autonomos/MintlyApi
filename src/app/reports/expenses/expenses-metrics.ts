@@ -1,4 +1,4 @@
-import { CategoryBehavior, DreGroup, ExpenseItem, ExpenseItemKind, ExpensesReport, MovementChannel } from 'mintly-lib'
+import { CategoryBehavior, DreGroup, ExpenseItem, FinancialAccountType, ExpenseItemKind, ExpensesReport, MovementChannel } from 'mintly-lib'
 import { fromCents, toCents } from '../../../core/money/money'
 import { ValidationError } from '../../../core/errors/core/validation-error'
 import { addMonths } from '../shared/period'
@@ -55,11 +55,13 @@ interface ItemMeta {
 interface MonthBucket {
   revenue: number
   deliveryRevenue: number
+  /** Σ bruto das entradas em conta de plataforma — base do % da taxa (decisão A). */
+  platformRevenue: number
   shared: number
   items: Map<string, number>
 }
 
-const emptyBucket = (): MonthBucket => ({ revenue: 0, deliveryRevenue: 0, shared: 0, items: new Map() })
+const emptyBucket = (): MonthBucket => ({ revenue: 0, deliveryRevenue: 0, platformRevenue: 0, shared: 0, items: new Map() })
 
 /** Filtro da tela: só salão ou delivery — `shared` não é filtro (vai em `sharedExcluded`). */
 export function parseExpensesChannel (value: unknown): MovementChannel | null {
@@ -90,6 +92,7 @@ function bucketize (input: ExpensesInput) {
       if (!passes) continue
       b.revenue += toCents(r.gross)
       if (channel === MovementChannel.Delivery) b.deliveryRevenue += toCents(r.gross)
+      if (r.accountType === FinancialAccountType.Platform) b.platformRevenue += toCents(r.gross)
       // M6: a taxa é linha sintética, uma por conta de plataforma, no canal da entrada.
       if (r.fee > 0) {
         add(b, {
@@ -166,6 +169,9 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   const feePrev = sumWhere(prev, isFee)
   const behavior = (b: CategoryBehavior) => fromCents(sumWhere(cur, (m) => m.behavior === b))
 
+  // % da taxa (decisão A, 13/10/2026): sobre o bruto das contas de plataforma —
+  // a taxa e a venda que a gerou ficam no mesmo denominador, mesmo que o dono
+  // tenha marcado outro canal; a venda própria marcada delivery não paga taxa.
   return {
     referenceMonth: M,
     previousMonth: P,
@@ -180,7 +186,7 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
     },
     cmv: { amount: fromCents(cmv), pctOfRevenue: share(cmv, cur.revenue), target: CMV_TARGET },
     primeCost: { amount: fromCents(cmv + labor), cmv: fromCents(cmv), labor: fromCents(labor), pctOfRevenue: share(cmv + labor, cur.revenue), targetMax: PRIME_COST_TARGET_MAX },
-    platformFee: { amount: fromCents(fee), previous: fromCents(feePrev), deltaPrevious: delta(fee, feePrev), deliveryRevenue: fromCents(cur.deliveryRevenue), pctOfDelivery: share(fee, cur.deliveryRevenue) },
+    platformFee: { amount: fromCents(fee), previous: fromCents(feePrev), deltaPrevious: delta(fee, feePrev), deliveryRevenue: fromCents(cur.deliveryRevenue), pctOfDelivery: share(fee, cur.platformRevenue) },
     byBehavior: { fixed: behavior(CategoryBehavior.Fixed), variable: behavior(CategoryBehavior.Variable), mixed: behavior(CategoryBehavior.Mixed) },
     items,
     sharedExcluded: input.channel == null ? null : fromCents(cur.shared),
