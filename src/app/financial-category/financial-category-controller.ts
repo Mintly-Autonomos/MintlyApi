@@ -3,7 +3,7 @@ import { StatusCodes } from 'http-status-codes'
 import { CrudController } from '../../core/crud/crud-controller'
 import { ContextSource, buildRequestContext } from '../../core/context/build-request-context'
 import { ResponseBuilder, ResponseStructure } from '../../core/builders/response-builder/response-builder'
-import { financialCategoryInsertSchema, financialCategoryUpdateSchema, FinancialCategory, MovementDirection } from 'mintly-lib'
+import { financialCategoryInsertSchema, financialCategorySchema, financialCategoryUpdateSchema, FinancialCategory, MovementDirection } from 'mintly-lib'
 import { FinancialCategoryRepository } from './financial-category-repository'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
 import { NotFoundError } from '../../core/errors/core/not-found-error'
@@ -11,6 +11,7 @@ import { Resource } from '../../core/types/resource'
 import { escapeRegex } from '../../core/util/escape-regex'
 import { InactivateCategoryUseCase } from './use-cases/inactivate-category.use-case'
 import { SuggestCategoriesQuery } from './use-cases/suggest-categories.query'
+import { resolveCategoryUpdate, resolveInsertDreGroup } from './category-rules'
 
 const s = new Sapphire()
 const directionSchema = s.type().enum(MovementDirection)
@@ -27,6 +28,12 @@ export class FinancialCategoryController extends CrudController<FinancialCategor
       financialCategoryUpdateSchema as any,
       Resource.FinancialCategory,
     )
+  }
+
+  /** Cadastro: despesa sem grupo recebe `opex`; receita com grupo → 400 (fatia 3). */
+  async insert (item: FinancialCategory, source?: ContextSource): Promise<ResponseStructure> {
+    // Corpo ausente segue para o parse do schema (400), em vez de quebrar aqui (500).
+    return super.insert(resolveInsertDreGroup((item ?? {}) as any), source)
   }
 
   async update (id: string, item: Partial<FinancialCategory>, source?: ContextSource): Promise<ResponseStructure> {
@@ -48,7 +55,18 @@ export class FinancialCategoryController extends CrudController<FinancialCategor
       throw new ConflictError('Categorias do sistema não podem ser editadas. Use /:id/inactivate ou /:id/reactivate para mudar o status.')
     }
 
-    return super.update(id, item, source)
+    const parsed = financialCategoryUpdateSchema.parse(item) as Record<string, unknown>
+    const { set, unsetDreGroup } = resolveCategoryUpdate(current as any, parsed)
+
+    // Coerência tipo × grupo do documento RESULTANTE pela união da lib — o mesmo
+    // contrato que o cadastro respeita.
+    const { _id, ...stored } = current as any
+    const resulting = { ...stored, ...set }
+    if (unsetDreGroup) delete resulting.dreGroup
+    financialCategorySchema.parse(resulting)
+
+    const result = await this.repo.updateCategory(id, set, unsetDreGroup, ctx)
+    return new ResponseBuilder().payload(result).build()
   }
 
   async findAll (filter: any, source?: ContextSource): Promise<ResponseStructure> {

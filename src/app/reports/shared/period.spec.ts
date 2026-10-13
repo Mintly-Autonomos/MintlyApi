@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDaysToDay, diffDays, parseGmtOffset, startOfLocalDay, toLocalDay } from './period'
+import { addDaysToDay, addMonths, diffDays, diffMonths, parseGmtOffset, startOfLocalDay, startOfLocalMonth, toLocalDay, toLocalMonth } from './period'
 
 describe('period — dias em America/Sao_Paulo', () => {
   it('lançamento às 22h30 em São Paulo (01h30 UTC do dia seguinte) fica no próprio dia', () => {
@@ -38,5 +38,21 @@ describe('parseGmtOffset', () => {
 
   it('sem nome de fuso: zero', () => {
     expect(parseGmtOffset(undefined)).toBe(0)
+  })
+})
+
+describe('meses em America/Sao_Paulo', () => {
+  it('22h do dia 31 em São Paulo ainda é aquele mês', () => {
+    expect(toLocalMonth(new Date('2026-11-01T01:00:00.000Z'))).toBe('2026-10')
+  })
+
+  it('soma e diferença de meses atravessando o ano', () => {
+    expect(addMonths('2026-11', 3)).toBe('2027-02')
+    expect(addMonths('2026-01', -1)).toBe('2025-12')
+    expect(diffMonths('2025-10', '2026-10')).toBe(12)
+  })
+
+  it('início do mês local', () => {
+    expect(startOfLocalMonth('2026-10').toISOString()).toBe('2026-10-01T03:00:00.000Z')
   })
 })

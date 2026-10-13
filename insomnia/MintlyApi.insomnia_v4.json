@@ -577,6 +577,58 @@
         }
       ],
       "description": "MIN-94. horizon de 1 a 365 (padrão 30). Para conferir números: npm run db:seed-demo num restaurante recém-criado."
+    },
+    {
+      "_id": "fld_restaurant",
+      "_type": "request_group",
+      "parentId": "wrk_mintly",
+      "name": "Restaurant"
+    },
+    {
+      "_id": "req_restaurant_me",
+      "_type": "request",
+      "parentId": "fld_restaurant",
+      "name": "Meu restaurante + perfil tributário",
+      "method": "GET",
+      "url": "{{ _.base_url }}/restaurants/me",
+      "headers": [
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "MIN-23. ?month=AAAA-MM opcional (padrão: mês corrente; futuro → 400)."
+    },
+    {
+      "_id": "req_restaurant_update",
+      "_type": "request",
+      "parentId": "fld_restaurant",
+      "name": "Configurar regime tributário",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/restaurants/me",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"taxRegime\": \"simplesNacionalAnexoI\"\n}"
+      },
+      "description": "Campos: name?, taxRegime? (mei | simplesNacionalAnexoI)."
     }
   ]
 }

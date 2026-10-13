@@ -129,6 +129,10 @@ consome.
 `taxRegime` no restaurante; se a MIN-23 tiver outro lugar em mente, acertar antes de duas
 implementações divergirem.
 
+
+**Implementado na fatia 3** (`specs/modulos-novos/20261012/classificacao-contabil.md`): tabela do Anexo I,
+alíquota efetiva, RBT12 a partir de `financial_movements` (proporcional pela LC 123) e MEI com DAS em
+`app.tax_settings`.
 ---
 
 ## N7. Despesa de taxa de plataforma lançada em duplicidade

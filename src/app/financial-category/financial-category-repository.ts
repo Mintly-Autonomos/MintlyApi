@@ -1,7 +1,9 @@
-import { Collection, Document, MongoServerError } from 'mongodb'
+import { Collection, Document, MongoServerError, ObjectId } from 'mongodb'
 import { MongodbCrudRepository } from '../../core/crud/mongodb-crud-repository'
 import { RequestContext } from '../../core/context/request-context'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
+import { NotFoundError } from '../../core/errors/core/not-found-error'
+import { Resource } from '../../core/types/resource'
 import { ensure as ensureFinancialCategoryIndexes } from '../../infrastructure/db/indices/financial-categories'
 import { FinancialCategory, CategoryType, RecordStatus } from 'mintly-lib'
 
@@ -100,5 +102,27 @@ export class FinancialCategoryRepository extends MongodbCrudRepository<Financial
       .toArray()
 
     return result as unknown as FinancialCategory[]
+  }
+
+  /**
+   * PATCH de categoria com a regra do dreGroup (fatia 3): `$set` das mudanças e,
+   * quando a categoria vira receita, `$unset` do grupo — o update genérico só
+   * sabe fazer `$set`. Escopado por restaurantId.
+   */
+  async updateCategory (id: string, set: Record<string, unknown>, unsetDreGroup: boolean, ctx: RequestContext): Promise<FinancialCategory> {
+    if (!ObjectId.isValid(id)) throw new NotFoundError(Resource.FinancialCategory, id)
+    // Auditoria é do servidor, como no update genérico que esta rota substituiu.
+    const update: Record<string, unknown> = {
+      $set: { ...set, 'audit.updatedAt': new Date(), 'audit.updatedBy': ctx.userId },
+    }
+    if (unsetDreGroup) update.$unset = { dreGroup: '' }
+
+    const result = await this.getCollection(ctx).findOneAndUpdate(
+      { _id: new ObjectId(id), restaurantId: ctx.restaurantId } as any,
+      update,
+      { returnDocument: 'after' },
+    )
+    if (!result) throw new NotFoundError(Resource.FinancialCategory, id)
+    return result as unknown as FinancialCategory
   }
 }

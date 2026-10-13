@@ -18,6 +18,7 @@ import { RequestContext } from '../../../core/context/request-context'
 import { AuditLog } from '../../audit/audit-log'
 import { normalizeEmail } from '../normalize-email'
 import { hashPassword } from '../password-hash'
+import { SYSTEM_CATEGORY_DRE_GROUPS } from '../../financial-category/category-rules'
 
 const TENANT = 'mintly'
 
@@ -124,6 +125,8 @@ export class RegisterUseCase {
           type: cat.type,
           behavior: cat.behavior,
           operationalNature: cat.operationalNature,
+          // Fatia 3 (M2): despesa de sistema nasce classificada para o DRE.
+          ...(cat.type === CategoryType.Expense ? { dreGroup: SYSTEM_CATEGORY_DRE_GROUPS[cat.name] } : {}),
           status: RecordStatus.Active,
           isSystem: true,
           usage: 0,
