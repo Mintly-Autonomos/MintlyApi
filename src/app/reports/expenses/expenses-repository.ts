@@ -15,7 +15,12 @@ export class ExpensesRepository {
   }
 
   /** Σ grossValue e Σ feeValue por mês × direção × categoria × canal gravado × conta, em [from, to]. */
-  async monthlyRows (ctx: RequestContext, w: { from: string; to: string }): Promise<ExpenseRow[]> {
+  /**
+   * `after` (opcional): instante a partir do qual o lançamento ainda não aconteceu
+   * (amanhã 00h em SP) — separa `grossAfter`/`feeAfter` para a projeção (fatia 7).
+   */
+  async monthlyRows (ctx: RequestContext, w: { from: string; to: string }, after?: Date): Promise<ExpenseRow[]> {
+    const afterOnly = (field: string) => (after ? { $cond: [{ $gte: ['$date', after] }, { $ifNull: [field, 0] }, 0] } : 0)
     const rows = await this.db(ctx).collection('financial_movements').aggregate([
       { $match: { restaurantId: ctx.restaurantId, status: { $ne: MovementStatus.Cancelled }, date: { $gte: startOfLocalMonth(w.from), $lt: startOfLocalMonth(addMonths(w.to, 1)) } } },
       {
@@ -27,11 +32,16 @@ export class ExpensesRepository {
             channel: { $ifNull: ['$channel', null] },
             accountId: '$account._id',
             accountType: '$account.type',
+            // Fatia 7. $ifNull junta ausente e null no mesmo grupo (lançamento antigo sem o campo).
+            subcategoryId: { $ifNull: ['$subcategory._id', null] },
           },
           gross: { $sum: '$grossValue' },
           fee: { $sum: '$feeValue' },
+          grossAfter: { $sum: afterOnly('$grossValue') },
+          feeAfter: { $sum: afterOnly('$feeValue') },
           categoryName: { $first: '$category.name' },
           accountName: { $first: '$account.name' },
+          subcategoryName: { $first: '$subcategory.name' },
         },
       },
     ]).toArray()
@@ -45,17 +55,26 @@ export class ExpensesRepository {
       accountName: r.accountName ?? '',
       accountType: r._id.accountType ?? '',
       channel: r._id.channel ?? null,
+      subcategoryId: r._id.subcategoryId ?? null,
+      subcategoryName: r.subcategoryName ?? null,
       gross: decimalToNumber(r.gross),
       fee: decimalToNumber(r.fee),
+      grossAfter: decimalToNumber(r.grossAfter),
+      feeAfter: decimalToNumber(r.feeAfter),
     }))
   }
 
   /** Todas as categorias do restaurante (inativa também pode ter lançamento antigo). */
   async categories (ctx: RequestContext): Promise<Map<string, ExpenseCategoryInfo>> {
     const docs = await this.db(ctx).collection('financial_categories')
-      .find({ restaurantId: ctx.restaurantId }, { projection: { name: 1, dreGroup: 1, behavior: 1 } })
+      .find({ restaurantId: ctx.restaurantId }, { projection: { name: 1, dreGroup: 1, behavior: 1, subcategories: 1 } })
       .toArray()
-    return new Map(docs.map((d) => [String(d._id), { name: d.name, behavior: d.behavior, dreGroup: d.dreGroup }]))
+    return new Map(docs.map((d) => [String(d._id), {
+      name: d.name,
+      behavior: d.behavior,
+      dreGroup: d.dreGroup,
+      subcategories: (d.subcategories ?? []).map((s: any) => ({ _id: s._id, name: s.name })),
+    }]))
   }
 
   /** Nome atual das contas (a linha da taxa usa o nome vivo). */

@@ -78,4 +78,18 @@ describe('Expenses E2E (Atlas, env=e2e)', () => {
     expect(r).toMatchObject({ total: { current: 500 }, cmv: { amount: 300 }, platformFee: { amount: 200, deliveryRevenue: 1000 } })
     expect(r.items.map((i: any) => i.name)).toEqual(['CMV/Insumos', 'Taxa iFood E2E'])
   })
+
+  it('subcategoria criada e usada aparece como subitem do CMV', async () => {
+    const sub = await fetch(`${baseUrl}/financial-categories/${cmvCatId}/subcategories`, { method: 'POST', headers: auth, body: JSON.stringify({ name: 'Frango' }) })
+    expect(sub.status).toBe(201)
+    const subId = (await sub.json() as any).payload._id
+    const created = await fetch(`${baseUrl}/financial-movements/`, { method: 'POST', headers: auth, body: JSON.stringify({ direction: 'out', title: 'Frango E2E', grossValue: 120, date: new Date().toISOString(), accountId: cashId, categoryId: cmvCatId, subcategoryId: subId, paymentMethod: 'pix' }) })
+    expect(created.status).toBe(201)
+
+    const r = (await (await fetch(`${baseUrl}/reports/expenses`, { headers: auth })).json() as any).payload
+    const cmv = r.items.find((i: any) => i.categoryId === cmvCatId)
+
+    expect(cmv.subitems.map((s: any) => [s.name, s.amount])).toEqual([['Frango', 120], ['Sem subitem', 300]])
+    expect(r.projection).not.toBeNull()
+  })
 })

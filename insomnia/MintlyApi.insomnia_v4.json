@@ -765,7 +765,7 @@
           "value": "Bearer {{ _.token }}"
         }
       ],
-      "description": "Fatia 6. ?month=AAAA-MM (padrão: mês corrente) e ?channel=dineIn|delivery (sem = Geral)."
+      "description": "Fatias 6 e 7. ?month=AAAA-MM (padrão: mês corrente) e ?channel=dineIn|delivery (sem = Geral). Traz subitens por categoria, anomalias do mês (Fique de olho), séries de 6 meses e projeção do mês atual."
     }
   ]
 }
