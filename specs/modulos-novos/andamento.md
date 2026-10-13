@@ -14,10 +14,14 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 **Fatia 3 — `dreGroup` + `mixed` + alíquota (M2, M5)** — classificação contábil da categoria e
 imposto do restaurante, fundação do Resultado (DRE).
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ (aguardando revisão) → TDD → conferência → PR.
-- Spec: `specs/modulos-novos/20261012/classificacao-contabil.md`; plano: `specs/modulos-novos/20261012/plan-classificacao-contabil.md` (11 tarefas). Decidido: implementar a MIN-23 nesta
-  fatia; regime por `PATCH /restaurants/me`; DAS do MEI em `app.tax_settings`; alertas como insights.
-- Branch: `feat/20261012/classificacao-contabil` (API, a partir de `staging`).
+- Etapa: ~~perguntas~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~revisão final~~ ✅ → ~~teste local~~ ✅ →
+  **PR da lib aberto (MintlyLib#28)**. Falta: merge do #28 → `npm i` da versão publicada → PR da API.
+- Spec: `specs/modulos-novos/20261012/classificacao-contabil.md`; plano: `specs/modulos-novos/20261012/plan-classificacao-contabil.md`.
+- Branch: `feat/20261012/classificacao-contabil` (lib e API).
+- Validação: suíte 767/767 (cobertura 98,4 / 97,8 / 99,4 / 98,9); `tax/` e `reports/shared/` com 100%; E2E contra
+  o Atlas 5/5; scripts contra Mongo em memória; backend local dirigido por HTTP.
+- A revisão final corrigiu a regra do teto proporcional do MEI na spec (LC 123, art. 18-A §2º: meses do início
+  da atividade até dezembro, não "até o mês").
 
 ## Fatias
 
@@ -25,7 +29,7 @@ imposto do restaurante, fundação do Resultado (DRE).
 |---|---|---|---|---|
 | 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 ✅ mergeado | Concluída — falta o backfill em staging |
 | 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | #40 ✅ mergeado | Concluída |
-| 3 | `dreGroup` + `mixed` + alíquota (M2, M5) | — | — | **Em andamento** — spec e plano escritos |
+| 3 | `dreGroup` + `mixed` + alíquota (M2, M5) — MIN-23 | #28 aberto | branch pronta, PR após publicar a lib | **Em andamento** — implementada e revisada |
 | 4 | Resultado (DRE) | — | — | Na fila |
 | 5 | Subcategoria + `channel` (M3, M4) | — | — | Na fila |
 | 6 | Custos & Despesas — fatia A | — | — | Na fila |
@@ -36,7 +40,8 @@ imposto do restaurante, fundação do Resultado (DRE).
 ## Próximos passos
 
 1. Rodar o backfill de staging abaixo (o #39 já foi mergeado).
-2. Fatia 3: fechar as perguntas (começando pela MIN-23), spec, plano, implementação.
+2. Merge do MintlyLib#28 → `npm i` na API → PR da API da fatia 3 → rodar os comandos da fatia 3 abaixo.
+3. Fatia 4 (Resultado/DRE): consome o `TaxProfileQuery` e o `dreGroup`.
 
 ## Postar no Jira (quando o MCP do Atlassian voltar)
 
@@ -66,6 +71,17 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
   lidas como meia-noite UTC — 21h do dia anterior em São Paulo. A fatia 2 corrigiu isso só para o
   `settledAt` do PATCH de status; no POST/PATCH de movimentação é comportamento das fatias
   anteriores. Conferir como o MintlyWeb envia essas datas antes de mexer.
+
+### Pendências da fatia 3
+
+- **Permissão owner × member:** `PATCH /restaurants/me` (regime tributário) está aberto a qualquer
+  usuário do restaurante — nenhuma rota diferencia papel hoje.
+- **RBT12 a partir da primeira movimentação no Mintly**, não da abertura do CNPJ: restaurante antigo
+  que acaba de entrar tem RBT12 proporcional/extrapolado nos primeiros 12 meses de uso.
+- **Desconfigurar o regime** (`taxRegime: null`) é recusado — se o front precisar, é decisão nova.
+- Menores da revisão: `app.tax_settings` sem índice único em `validFrom`; `month` com ano 0000–0099
+  aceito; comentário do `tax-scenario` ("nunca no futuro") impreciso no dia 1 antes das 12h; regex
+  `AAAA-MM` duplicada em `reference-month.ts` e `seed-tax-settings.ts`.
 
 ### Pendências técnicas da revisão da fatia 2 (menores, não corrigidas)
 
@@ -105,6 +121,19 @@ MONGO_ENV=staging npm run db:backfill-due-date
 ```bash
 MONGO_ENV=production npm run db:backfill-due-date
 ```
+
+### Fatia 3 — depois do merge do PR da API
+
+```bash
+# M2: dá dreGroup às despesas antigas (sistema pelo nome; demais opex). Idempotente.
+MONGO_ENV=staging npm run db:backfill-dre-group
+
+# MIN-23: DAS mensal do MEI vigente a partir de janeiro/2026. Banco `app` do cluster:
+# UMA execução vale para staging e produção. Comércio: 5% do salário mínimo + R$ 1 de ICMS.
+MEI_MONTHLY_DAS=<DAS 2026> VALID_FROM=2026-01 npm run db:seed-tax-settings
+```
+
+Na release para produção: `MONGO_ENV=production npm run db:backfill-dre-group`.
 
 Junto da release: promover a lib (`npm dist-tag add mintly-lib@<versão> latest`) — ver
 `Mintly/RELEASE-PROCESS.md`.
