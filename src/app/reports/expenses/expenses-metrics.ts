@@ -1,11 +1,13 @@
-import { CategoryBehavior, DreGroup, ExpenseItem, FinancialAccountType, ExpenseItemKind, ExpensesReport, MovementChannel } from 'mintly-lib'
+import { CategoryBehavior, DreGroup, ExpenseAnomaly, ExpenseItem, ExpenseItemKind, ExpenseSubitem, ExpensesReport, FinancialAccountType, MovementChannel } from 'mintly-lib'
 import { fromCents, toCents } from '../../../core/money/money'
 import { ValidationError } from '../../../core/errors/core/validation-error'
 import { addMonths } from '../shared/period'
 import { effectiveChannel } from '../shared/channel'
+import { ANOMALY_RULE, NO_SUBITEM_KEY, NO_SUBITEM_NAME, isAnomaly, project, projectionWindow, sortSubitems } from './expenses-detail'
 
 /**
- * Custos & Despesas, fatia A (spec 20261013/custos-despesas.md) — regras puras.
+ * Custos & Despesas, fatias A e B (specs 20261013/custos-despesas.md e
+ * custos-despesas-b.md) — regras puras.
  * Somas em centavos; a média de 3 meses só conta meses desde o primeiro lançamento.
  */
 export const HISTORY_MONTHS = 6
@@ -23,6 +25,9 @@ export interface ExpenseRow {
   accountName: string
   accountType: string
   channel: string | null
+  /** Fatia 7: subcategoria gravada no lançamento (null = sem). */
+  subcategoryId: string | null
+  subcategoryName: string | null
   gross: number
   fee: number
 }
@@ -31,6 +36,8 @@ export interface ExpenseCategoryInfo {
   name: string
   behavior: CategoryBehavior
   dreGroup?: DreGroup
+  /** Nomes atuais das subcategorias (fatia 7). */
+  subcategories?: { _id: string; name: string }[]
 }
 
 export interface ExpensesInput {
@@ -40,6 +47,14 @@ export interface ExpensesInput {
   categories: Map<string, ExpenseCategoryInfo>
   accountNames: Map<string, string>
   firstMonth: string | null
+  /** Agora — define se há projeção (mês atual em SP). */
+  today: Date
+}
+
+interface SubMeta {
+  key: string
+  subcategoryId: string | null
+  name: string
 }
 
 interface ItemMeta {
@@ -59,9 +74,11 @@ interface MonthBucket {
   platformRevenue: number
   shared: number
   items: Map<string, number>
+  /** Fatia 7: categoria → subitem → centavos. */
+  subs: Map<string, Map<string, number>>
 }
 
-const emptyBucket = (): MonthBucket => ({ revenue: 0, deliveryRevenue: 0, platformRevenue: 0, shared: 0, items: new Map() })
+const emptyBucket = (): MonthBucket => ({ revenue: 0, deliveryRevenue: 0, platformRevenue: 0, shared: 0, items: new Map(), subs: new Map() })
 
 /** Filtro da tela: só salão ou delivery — `shared` não é filtro (vai em `sharedExcluded`). */
 export function parseExpensesChannel (value: unknown): MovementChannel | null {
@@ -77,6 +94,8 @@ const sum = (values: Iterable<number>) => [...values].reduce((a, b) => a + b, 0)
 function bucketize (input: ExpensesInput) {
   const buckets = new Map<string, MonthBucket>()
   const metas = new Map<string, ItemMeta>()
+  const subMetas = new Map<string, Map<string, SubMeta>>()
+  const withSubcategory = new Set<string>()
   const add = (b: MonthBucket, meta: ItemMeta, cents: number) => {
     if (!metas.has(meta.key)) metas.set(meta.key, meta)
     b.items.set(meta.key, (b.items.get(meta.key) ?? 0) + cents)
@@ -121,14 +140,32 @@ function bucketize (input: ExpensesInput) {
       behavior: category?.behavior ?? CategoryBehavior.Fixed,
       dreGroup: category?.dreGroup ?? DreGroup.Opex,
     }, toCents(r.gross))
+
+    // Fatia 7: acumula também por subitem; "Sem subitem" quando o lançamento não tem.
+    const subKey = r.subcategoryId ?? NO_SUBITEM_KEY
+    if (r.subcategoryId) withSubcategory.add(r.categoryId)
+    const metasOfCategory = subMetas.get(r.categoryId) ?? new Map<string, SubMeta>()
+    subMetas.set(r.categoryId, metasOfCategory)
+    if (!metasOfCategory.has(subKey)) {
+      metasOfCategory.set(subKey, {
+        key: subKey,
+        subcategoryId: r.subcategoryId,
+        name: r.subcategoryId
+          ? (category?.subcategories?.find((s) => s._id === r.subcategoryId)?.name ?? r.subcategoryName ?? '')
+          : NO_SUBITEM_NAME,
+      })
+    }
+    const subsOfCategory = b.subs.get(r.categoryId) ?? new Map<string, number>()
+    b.subs.set(r.categoryId, subsOfCategory)
+    subsOfCategory.set(subKey, (subsOfCategory.get(subKey) ?? 0) + toCents(r.gross))
   }
-  return { buckets, metas }
+  return { buckets, metas, subMetas, withSubcategory }
 }
 
 export function computeExpenses (input: ExpensesInput): ExpensesReport {
   const M = input.referenceMonth
   const P = addMonths(M, -1)
-  const { buckets, metas } = bucketize(input)
+  const { buckets, metas, subMetas, withSubcategory } = bucketize(input)
   const at = (m: string) => buckets.get(m) ?? emptyBucket()
   const cur = at(M)
   const prev = at(P)
@@ -141,12 +178,59 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   const sumWhere = (b: MonthBucket, pred: (meta: ItemMeta) => boolean) =>
     sum([...b.items].filter(([key]) => pred(metas.get(key)!)).map(([, cents]) => cents))
 
+  const months = Array.from({ length: HISTORY_MONTHS }, (_, i) => addMonths(M, i - (HISTORY_MONTHS - 1)))
+  const window = projectionWindow(M, input.today)
+  const measure = (get: (b: MonthBucket) => number) => ({ amount: get(cur), previous: get(prev), avg: average(get) })
+  const anomalies: ExpenseAnomaly[] = []
+  const anomalyOf = (meta: ItemMeta, sub: SubMeta | null, amount: number, avg: number): ExpenseAnomaly => ({
+    itemKey: meta.key,
+    categoryId: meta.categoryId,
+    categoryName: meta.name,
+    subcategoryId: sub?.subcategoryId ?? null,
+    subitemKey: sub?.key ?? null,
+    name: sub?.name ?? meta.name,
+    amount: fromCents(amount),
+    average3: fromCents(avg),
+    excess: fromCents(amount - avg),
+    pctAbove: (amount - avg) / avg,
+  })
+
   const items: ExpenseItem[] = []
   for (const meta of metas.values()) {
-    const amount = cur.items.get(meta.key) ?? 0
-    const previous = prev.items.get(meta.key) ?? 0
-    const avg = average((b) => b.items.get(meta.key) ?? 0)
+    const get = (b: MonthBucket) => b.items.get(meta.key) ?? 0
+    const { amount, previous, avg } = measure(get)
     if (amount === 0 && previous === 0 && !avg) continue
+
+    // Fatia 7 (B2): com subitens, avalia cada um; sem, a categoria inteira; taxa nunca.
+    let subitems: ExpenseSubitem[] = []
+    let hasAnomaly = false
+    if (meta.kind === 'category' && withSubcategory.has(meta.key)) {
+      for (const sub of subMetas.get(meta.key)!.values()) {
+        const s = measure((b) => b.subs.get(meta.key)?.get(sub.key) ?? 0)
+        if (s.amount === 0 && s.previous === 0 && !s.avg) continue
+        const anomaly = isAnomaly(s.amount, s.avg, eligible.length)
+        if (anomaly) {
+          hasAnomaly = true
+          anomalies.push(anomalyOf(meta, sub, s.amount, s.avg!))
+        }
+        subitems.push({
+          key: sub.key,
+          subcategoryId: sub.subcategoryId,
+          name: sub.name,
+          amount: fromCents(s.amount),
+          previous: fromCents(s.previous),
+          average3: money(s.avg),
+          deltaPrevious: delta(s.amount, s.previous),
+          deltaAverage3: delta(s.amount, s.avg),
+          anomaly,
+        })
+      }
+      subitems = sortSubitems(subitems)
+    } else if (meta.kind === 'category' && isAnomaly(amount, avg, eligible.length)) {
+      hasAnomaly = true
+      anomalies.push(anomalyOf(meta, null, amount, avg!))
+    }
+
     items.push({
       ...meta,
       amount: fromCents(amount),
@@ -155,9 +239,14 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
       deltaPrevious: delta(amount, previous),
       deltaAverage3: delta(amount, avg),
       pctOfRevenue: share(amount, cur.revenue),
+      subitems,
+      hasAnomaly,
+      history: months.map((m) => ({ month: m, amount: fromCents(get(at(m))) })),
+      projected: window ? fromCents(project(amount, window)) : null,
     })
   }
   items.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, 'pt-BR'))
+  anomalies.sort((a, b) => b.excess - a.excess || a.name.localeCompare(b.name, 'pt-BR'))
 
   const totalCur = total(cur)
   const totalPrev = total(prev)
@@ -190,6 +279,9 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
     byBehavior: { fixed: behavior(CategoryBehavior.Fixed), variable: behavior(CategoryBehavior.Variable), mixed: behavior(CategoryBehavior.Mixed) },
     items,
     sharedExcluded: input.channel == null ? null : fromCents(cur.shared),
-    history: Array.from({ length: HISTORY_MONTHS }, (_, i) => addMonths(M, i - (HISTORY_MONTHS - 1))).map((m) => ({ month: m, total: fromCents(total(at(m))) })),
+    history: months.map((m) => ({ month: m, total: fromCents(total(at(m))) })),
+    anomalies,
+    projection: window ? { total: fromCents(project(totalCur, window)), ...window } : null,
+    anomalyRule: ANOMALY_RULE,
   }
 }
