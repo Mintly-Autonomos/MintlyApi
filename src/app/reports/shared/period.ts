@@ -1,3 +1,5 @@
+import { ValidationError } from '../../../core/errors/core/validation-error'
+
 /**
  * Dias dos relatórios (design 1.3): "hoje" só significa algo com fuso definido.
  * Em UTC, um lançamento das 22h de 31 de julho cairia em agosto. O fuso é fixo
@@ -87,4 +89,15 @@ export function diffMonths (from: string, to: string): number {
 /** Primeiro instante do mês local — limite de filtro no Mongo. */
 export function startOfLocalMonth (month: string): Date {
   return startOfLocalDay(`${month}-01`)
+}
+
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
+
+/** `?month=AAAA-MM` dos relatórios e do /restaurants/me: padrão o mês corrente; futuro não existe. */
+export function parseReferenceMonth (value: string | undefined, now: Date): string {
+  const current = toLocalMonth(now)
+  if (value == null) return current
+  if (!MONTH.test(value)) throw new ValidationError('month inválido: use AAAA-MM.')
+  if (value > current) throw new ValidationError('month não pode estar no futuro.')
+  return value
 }
