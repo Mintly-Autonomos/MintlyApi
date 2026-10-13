@@ -15,7 +15,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 imposto do restaurante, fundação do Resultado (DRE).
 
 - Etapa: ~~perguntas~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~revisão final~~ ✅ → ~~teste local~~ ✅ →
-  ~~PR da lib~~ ✅ (MintlyLib#28, `2.11.0-preview`) → **PR da API aberto, aguardando review**.
+  ~~PR da lib~~ ✅ (MintlyLib#28, `2.11.0-preview`) → **PR da API aberto (MintlyApi#41), CI verde, aguardando review**.
 - Spec: `specs/modulos-novos/20261012/classificacao-contabil.md`; plano: `specs/modulos-novos/20261012/plan-classificacao-contabil.md`.
 - Branch: `feat/20261012/classificacao-contabil` (lib e API).
 - Validação: suíte 767/767 (cobertura 98,4 / 97,8 / 99,4 / 98,9); `tax/` e `reports/shared/` com 100%; E2E contra
@@ -29,7 +29,7 @@ imposto do restaurante, fundação do Resultado (DRE).
 |---|---|---|---|---|
 | 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 ✅ mergeado | Concluída — falta o backfill em staging |
 | 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | #40 ✅ mergeado | Concluída |
-| 3 | `dreGroup` + `mixed` + alíquota (M2, M5) — MIN-23 | #28 ✅ mergeado (`2.11.0-preview`) | PR aberto | **Em review** |
+| 3 | `dreGroup` + `mixed` + alíquota (M2, M5) — MIN-23 | #28 ✅ mergeado (`2.11.0-preview`) | #41 aberto, CI verde | **Em review** |
 | 4 | Resultado (DRE) | — | — | Na fila |
 | 5 | Subcategoria + `channel` (M3, M4) | — | — | Na fila |
 | 6 | Custos & Despesas — fatia A | — | — | Na fila |
