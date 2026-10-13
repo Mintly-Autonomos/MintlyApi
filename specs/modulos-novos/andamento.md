@@ -13,8 +13,8 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 5 — Subcategoria + `channel` (M3, M4)** — fundação das fatias 6 e 7 (Custos & Despesas).
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ (aguardando revisão) → plano → TDD → conferência → PR.
-- Spec: `specs/modulos-novos/20261013/subcategoria-canal.md`. Decidido: subcategoria em qualquer categoria (inclusive de sistema), opcional no lançamento; canal efetivo resolvido na leitura.
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ (aguardando revisão) → TDD → conferência → PR.
+- Spec: `specs/modulos-novos/20261013/subcategoria-canal.md`; plano: `specs/modulos-novos/20261013/plan-subcategoria-canal.md` (6 tarefas). Decidido: subcategoria em qualquer categoria (inclusive de sistema), opcional no lançamento; canal efetivo resolvido na leitura.
 - Branch: `feat/20261013/subcategoria-canal` (API, a partir de `staging`).
 
 ## Fatias
@@ -25,7 +25,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | #40 ✅ mergeado | Concluída |
 | 3 | `dreGroup` + `mixed` + alíquota (M2, M5) — MIN-23 | #28 ✅ mergeado (`2.11.0-preview`) | #41 ✅ mergeado | Concluída — faltam os comandos de staging |
 | 4 | Resultado (DRE) | #29 ✅ mergeado (`2.12.0-preview`) | #42 ✅ mergeado | Concluída |
-| 5 | Subcategoria + `channel` (M3, M4) | — | — | **Em andamento** — spec escrita |
+| 5 | Subcategoria + `channel` (M3, M4) | — | — | **Em andamento** — spec e plano escritos |
 | 6 | Custos & Despesas — fatia A | — | — | Na fila |
 | 7 | Custos & Despesas — fatia B | — | — | Na fila |
 | 8 | Visão Geral | — | — | Na fila |
