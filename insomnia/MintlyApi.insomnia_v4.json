@@ -766,6 +766,32 @@
         }
       ],
       "description": "Fatias 6 e 7. ?month=AAAA-MM (padrão: mês corrente) e ?channel=dineIn|delivery (sem = Geral). Traz subitens por categoria, anomalias do mês (Fique de olho), séries de 6 meses e projeção do mês atual."
+    },
+    {
+      "_id": "fld_dashboard",
+      "_type": "request_group",
+      "parentId": "wrk_mintly",
+      "name": "Dashboard",
+      "description": "Fatia 8."
+    },
+    {
+      "_id": "req_overview",
+      "_type": "request",
+      "parentId": "fld_dashboard",
+      "name": "Visão Geral",
+      "method": "GET",
+      "url": "{{ _.base_url }}/dashboard/overview",
+      "headers": [
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "Fatia 8. ?month=AAAA-MM (padrão: mês corrente); caixa sempre de hoje. Score de saúde: palpite N5."
     }
   ]
 }
