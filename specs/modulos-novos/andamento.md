@@ -13,8 +13,8 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 7 — Custos & Despesas, fatia B (subitens, anomalias, evolução)** — campos novos em `GET /reports/expenses`.
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ (aguardando revisão) → plano → TDD → conferência → PR.
-- Spec: `specs/modulos-novos/20261013/custos-despesas-b.md`. Decidido: tudo no mesmo relatório; anomalia por subitem (categoria sem subitens avaliada inteira; taxa fora), só no mês consultado, ≥ 2 meses na média; projeção linear só no mês atual.
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ (aguardando revisão) → TDD → conferência → PR.
+- Spec: `specs/modulos-novos/20261013/custos-despesas-b.md`; plano: `specs/modulos-novos/20261013/plan-custos-despesas-b.md` (5 tarefas). Decidido: tudo no mesmo relatório; anomalia por subitem (categoria sem subitens avaliada inteira; taxa fora), só no mês consultado, ≥ 2 meses na média; projeção linear só no mês atual.
 - Branch: `feat/20261013/custos-despesas-b` (API, a partir de `staging`).
 
 ## Fatias
@@ -27,7 +27,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 4 | Resultado (DRE) | #29 ✅ mergeado (`2.12.0-preview`) | #42 ✅ mergeado | Concluída |
 | 5 | Subcategoria + `channel` (M3, M4) | #30 ✅ mergeado (`2.13.0-preview`) | #43 ✅ mergeado | Concluída |
 | 6 | Custos & Despesas — fatia A | #31 ✅ mergeado (`2.14.0-preview`) | #44 ✅ mergeado | Concluída |
-| 7 | Custos & Despesas — fatia B | — | — | **Em andamento** — spec escrita |
+| 7 | Custos & Despesas — fatia B | — | — | **Em andamento** — spec e plano escritos |
 | 8 | Visão Geral | — | — | Na fila |
 | 9 | Receitas, Previsões | — | — | Bloqueado (domínio de vendas) |
 
