@@ -629,6 +629,25 @@
         "text": "{\n  \"taxRegime\": \"simplesNacionalAnexoI\"\n}"
       },
       "description": "Campos: name?, taxRegime? (mei | simplesNacionalAnexoI)."
+    },
+    {
+      "_id": "req_result",
+      "_type": "request",
+      "parentId": "fld_reports",
+      "name": "Resultado (DRE)",
+      "method": "GET",
+      "url": "{{ _.base_url }}/reports/result",
+      "headers": [
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "Fatia 4. ?month=AAAA-MM opcional (padrão: mês corrente; futuro → 400)."
     }
   ]
 }

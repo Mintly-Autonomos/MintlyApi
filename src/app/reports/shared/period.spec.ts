@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { addDaysToDay, addMonths, diffDays, diffMonths, parseGmtOffset, startOfLocalDay, startOfLocalMonth, toLocalDay, toLocalMonth } from './period'
+import { addDaysToDay, addMonths, diffDays, diffMonths, parseGmtOffset, startOfLocalDay, startOfLocalMonth, toLocalDay, toLocalMonth, parseReferenceMonth } from './period'
+import { ValidationError } from '../../../core/errors/core/validation-error'
 
 describe('period — dias em America/Sao_Paulo', () => {
   it('lançamento às 22h30 em São Paulo (01h30 UTC do dia seguinte) fica no próprio dia', () => {
@@ -54,5 +55,27 @@ describe('meses em America/Sao_Paulo', () => {
 
   it('início do mês local', () => {
     expect(startOfLocalMonth('2026-10').toISOString()).toBe('2026-10-01T03:00:00.000Z')
+  })
+})
+
+const NOW = new Date('2026-10-12T15:00:00.000Z')
+
+describe('parseReferenceMonth', () => {
+  it('ausente: mês corrente em São Paulo', () => {
+    expect(parseReferenceMonth(undefined, NOW)).toBe('2026-10')
+    expect(parseReferenceMonth(undefined, new Date('2026-11-01T01:00:00.000Z'))).toBe('2026-10')
+  })
+
+  it('aceita o mês corrente e meses passados', () => {
+    expect(parseReferenceMonth('2026-10', NOW)).toBe('2026-10')
+    expect(parseReferenceMonth('2025-01', NOW)).toBe('2025-01')
+  })
+
+  it.each(['2026-13', '2026-1', '2026-00', 'outubro', '2026-10-01'])('formato inválido %s → 400', (v) => {
+    expect(() => parseReferenceMonth(v, NOW)).toThrow(ValidationError)
+  })
+
+  it('mês futuro → 400', () => {
+    expect(() => parseReferenceMonth('2026-11', NOW)).toThrow(ValidationError)
   })
 })

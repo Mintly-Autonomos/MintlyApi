@@ -2,7 +2,7 @@ import { RestaurantProfileResponse } from 'mintly-lib'
 import { RequestContext } from '../../../core/context/request-context'
 import { RestaurantRepository } from '../restaurant-repository'
 import { TaxProfileQuery } from '../../tax/tax-profile.query'
-import { parseReferenceMonth } from '../reference-month'
+import { parseReferenceMonth } from '../../reports/shared/period'
 
 /** GET /restaurants/me — restaurante + perfil tributário do mês. Read-only. */
 export class GetRestaurantProfileQuery {

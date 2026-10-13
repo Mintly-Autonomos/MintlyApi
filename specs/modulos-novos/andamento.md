@@ -11,17 +11,15 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 ## Passo atual
 
-**Fatia 3 — `dreGroup` + `mixed` + alíquota (M2, M5)** — classificação contábil da categoria e
-imposto do restaurante, fundação do Resultado (DRE).
+**Fatia 4 — Resultado (DRE)** — `GET /reports/result`. Consome o `dreGroup` e o perfil tributário da fatia 3.
 
 - Etapa: ~~perguntas~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~revisão final~~ ✅ → ~~teste local~~ ✅ →
-  ~~PR da lib~~ ✅ (MintlyLib#28, `2.11.0-preview`) → **PR da API aberto (MintlyApi#41), CI verde, aguardando review**.
-- Spec: `specs/modulos-novos/20261012/classificacao-contabil.md`; plano: `specs/modulos-novos/20261012/plan-classificacao-contabil.md`.
-- Branch: `feat/20261012/classificacao-contabil` (lib e API).
-- Validação: suíte 767/767 (cobertura 98,4 / 97,8 / 99,4 / 98,9); `tax/` e `reports/shared/` com 100%; E2E contra
-  o Atlas 5/5; scripts contra Mongo em memória; backend local dirigido por HTTP.
-- A revisão final corrigiu a regra do teto proporcional do MEI na spec (LC 123, art. 18-A §2º: meses do início
-  da atividade até dezembro, não "até o mês").
+  ~~PR da lib~~ ✅ (MintlyLib#29, `2.12.0-preview`) → **PR da API aberto (MintlyApi#42), CI verde, aguardando review**.
+- Spec: `specs/modulos-novos/20261012/resultado-dre.md`; plano: `specs/modulos-novos/20261012/plan-resultado-dre.md`.
+- Branch: `feat/20261012/resultado-dre` (lib e API).
+- Validação: suíte 798/798 (cobertura 98,5 / 97,8 / 99,0 / 98,9); `result-metrics.ts` com 100%; E2E contra o
+  Atlas 6/6; seed `SEED_SCENARIO=result` e backend local dirigidos por HTTP.
+- A revisão final corrigiu a spec: o ponto de equilíbrio é **receita bruta** (antes saía em receita líquida).
 
 ## Fatias
 
@@ -29,8 +27,8 @@ imposto do restaurante, fundação do Resultado (DRE).
 |---|---|---|---|---|
 | 1 | `dueDate` (M1) — MIN-89 | #26 ✅ mergeado (`2.9.0-preview`) | #39 ✅ mergeado | Concluída — falta o backfill em staging |
 | 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | #40 ✅ mergeado | Concluída |
-| 3 | `dreGroup` + `mixed` + alíquota (M2, M5) — MIN-23 | #28 ✅ mergeado (`2.11.0-preview`) | #41 aberto, CI verde | **Em review** |
-| 4 | Resultado (DRE) | — | — | Na fila |
+| 3 | `dreGroup` + `mixed` + alíquota (M2, M5) — MIN-23 | #28 ✅ mergeado (`2.11.0-preview`) | #41 ✅ mergeado | Concluída — faltam os comandos de staging |
+| 4 | Resultado (DRE) | #29 ✅ mergeado (`2.12.0-preview`) | #42 aberto, CI verde | **Em review** |
 | 5 | Subcategoria + `channel` (M3, M4) | — | — | Na fila |
 | 6 | Custos & Despesas — fatia A | — | — | Na fila |
 | 7 | Custos & Despesas — fatia B | — | — | Na fila |
@@ -40,8 +38,9 @@ imposto do restaurante, fundação do Resultado (DRE).
 ## Próximos passos
 
 1. Rodar o backfill de staging abaixo (o #39 já foi mergeado).
-2. Review e merge do PR da API da fatia 3 → rodar os comandos da fatia 3 abaixo.
-3. Fatia 4 (Resultado/DRE): consome o `TaxProfileQuery` e o `dreGroup`.
+2. Rodar os comandos da fatia 3 abaixo (o #41 já foi mergeado).
+3. Review e merge do PR da API da fatia 4.
+4. Fatia 5: subcategoria + `channel` (M3, M4).
 
 ## Postar no Jira (quando o MCP do Atlassian voltar)
 
@@ -57,6 +56,7 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
 - [ ] **MIN-23**: comentário dizendo que a fatia 3 implementa o cálculo (sem `daily_sales`: RBT12 de
       `financial_movements`), com a spec `specs/modulos-novos/20261012/classificacao-contabil.md`.
 - [ ] **Fatia 3**: história/subtarefas para lib e API (ainda não existem no Jira).
+- [ ] **Fatia 4 (Resultado/DRE)**: épico/história e subtarefas (ainda não existem no Jira) + spec `20261012/resultado-dre.md`.
 
 ## Em aberto (não bloqueia a fatia atual)
 
@@ -71,6 +71,14 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
   lidas como meia-noite UTC — 21h do dia anterior em São Paulo. A fatia 2 corrigiu isso só para o
   `settledAt` do PATCH de status; no POST/PATCH de movimentação é comportamento das fatias
   anteriores. Conferir como o MintlyWeb envia essas datas antes de mexer.
+
+### Pendências da fatia 4
+
+- **Histórico de regime tributário:** o regime atual vale para os 6 meses do histórico do DRE.
+- Menores da revisão: o campo `tax` do mês pode contradizer a linha de imposto (MEI mostra o DAS
+  vigente num mês anterior à primeira movimentação, em que o imposto é 0); a consulta de categorias
+  não projeta `type`; saída sem categoria vira item de nome vazio; 6 consultas ao `tax_settings` no
+  MEI; com custo fixo zero, `reachedOnDay` é 1 mesmo se a primeira venda for depois.
 
 ### Pendências da fatia 3
 
@@ -122,7 +130,7 @@ MONGO_ENV=staging npm run db:backfill-due-date
 MONGO_ENV=production npm run db:backfill-due-date
 ```
 
-### Fatia 3 — depois do merge do PR da API
+### Fatia 3 — já liberado (MintlyApi#41 mergeado em 12/10/2026)
 
 ```bash
 # M2: dá dreGroup às despesas antigas (sistema pelo nome; demais opex). Idempotente.
