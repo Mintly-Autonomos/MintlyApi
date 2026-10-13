@@ -77,17 +77,20 @@ export function computeRbt12 (p: { referenceMonth: string; firstMonth: string | 
 }
 
 /**
- * Teto do MEI no ano do mês de referência: R$ 81.000, ou R$ 6.750 × meses
- * ativos no ano de início. `usedPct` = receita de janeiro até o mês ÷ teto.
+ * Teto do MEI no ano do mês de referência: R$ 81.000; no ano de início (LC 123,
+ * art. 18-A §2º), R$ 6.750 × meses do início da atividade até o FIM do
+ * ano-calendário. Mês anterior à primeira movimentação não é ano de início
+ * "ativo": teto cheio, sem divisão por zero. `usedPct` = receita de janeiro até
+ * o mês ÷ teto.
  */
 export function meiCap (p: { referenceMonth: string; firstMonth: string | null; revenueByMonth: Map<string, number> }) {
   const year = p.referenceMonth.slice(0, 4)
   let ytd = 0
   for (let m = `${year}-01`; m <= p.referenceMonth; m = addMonths(m, 1)) ytd += cents(p.revenueByMonth.get(m) ?? 0)
 
-  const startedThisYear = p.firstMonth != null && p.firstMonth.slice(0, 4) === year
+  const startedThisYear = p.firstMonth != null && p.firstMonth.slice(0, 4) === year && p.firstMonth <= p.referenceMonth
   const annualLimit = startedThisYear
-    ? MEI_MONTHLY_LIMIT * (diffMonths(p.firstMonth!, p.referenceMonth) + 1)
+    ? MEI_MONTHLY_LIMIT * (diffMonths(p.firstMonth!, `${year}-12`) + 1)
     : MEI_ANNUAL_LIMIT
   const yearToDateRevenue = fromCents(ytd)
   return { annualLimit, yearToDateRevenue, usedPct: yearToDateRevenue / annualLimit }

@@ -32,7 +32,8 @@ export class FinancialCategoryController extends CrudController<FinancialCategor
 
   /** Cadastro: despesa sem grupo recebe `opex`; receita com grupo → 400 (fatia 3). */
   async insert (item: FinancialCategory, source?: ContextSource): Promise<ResponseStructure> {
-    return super.insert(resolveInsertDreGroup(item as any), source)
+    // Corpo ausente segue para o parse do schema (400), em vez de quebrar aqui (500).
+    return super.insert(resolveInsertDreGroup((item ?? {}) as any), source)
   }
 
   async update (id: string, item: Partial<FinancialCategory>, source?: ContextSource): Promise<ResponseStructure> {

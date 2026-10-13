@@ -111,7 +111,10 @@ export class FinancialCategoryRepository extends MongodbCrudRepository<Financial
    */
   async updateCategory (id: string, set: Record<string, unknown>, unsetDreGroup: boolean, ctx: RequestContext): Promise<FinancialCategory> {
     if (!ObjectId.isValid(id)) throw new NotFoundError(Resource.FinancialCategory, id)
-    const update: Record<string, unknown> = { $set: set }
+    // Auditoria é do servidor, como no update genérico que esta rota substituiu.
+    const update: Record<string, unknown> = {
+      $set: { ...set, 'audit.updatedAt': new Date(), 'audit.updatedBy': ctx.userId },
+    }
     if (unsetDreGroup) update.$unset = { dreGroup: '' }
 
     const result = await this.getCollection(ctx).findOneAndUpdate(

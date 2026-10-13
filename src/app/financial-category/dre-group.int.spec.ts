@@ -107,4 +107,24 @@ describe('dreGroup na categoria (Integration)', () => {
     expect(res.statusCode).toBe(200)
     expect(await stored(s.db, id)).toMatchObject({ name: 'Legada 2', dreGroup: 'opex' })
   })
+
+  // Revisão final — I1: o PATCH de categoria tem que continuar gravando a auditoria.
+  it('edição grava audit.updatedAt e updatedBy', async () => {
+    const s = await setup()
+    const id = (await create(s.auth, { name: 'Auditada', type: 'expense' })).json().payload._id
+    await s.db.collection('financial_categories').updateOne({ _id: new ObjectId(id) }, { $set: { 'audit.updatedAt': new Date('2020-01-01T00:00:00.000Z') }, $unset: { 'audit.updatedBy': '' } })
+
+    await patch(s.auth, id, { name: 'Auditada 2' })
+
+    const doc = await stored(s.db, id)
+    expect(doc.audit.updatedAt.getTime()).toBeGreaterThan(new Date('2020-01-01T00:00:00.000Z').getTime())
+    expect(doc.audit.updatedBy).toBeDefined()
+  })
+
+  // M4: corpo ausente é erro do cliente (400), não 500.
+  it('cadastro sem corpo → 400', async () => {
+    const s = await setup()
+    const res = await app.inject({ method: 'POST', url: '/financial-categories', headers: s.auth })
+    expect(res.statusCode).toBe(400)
+  })
 })

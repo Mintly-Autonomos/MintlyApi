@@ -177,8 +177,10 @@ efetiva = (RBT12 × nominal − dedução) / RBT12
 
 - Imposto do mês = DAS vigente em M: documento de `app.tax_settings` com o maior
   `validFrom ≤ M`. Sem documento → `meiMonthlyDas: null`.
-- Teto anual R$ 81.000. No ano de início (primeira movimentação no mesmo ano civil de M), teto
-  proporcional = R$ 6.750 × meses ativos no ano até M.
+- Teto anual R$ 81.000. No ano de início (primeira movimentação no mesmo ano civil de M, e não
+  depois de M), teto proporcional = R$ 6.750 × meses **do início da atividade até dezembro** (LC 123,
+  art. 18-A §2º). *Corrigido na revisão final: a versão aprovada dizia "até M", o que gerava alerta
+  falso de teto no começo do ano de abertura.*
 - `usedPct` = receita bruta de janeiro até o fim de M ÷ teto.
 
 ### `saleTax`

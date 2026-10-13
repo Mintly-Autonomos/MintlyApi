@@ -81,6 +81,10 @@ describe('/restaurants/me (Integration)', () => {
     [{ taxRegime: 'lucroReal' }],
     [{ audit: { createdAt: new Date() } }],
     [{ restaurantId: 'outro' }],
+    [{ name: null }],
+    [{ name: '' }],
+    [{ name: '   ' }],
+    [{ taxRegime: null }],
   ])('PATCH inválido %j → 400', async (payload) => {
     const { auth } = await signup(freshEnv())
     expect((await patchMe(auth, payload)).statusCode).toBe(400)

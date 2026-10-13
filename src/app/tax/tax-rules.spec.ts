@@ -82,9 +82,17 @@ describe('meiCap', () => {
       .toEqual({ annualLimit: 81_000, yearToDateRevenue: 60_000, usedPct: 60_000 / 81_000 })
   })
 
-  it('ano de início: teto proporcional (6.750 × meses ativos)', () => {
+  // LC 123, art. 18-A §2º: no ano de início, 6.750 × meses do início da
+  // atividade até o FIM do ano-calendário (setembro → 4 meses).
+  it('ano de início: teto proporcional (6.750 × meses do início até dezembro)', () => {
     expect(meiCap({ referenceMonth: '2026-10', firstMonth: '2026-09', revenueByMonth: rev([['2026-09', 5_000], ['2026-10', 5_000]]) }))
-      .toEqual({ annualLimit: 13_500, yearToDateRevenue: 10_000, usedPct: 10_000 / 13_500 })
+      .toEqual({ annualLimit: 27_000, yearToDateRevenue: 10_000, usedPct: 10_000 / 27_000 })
+  })
+
+  it('mês anterior à primeira movimentação: teto cheio, sem divisão por zero nem teto negativo', () => {
+    expect(meiCap({ referenceMonth: '2026-09', firstMonth: '2026-10', revenueByMonth: rev([['2026-10', 5_000]]) }))
+      .toEqual({ annualLimit: 81_000, yearToDateRevenue: 0, usedPct: 0 })
+    expect(meiCap({ referenceMonth: '2026-08', firstMonth: '2026-10', revenueByMonth: rev([]) }).annualLimit).toBe(81_000)
   })
 })
 
@@ -145,11 +153,12 @@ describe('buildTaxProfile', () => {
   })
 
   it('MEI: DAS do mês, teto e meiCapNear a partir de 80%', () => {
-    const near = buildTaxProfile({ regime: TaxRegime.Mei, referenceMonth: '2026-10', firstMonth: '2026-10', revenueByMonth: rev([['2026-10', 5_400]]), meiMonthlyDas: 81.05 })
-    expect(near).toMatchObject({ meiMonthlyDas: 81.05, effectiveRate: null, bracket: null, meiCap: { annualLimit: 6_750, yearToDateRevenue: 5_400, usedPct: 0.8 } })
-    expect(near.insights).toEqual([{ kind: 'meiCapNear', severity: 'warning', usedPct: 0.8, yearToDateRevenue: 5_400, annualLimit: 6_750 }])
+    // aberto em outubro: teto do ano = 6.750 × 3 (out, nov, dez) = 20.250
+    const near = buildTaxProfile({ regime: TaxRegime.Mei, referenceMonth: '2026-10', firstMonth: '2026-10', revenueByMonth: rev([['2026-10', 16_200]]), meiMonthlyDas: 81.05 })
+    expect(near).toMatchObject({ meiMonthlyDas: 81.05, effectiveRate: null, bracket: null, meiCap: { annualLimit: 20_250, yearToDateRevenue: 16_200, usedPct: 0.8 } })
+    expect(near.insights).toEqual([{ kind: 'meiCapNear', severity: 'warning', usedPct: 0.8, yearToDateRevenue: 16_200, annualLimit: 20_250 }])
 
-    const below = buildTaxProfile({ regime: TaxRegime.Mei, referenceMonth: '2026-10', firstMonth: '2026-10', revenueByMonth: rev([['2026-10', 5_393.25]]), meiMonthlyDas: null })
+    const below = buildTaxProfile({ regime: TaxRegime.Mei, referenceMonth: '2026-10', firstMonth: '2026-10', revenueByMonth: rev([['2026-10', 16_179.75]]), meiMonthlyDas: null })
     expect(below.insights).toEqual([])
   })
 })
