@@ -747,6 +747,25 @@
           "value": "Bearer {{ _.token }}"
         }
       ]
+    },
+    {
+      "_id": "req_expenses",
+      "_type": "request",
+      "parentId": "fld_reports",
+      "name": "Custos & Despesas",
+      "method": "GET",
+      "url": "{{ _.base_url }}/reports/expenses",
+      "headers": [
+        {
+          "name": "env",
+          "value": "{{ _.env }}"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer {{ _.token }}"
+        }
+      ],
+      "description": "Fatia 6. ?month=AAAA-MM (padrão: mês corrente) e ?channel=dineIn|delivery (sem = Geral)."
     }
   ]
 }
