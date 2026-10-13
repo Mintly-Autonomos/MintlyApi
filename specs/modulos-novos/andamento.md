@@ -13,7 +13,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 **Fatia 5 — Subcategoria + `channel` (M3, M4)** — fundação das fatias 6 e 7 (Custos & Despesas).
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência~~ ✅ (revisor + teste local) → ~~lib #30~~ ✅ (2.13.0-preview) → **PR da API aberto, aguardando merge**.
+- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência~~ ✅ (revisor + teste local) → ~~lib #30~~ ✅ (2.13.0-preview) → **PR da API #43 aberto (checks verdes), aguardando merge**.
 - Spec: `specs/modulos-novos/20261013/subcategoria-canal.md`; plano: `specs/modulos-novos/20261013/plan-subcategoria-canal.md` (6 tarefas). Decidido: subcategoria em qualquer categoria (inclusive de sistema), opcional no lançamento; canal efetivo resolvido na leitura.
 - Branch: `feat/20261013/subcategoria-canal` (API, a partir de `staging`).
 
@@ -25,7 +25,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 2 | **Fluxo de Caixa** — MIN-90 / MIN-94 | #27 ✅ mergeado (`2.10.0-preview`) | #40 ✅ mergeado | Concluída |
 | 3 | `dreGroup` + `mixed` + alíquota (M2, M5) — MIN-23 | #28 ✅ mergeado (`2.11.0-preview`) | #41 ✅ mergeado | Concluída — faltam os comandos de staging |
 | 4 | Resultado (DRE) | #29 ✅ mergeado (`2.12.0-preview`) | #42 ✅ mergeado | Concluída |
-| 5 | Subcategoria + `channel` (M3, M4) | — | — | **Em review** — lib #30 mergeada (2.13.0-preview); PR da API aberto |
+| 5 | Subcategoria + `channel` (M3, M4) | #30 ✅ mergeado (`2.13.0-preview`) | #43 aberto (checks verdes) | **Em review** — aguardando merge da API |
 | 6 | Custos & Despesas — fatia A | — | — | Na fila |
 | 7 | Custos & Despesas — fatia B | — | — | Na fila |
 | 8 | Visão Geral | — | — | Na fila |
@@ -52,6 +52,7 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
       `financial_movements`), com a spec `specs/modulos-novos/20261012/classificacao-contabil.md`.
 - [ ] **Fatia 3**: história/subtarefas para lib e API (ainda não existem no Jira).
 - [ ] **Fatia 4 (Resultado/DRE)**: épico/história e subtarefas (ainda não existem no Jira) + spec `20261012/resultado-dre.md`.
+- [ ] **Fatia 5 (Subcategoria + canal)**: história/subtarefas (lib #30, API #43) + spec `20261013/subcategoria-canal.md`; mínimos adiados da revisão (NFC no nome, max(60) antes do trim, `null` no `updateMovementSchema` da lib).
 
 ## Em aberto (não bloqueia a fatia atual)
 
