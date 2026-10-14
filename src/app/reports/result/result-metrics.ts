@@ -173,6 +173,9 @@ export function buildOpexItems (current: MonthAggregate, previous: MonthAggregat
   for (const id of ids) {
     const c = current.opexCategories.get(id)
     const p = previous.opexCategories.get(id)
+    // Zerada nos dois lados (ex.: no mês atual, gasto do anterior caiu depois do
+    // dia de corte): linha vazia, fora da composição.
+    if ((c?.cents ?? 0) === 0 && (p?.cents ?? 0) === 0) continue
     const base = (c ?? p)!
     items.push(opexItem({ categoryId: base.categoryId, name: base.name, kind: base.kind, behavior: base.behavior }, c?.cents ?? 0, p?.cents ?? 0, current.grossRevenue))
   }

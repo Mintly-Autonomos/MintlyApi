@@ -126,6 +126,12 @@ describe('variações', () => {
 })
 
 describe('buildOpexItems', () => {
+  it('categoria zerada no mês e no anterior não é listada (mês atual pelo mesmo período)', () => {
+    const current = aggregateMonth([row({ direction: 'in', categoryId: 'ven', gross: 1_000 })], M, CATS)
+    const previous = aggregateMonth([row({ month: '2026-06', categoryId: 'mkt', gross: 0 })], '2026-06', CATS)
+    expect(buildOpexItems(current, previous)).toEqual([])
+  })
+
   const cur = aggregateMonth([
     row({ direction: 'in', categoryId: 'ven', gross: 10_000, fee: 600 }),
     row({ categoryId: 'pro', gross: 800 }),
