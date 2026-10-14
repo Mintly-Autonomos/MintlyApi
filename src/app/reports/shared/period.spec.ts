@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDaysToDay, addMonths, diffDays, diffMonths, parseGmtOffset, startOfLocalDay, startOfLocalMonth, toLocalDay, toLocalMonth, parseReferenceMonth } from './period'
+import { addDaysToDay, addMonths, diffDays, diffMonths, parseGmtOffset, startOfLocalDay, startOfLocalMonth, toLocalDay, toLocalMonth, parseReferenceMonth, comparisonUntilDay } from './period'
 import { ValidationError } from '../../../core/errors/core/validation-error'
 
 describe('period — dias em America/Sao_Paulo', () => {
@@ -77,5 +77,15 @@ describe('parseReferenceMonth', () => {
 
   it('mês futuro → 400', () => {
     expect(() => parseReferenceMonth('2026-11', NOW)).toThrow(ValidationError)
+  })
+})
+
+describe('comparisonUntilDay (ajuste A1)', () => {
+  it('mês atual → dia de hoje em SP; 22h do dia 31 ainda é dia 31', () => {
+    expect(comparisonUntilDay('2026-10', new Date('2026-10-13T15:00:00Z'))).toBe(13)
+    expect(comparisonUntilDay('2026-10', new Date('2026-11-01T01:00:00Z'))).toBe(31)
+  })
+  it('mês fechado → null', () => {
+    expect(comparisonUntilDay('2026-09', new Date('2026-10-13T15:00:00Z'))).toBeNull()
   })
 })

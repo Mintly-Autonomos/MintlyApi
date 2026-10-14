@@ -21,6 +21,9 @@ export interface MonthlyTotalRow {
   categoryName: string
   gross: number
   fee: number
+  /** Ajuste A1: soma até o dia de corte (mesmo período); ausente = mês cheio. */
+  grossUntil?: number
+  feeUntil?: number
 }
 
 export interface CategoryInfo {
@@ -250,6 +253,8 @@ export interface ResultInput {
   taxByMonth: Map<string, MonthTax>
   meiMonthlyDas: number | null
   dailyRevenue: Map<string, number>
+  /** Ajuste A1: no mês atual, o dia de hoje (SP) — a comparação usa os mesmos dias. */
+  untilDay?: number | null
 }
 
 const NO_TAX: MonthTax = { effectiveRate: null, fixedAmount: null }
@@ -261,10 +266,14 @@ export function computeResult (input: ResultInput): ResultReport {
   const aggs = new Map(months.map((m) => [m, aggregateMonth(input.rows, m, input.categories)]))
   const linesOf = (m: string) => buildLines(aggs.get(m)!, input.taxByMonth.get(m) ?? NO_TAX)
 
+  // Ajuste A1: no mês atual, o anterior é comparado pelos mesmos dias (1..untilDay)
+  // — senão o mês pela metade sempre "cai". O histórico segue com meses cheios.
+  const untilDay = input.untilDay ?? null
+  const comparisonRows = untilDay == null ? input.rows : input.rows.map((r) => ({ ...r, gross: r.grossUntil ?? r.gross, fee: r.feeUntil ?? r.fee }))
   const current = linesOf(input.referenceMonth)
-  const previous = linesOf(previousMonth)
   const currentAgg = aggs.get(input.referenceMonth)!
-  const previousAgg = aggs.get(previousMonth)!
+  const previousAgg = aggregateMonth(comparisonRows, previousMonth, input.categories)
+  const previous = buildLines(previousAgg, input.taxByMonth.get(previousMonth) ?? NO_TAX)
   const items = buildOpexItems(currentAgg, previousAgg)
   const tax = input.taxByMonth.get(input.referenceMonth) ?? NO_TAX
 
@@ -286,5 +295,6 @@ export function computeResult (input: ResultInput): ResultReport {
       return { month: m, grossRevenue: l.grossRevenue, netProfit: l.netProfit, netMargin: l.netMargin }
     }),
     insights: buildInsights({ regime: input.regime, current, previous, previousHasActivity: hasActivity(previousAgg), items }),
+    comparison: untilDay == null ? { kind: 'fullMonth', untilDay: null } : { kind: 'samePeriod', untilDay },
   }
 }
