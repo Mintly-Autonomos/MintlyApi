@@ -11,11 +11,12 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 ## Passo atual
 
-**Fatia 8 — Visão Geral** — `GET /dashboard/overview`.
+**Ajustes pós-teste das telas (itens 1 a 5)** — spec `specs/modulos-novos/20261014/ajustes-telas.md`.
 
-- Etapa: ~~perguntas do módulo~~ ✅ → ~~spec~~ ✅ → ~~plano~~ ✅ → ~~TDD~~ ✅ → ~~conferência~~ ✅ (revisor + 2 correções + teste local) → ~~lib #33~~ ✅ (2.16.0-preview) → **PR da API #46 aberto, aguardando merge**.
-- Spec: `specs/modulos-novos/20261013/visao-geral.md`; plano: `specs/modulos-novos/20261013/plan-visao-geral.md` (5 tarefas). Decidido: score com a proposta do design (palpite N5), pilares lineares, pilar sem dado sai; `?month=` com caixa sempre de hoje; catálogo fixo de insights (máx. 4); composição das consultas existentes.
-- Branch: `feat/20261013/visao-geral` (API, a partir de `staging`).
+- Origem: revisão das prints × API + teste local com dados (13/10/2026). Decidido pelo dono: aplicar as recomendações.
+- A1 mês atual comparado pelo mesmo período · A2 projeção de despesa por comportamento · A3 insights de CMV/prime na base do score · A4 score exige 2 pilares · A5 repasses de plataforma agrupados. Extras achados no teste: DRE não lista despesa zerada nos dois lados; repasse usa o nome atual da conta.
+- Teste pesado (local, Mongo em memória): 5 restaurantes, ~4.700 lançamentos, todos os meses/canais/horizontes e entradas inválidas, com oráculo independente — 57.645 checks, 3 falhas conhecidas do próprio roteiro (conta com saldo não inativa: 409 esperado). Telas respondem em < 110 ms com ~3.900 lançamentos.
+- Branch: `feat/20261014/ajustes-telas` (lib e API). Etapa: TDD ✅ → conferência (revisor) → PR da lib → `npm i` → PR da API.
 
 ## Fatias
 
@@ -28,14 +29,14 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 | 5 | Subcategoria + `channel` (M3, M4) | #30 ✅ mergeado (`2.13.0-preview`) | #43 ✅ mergeado | Concluída |
 | 6 | Custos & Despesas — fatia A | #31 ✅ mergeado (`2.14.0-preview`) | #44 ✅ mergeado | Concluída |
 | 7 | Custos & Despesas — fatia B | #32 ✅ mergeado (`2.15.0-preview`) | #45 ✅ mergeado | Concluída |
-| 8 | Visão Geral | #33 ✅ mergeado (`2.16.0-preview`) | #46 aberto | **Em review** — PR da API aberto |
+| 8 | Visão Geral | #33 ✅ mergeado (`2.16.0-preview`) | #46 ✅ mergeado | Concluída |
 | 9 | Receitas, Previsões | — | — | Bloqueado (domínio de vendas) |
 
 ## Próximos passos
 
 1. Rodar o backfill de staging abaixo (o #39 já foi mergeado).
 2. Rodar os comandos da fatia 3 abaixo (o #41 já foi mergeado).
-3. Fatia 8: merge do PR da API. Nenhum comando novo no ambiente. Com isso, a trilha implementável termina (fatia 9 segue bloqueada pelo domínio de vendas — N1).
+3. Ajustes pós-teste: revisão → PR da lib → PR da API. Pendências para o front e o negócio (itens 6–9 da revisão das telas) abaixo.
 
 ## Postar no Jira (quando o MCP do Atlassian voltar)
 
@@ -70,6 +71,14 @@ O MCP do Atlassian só volta reiniciando a sessão. Até lá, o que precisa ir p
   lidas como meia-noite UTC — 21h do dia anterior em São Paulo. A fatia 2 corrigiu isso só para o
   `settledAt` do PATCH de status; no POST/PATCH de movimentação é comportamento das fatias
   anteriores. Conferir como o MintlyWeb envia essas datas antes de mexer.
+
+### Pendências da revisão das telas (13/10/2026) — para o front e o negócio
+
+- **"Despesa" tem três sentidos:** Custos e o gráfico Receita × Despesa = todas as saídas (CMV, DAS, taxas); cascata/Resultado = despesas operacionais. O front precisa rotular diferente ("Saídas" × "Despesas operacionais").
+- **Ponto projetado:** a API projeta o fechamento do mês atual no mesmo mês; o protótipo desenha "mês seguinte (proj.)". Definir a regra de desenho.
+- **Filtro "Salão" vazio na prática:** saída sem canal conta como da casa (N3 — rateio). Usar `sharedExcluded` para explicar.
+- **Natureza não operacional ignorada:** aporte/empréstimo lançado como entrada infla receita, CMV %, DRE e score. Decidir regra.
+- Menores (front): alerta de caixa apertado traz o 1º dia abaixo da margem (o "R$ 900 no dia 22" vem de `lowestBalance`); semanas em 5 blocos para 30 dias; "cada real vendido tem X% de margem" = `fixedCosts / breakEvenRevenue`; sem dia estimado do equilíbrio no mês atual; sem série no card "Projeção 30 dias"; taxa de plataforma 1 linha no DRE × por conta em Custos; onde o "misto" entra nos filtros.
 
 ### Pendências da fatia 8
 
