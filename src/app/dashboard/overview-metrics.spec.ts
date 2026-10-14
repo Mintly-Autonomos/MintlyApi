@@ -22,6 +22,10 @@ describe('healthScore e healthLabel', () => {
     expect(healthScore([p('netMargin', 0.3, 100), p('runway', 0.3, null), p('primeCost', 0.25, 0), p('revenueTrend', 0.15, null)])).toBe(55)
   })
   it('nenhum pilar → null', () => expect(healthScore([p('netMargin', 0.3, null)])).toBeNull())
+  it('ajuste A4: só 1 pilar com dado → null (não dá nota)', () => {
+    expect(healthScore([p('netMargin', 0.3, null), p('runway', 0.3, 13), p('primeCost', 0.25, null)])).toBeNull()
+    expect(healthScore([p('runway', 0.3, 13), p('primeCost', 0.25, 100)])).toBe(53)
+  })
   it.each([[null, 'noData'], [39, 'risk'], [40, 'attention'], [69, 'attention'], [70, 'healthy'], [100, 'healthy']] as const)('%s → %s', (score, label) => expect(healthLabel(score)).toBe(label))
 })
 
@@ -88,7 +92,7 @@ describe('computeOverview — cenário (mês fechado)', () => {
   it('insights na ordem e com os números', () => {
     expect(r.insights).toEqual([
       { kind: 'cashTight', severity: 'warning', date: '2026-08-22', balance: 900 },
-      { kind: 'cmvAboveTarget', severity: 'warning', pct: 21_024 / 58_400, targetMax: 0.35, impact: 584 },
+      { kind: 'cmvAboveTarget', severity: 'warning', pct: 21_024 / 58_400, targetMax: 0.35, impact: 584, basisMonth: '2026-07' },
       { kind: 'expenseAnomaly', severity: 'warning', name: 'Embalagens', categoryName: 'CMV / Insumos', excess: 900, pctAbove: 0.6 },
       { kind: 'breakEvenReached', severity: 'positive', day: 19 },
     ])
@@ -104,7 +108,7 @@ describe('computeOverview — cenário (mês fechado)', () => {
 describe('computeOverview — bordas', () => {
   it('máximo 4 insights; prime cost acima entra antes da anomalia e info fica de fora', () => {
     const input = overviewScenario()
-    ;(input.expenses.primeCost as any).pctOfRevenue = 0.7
+    ;(input.expenses.items[1] as any).amount = 20_000 // pessoal: prime = 41.024 / 58.400 = 70%
     ;(input.result as any).insights = [{ kind: 'taxRegimeNotConfigured', severity: 'info' }]
     expect(computeOverview(input).insights.map((i) => i.kind)).toEqual(['cashTight', 'cmvAboveTarget', 'primeCostAboveTarget', 'expenseAnomaly'])
   })
@@ -112,7 +116,7 @@ describe('computeOverview — bordas', () => {
   it('só positivos e info: ordem positive → info', () => {
     const input = overviewScenario()
     ;(input.cashFlow as any).insights = []
-    ;(input.expenses.cmv as any).pctOfRevenue = 0.3
+    ;(input.expenses.items[0] as any).amount = 15_000 // CMV: 15.000 / 58.400 = 25,7%
     ;(input.expenses as any).anomalies = []
     ;(input.result as any).insights = [{ kind: 'taxRegimeNotConfigured', severity: 'info' }]
     expect(computeOverview(input).insights.map((i) => i.kind)).toEqual(['breakEvenReached', 'taxRegimeNotConfigured'])
@@ -179,5 +183,31 @@ describe('computeOverview — bordas', () => {
     const r = computeOverview(input)
     expect(r.cards.projection.runwayDays).toBe(0)
     expect(r.health.pillars.find((pl) => pl.key === 'runway')!.score).toBe(0)
+  })
+})
+
+describe('ajustes A1 e A3 na Visão Geral', () => {
+  it('comparação vem do DRE', () => {
+    const input = overviewScenario()
+    ;(input.result as any).comparison = { kind: 'samePeriod', untilDay: 10 }
+    expect(computeOverview(input).comparison).toEqual({ kind: 'samePeriod', untilDay: 10 })
+  })
+
+  it('A3 — mês atual: CMV/prime dos insights no mês-base (junho cheio), não no mês pela metade', () => {
+    const input = overviewScenario()
+    input.today = new Date('2026-07-10T15:00:00Z')
+    // julho até agora: CMV 36% (acima), mas junho cheio: 18.000 / 54.200 = 33,2% (dentro)
+    const r = computeOverview(input)
+    expect(r.insights.map((i) => i.kind)).not.toContain('cmvAboveTarget')
+    expect(r.cards.cmv.pct).toBeCloseTo(0.36, 10)
+
+    ;(input.expenses.items[0] as any).history = [{ month: '2026-06', amount: 20_000 }, { month: '2026-07', amount: 21_024 }]
+    const r2 = computeOverview(input)
+    expect(r2.insights.find((i) => i.kind === 'cmvAboveTarget')).toEqual({ kind: 'cmvAboveTarget', severity: 'warning', pct: 20_000 / 54_200, targetMax: 0.35, impact: Math.round((20_000 / 54_200 - 0.35) * 5_420_000) / 100, basisMonth: '2026-06' })
+  })
+
+  it('A3 — mês passado: insights no próprio mês', () => {
+    const r = computeOverview(overviewScenario())
+    expect(r.insights.find((i) => i.kind === 'cmvAboveTarget')).toMatchObject({ basisMonth: '2026-07', impact: 584 })
   })
 })
