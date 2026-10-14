@@ -16,6 +16,8 @@ export interface CashFlowMovement {
   settledAt?: Date
   grossValue: number
   netValue: number
+  /** Conta (snapshot) — usada para agrupar repasses de plataforma (ajuste A5). */
+  account?: { _id: string; name: string; type: string }
 }
 
 /**

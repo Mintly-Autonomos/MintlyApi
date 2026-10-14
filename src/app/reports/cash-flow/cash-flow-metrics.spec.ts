@@ -218,8 +218,55 @@ describe('buildDueItems', () => {
       dueDate: '2026-10-04',
       status: 'pending',
       overdue: true,
+      kind: 'movement',
+      itemCount: 1,
     })
     expect(settled).toMatchObject({ id: 's1', amount: 2950, status: 'settled', overdue: false, settledAt: '2026-10-08' })
+  })
+})
+
+describe('buildDueItems — ajuste A5: repasses de plataforma agrupados', () => {
+  const ifood = { _id: 'acc-ifood', name: 'iFood', type: 'platform' }
+  const rappi = { _id: 'acc-rappi', name: 'Rappi', type: 'platform' }
+  const order = (over: Partial<CashFlowMovement>) => mov({ direction: MovementDirection.In, account: ifood, category: { _id: 'v', name: 'Venda Delivery' }, title: 'Pedido', ...over })
+
+  it('pedidos da mesma conta e mesma data viram um item; contas e datas diferentes ficam separadas', () => {
+    const items = buildDueItems([
+      order({ id: 'a', grossValue: 100, netValue: 77, dueDate: at('2026-10-20') }),
+      order({ id: 'b', grossValue: 200, netValue: 154, dueDate: at('2026-10-20') }),
+      order({ id: 'c', grossValue: 50, netValue: 38.5, dueDate: at('2026-10-21') }),
+      order({ id: 'd', account: rappi, grossValue: 100, netValue: 82, dueDate: at('2026-10-20') }),
+      mov({ id: 'e', title: 'Boleto', dueDate: at('2026-10-20'), grossValue: 900 }),
+    ], TODAY, 30)
+
+    expect(items.map((i) => [i.title, i.dueDate, i.amount, i.kind, i.itemCount])).toEqual([
+      ['Boleto', '2026-10-20', 900, 'movement', 1],
+      ['Repasse iFood', '2026-10-20', 231, 'platformPayout', 2],
+      ['Repasse Rappi', '2026-10-20', 82, 'platformPayout', 1],
+      ['Repasse iFood', '2026-10-21', 38.5, 'platformPayout', 1],
+    ])
+    expect(items[1]).toMatchObject({ id: 'payout:acc-ifood:2026-10-20:pending', category: { _id: '', name: 'Repasse de plataforma' }, direction: 'in', status: 'pending', overdue: false })
+  })
+
+  it('repasse vencido e repasse já recebido (pela data em que caiu)', () => {
+    const items = buildDueItems([
+      order({ id: 'v', netValue: 10, dueDate: at('2026-10-04') }),
+      order({ id: 's1', netValue: 20, status: MovementStatus.Settled, dueDate: at('2026-10-08'), settledAt: at('2026-10-09') }),
+      order({ id: 's2', netValue: 30, status: MovementStatus.Settled, dueDate: at('2026-10-08'), settledAt: at('2026-10-09') }),
+    ], TODAY, 30)
+
+    expect(items.map((i) => [i.id, i.amount, i.status, i.overdue, i.settledAt ?? null])).toEqual([
+      ['payout:acc-ifood:2026-10-04:pending', 10, 'pending', true, null],
+      ['payout:acc-ifood:2026-10-09:settled', 50, 'settled', false, '2026-10-09'],
+    ])
+  })
+
+  it('entrada em conta comum e saída em conta de plataforma não agrupam', () => {
+    const items = buildDueItems([
+      mov({ id: 'x', direction: MovementDirection.In, account: { _id: 'caixa', name: 'Caixa', type: 'cash' }, dueDate: at('2026-10-20') }),
+      mov({ id: 'y', direction: MovementDirection.Out, account: ifood, dueDate: at('2026-10-20') }),
+    ], TODAY, 30)
+    expect(items.map((i) => i.kind)).toEqual(['movement', 'movement'])
   })
 })
 
