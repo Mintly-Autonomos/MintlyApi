@@ -169,7 +169,7 @@ export function criticalDayInsight (points: DailyPoint[], threshold: number): Cr
 /** Categoria exibida no item agrupado de repasse (ajuste A5). */
 export const PAYOUT_CATEGORY_NAME = 'Repasse de plataforma'
 
-export function buildDueItems (movements: CashFlowMovement[], today: string, horizon: number): DueItem[] {
+export function buildDueItems (movements: CashFlowMovement[], today: string, horizon: number, accountNames: Map<string, string> = new Map()): DueItem[] {
   const end = addDaysToDay(today, horizon)
   const realizedFrom = addDaysToDay(today, -REALIZED_DAYS)
 
@@ -198,7 +198,7 @@ export function buildDueItems (movements: CashFlowMovement[], today: string, hor
       }
       const payout: DueItem = {
         id,
-        title: `Repasse ${m.account.name}`,
+        title: `Repasse ${accountNames.get(m.account._id) ?? m.account.name}`,
         category: { _id: '', name: PAYOUT_CATEGORY_NAME },
         direction: m.direction,
         amount: cashAmount(m),
@@ -237,6 +237,8 @@ export interface CashFlowInput {
   cashToday: number
   movements: CashFlowMovement[]
   outflowHistory: { total: number; firstMovementDay: string | null }
+  /** Nome atual das contas (título do repasse agrupado). */
+  accountNames?: Map<string, string>
 }
 
 /** O relatório inteiro, a partir das linhas e dos agregados que o repositório trouxe. */
@@ -261,7 +263,7 @@ export function computeCashFlow (input: CashFlowInput): CashFlowReport {
     projection,
     realized: buildRealized({ today, cashToday, movements }),
     weeks: groupWeeks(projection),
-    dueItems: buildDueItems(movements, today, horizon),
+    dueItems: buildDueItems(movements, today, horizon, input.accountNames),
     insights: critical ? [critical] : [],
   }
 }

@@ -261,6 +261,11 @@ describe('buildDueItems — ajuste A5: repasses de plataforma agrupados', () => 
     ])
   })
 
+  it('título com o nome ATUAL da conta (renomeada depois dos pedidos)', () => {
+    const items = buildDueItems([order({ netValue: 10, dueDate: at('2026-10-20') })], TODAY, 30, new Map([['acc-ifood', 'iFood Loja 2']]))
+    expect(items[0].title).toBe('Repasse iFood Loja 2')
+  })
+
   it('entrada em conta comum e saída em conta de plataforma não agrupam', () => {
     const items = buildDueItems([
       mov({ id: 'x', direction: MovementDirection.In, account: { _id: 'caixa', name: 'Caixa', type: 'cash' }, dueDate: at('2026-10-20') }),

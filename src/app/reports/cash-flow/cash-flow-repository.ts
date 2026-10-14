@@ -78,4 +78,10 @@ export class CashFlowRepository {
     ]).toArray()
     return decimalToNumber(agg?.total)
   }
+
+  /** Nome atual das contas — o repasse agrupado usa o nome vivo, não o do lançamento. */
+  async accountNames (ctx: RequestContext): Promise<Map<string, string>> {
+    const docs = await this.db(ctx).collection('financial_accounts').find({ restaurantId: ctx.restaurantId }, { projection: { name: 1 } }).toArray()
+    return new Map(docs.map((d) => [String(d._id), d.name]))
+  }
 }

@@ -20,7 +20,7 @@ export class CashFlowQuery {
   async execute (ctx: RequestContext, horizon: number = DEFAULT_HORIZON): Promise<CashFlowReport> {
     const today = toLocalDay(this.clock())
 
-    const [movements, history, cashToday] = await Promise.all([
+    const [movements, history, cashToday, accountNames] = await Promise.all([
       this.repo.findWindowMovements(ctx, {
         realizedFrom: startOfLocalDay(addDaysToDay(today, -REALIZED_DAYS)),
         projectionEnd: startOfLocalDay(addDaysToDay(today, horizon + 1)),
@@ -30,6 +30,7 @@ export class CashFlowQuery {
         to: startOfLocalDay(today),
       }),
       this.repo.cashToday(ctx),
+      this.repo.accountNames(ctx),
     ])
 
     return computeCashFlow({
@@ -37,6 +38,7 @@ export class CashFlowQuery {
       horizon,
       cashToday,
       movements,
+      accountNames,
       outflowHistory: {
         total: history.total,
         firstMovementDay: history.firstMovementAt ? toLocalDay(history.firstMovementAt) : null,
