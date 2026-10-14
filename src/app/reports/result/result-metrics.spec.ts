@@ -57,6 +57,8 @@ describe('aggregateMonth', () => {
     expect(empty).toMatchObject({ grossRevenue: 0, platformFee: 0, cmv: 0, fixed: 0, variable: 0 })
     expect(hasActivity(empty)).toBe(false)
     expect(hasActivity(agg)).toBe(true)
+    // categoria presente mas zerada (gasto do mês anterior caiu depois do dia de corte) não conta
+    expect(hasActivity(aggregateMonth([row({ categoryId: 'mkt', gross: 0 })], M, CATS))).toBe(false)
   })
 })
 

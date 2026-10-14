@@ -104,7 +104,7 @@ export function aggregateMonth (rows: MonthlyTotalRow[], month: string, categori
 }
 
 export function hasActivity (agg: MonthAggregate): boolean {
-  return agg.grossRevenue > 0 || agg.cmv > 0 || agg.platformFee > 0 || agg.opexCategories.size > 0
+  return agg.grossRevenue > 0 || agg.cmv > 0 || agg.platformFee > 0 || [...agg.opexCategories.values()].some((c) => c.cents > 0)
 }
 
 /**
