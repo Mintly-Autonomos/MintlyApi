@@ -33,6 +33,9 @@ export interface ExpenseRow {
   /** Parte de `gross`/`fee` com data depois de hoje (lançamento futuro do mês); ausente = 0. */
   grossAfter?: number
   feeAfter?: number
+  /** Ajuste A1: parte até o dia de corte (mesmo período); ausente = mês cheio. */
+  grossUntil?: number
+  feeUntil?: number
 }
 
 export interface ExpenseCategoryInfo {
@@ -52,6 +55,8 @@ export interface ExpensesInput {
   firstMonth: string | null
   /** Agora — define se há projeção (mês atual em SP). */
   today: Date
+  /** Ajuste A1: no mês atual, o dia de hoje (SP) — comparações pelos mesmos dias. */
+  untilDay?: number | null
 }
 
 interface SubMeta {
@@ -176,12 +181,21 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   const P = addMonths(M, -1)
   const { buckets, metas, subMetas, withSubcategory } = bucketize(input)
   const at = (m: string) => buckets.get(m) ?? emptyBucket()
+  // Ajuste A1: no mês atual, as bases (anterior, média) usam os mesmos dias dos
+  // meses anteriores — senão o mês pela metade sempre "cai". Valores do mês,
+  // histórico e projeção seguem com meses cheios.
+  const untilDay = input.untilDay ?? null
+  const cmpBuckets = untilDay == null
+    ? buckets
+    : bucketize({ ...input, rows: input.rows.map((r) => (r.month === M ? r : { ...r, gross: r.grossUntil ?? r.gross, fee: r.feeUntil ?? r.fee })) }).buckets
+  const atCmp = (m: string) => cmpBuckets.get(m) ?? emptyBucket()
   const cur = at(M)
-  const prev = at(P)
+  const prev = atCmp(P)
 
   const eligible = [1, 2, 3].map((i) => addMonths(M, -i)).filter((m) => input.firstMonth != null && m >= input.firstMonth)
-  const average = (f: (b: MonthBucket) => number): number | null =>
-    eligible.length === 0 ? null : Math.round(sum(eligible.map((m) => f(at(m)))) / eligible.length)
+  const averageOf = (bucket: (m: string) => MonthBucket, f: (b: MonthBucket) => number): number | null =>
+    eligible.length === 0 ? null : Math.round(sum(eligible.map((m) => f(bucket(m)))) / eligible.length)
+  const average = (f: (b: MonthBucket) => number): number | null => averageOf(atCmp, f)
   const money = (cents: number | null) => (cents == null ? null : fromCents(cents))
   const total = (b: MonthBucket) => sum(b.items.values())
   const sumWhere = (b: MonthBucket, pred: (meta: ItemMeta) => boolean) =>
@@ -192,6 +206,9 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   // Projeção: só o que já aconteceu é extrapolado; o que está lançado para depois
   // de hoje no mês (aluguel do dia 25) entra pelo valor cheio, sem multiplicar.
   const projectWithScheduled = (cents: number, afterCents: number) => project(cents - afterCents, window!) + afterCents
+  const projectedCents = (amount: number, fixedLike: boolean, fullAvg: number | null, afterCents: number) =>
+    fixedLike ? Math.max(amount, fullAvg ?? amount) : projectWithScheduled(amount, afterCents)
+  let projectedTotal = 0
   const measure = (get: (b: MonthBucket) => number) => ({ amount: get(cur), previous: get(prev), avg: average(get) })
   const anomalies: ExpenseAnomaly[] = []
   // Base da anomalia (decisão A da revisão): os meses elegíveis contam a partir do
@@ -202,7 +219,7 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
     const firstSpend = months.find((m) => get(at(m)) > 0)
     const unitMonths = firstSpend == null ? [] : eligible.filter((m) => m >= firstSpend)
     if (unitMonths.length === 0) return { avg: null, months: 0 }
-    return { avg: Math.round(sum(unitMonths.map((m) => get(at(m)))) / unitMonths.length), months: unitMonths.length }
+    return { avg: Math.round(sum(unitMonths.map((m) => get(atCmp(m)))) / unitMonths.length), months: unitMonths.length }
   }
   const anomalyOf = (meta: ItemMeta, sub: SubMeta | null, amount: number, avg: number): ExpenseAnomaly => ({
     itemKey: meta.key,
@@ -221,7 +238,11 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   for (const meta of metas.values()) {
     const get = (b: MonthBucket) => b.items.get(meta.key) ?? 0
     const { amount, previous, avg } = measure(get)
-    if (amount === 0 && previous === 0 && !avg) continue
+    // Ajuste A2: fixo/misto projetado pela média dos meses CHEIOS — o aluguel do
+    // dia 25 ainda não pago aparece (R$ 0 até agora, projetado pela média).
+    const isFixedLike = meta.kind === 'category' && meta.behavior !== CategoryBehavior.Variable
+    const fullAvg = window && isFixedLike ? averageOf(at, get) : null
+    if (amount === 0 && previous === 0 && !avg && !fullAvg) continue
 
     // Fatia 7 (B2): com subitens, avalia cada um; sem, a categoria inteira; taxa nunca.
     let subitems: ExpenseSubitem[] = []
@@ -258,6 +279,7 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
       }
     }
 
+    if (window) projectedTotal += projectedCents(amount, isFixedLike, fullAvg, cur.itemsAfter.get(meta.key) ?? 0)
     items.push({
       ...meta,
       amount: fromCents(amount),
@@ -269,7 +291,7 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
       subitems,
       hasAnomaly,
       history: months.map((m) => ({ month: m, amount: fromCents(get(at(m))) })),
-      projected: window ? fromCents(projectWithScheduled(amount, cur.itemsAfter.get(meta.key) ?? 0)) : null,
+      projected: window ? fromCents(projectedCents(amount, isFixedLike, fullAvg, cur.itemsAfter.get(meta.key) ?? 0)) : null,
     })
   }
   items.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, 'pt-BR'))
@@ -309,8 +331,9 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
     history: months.map((m) => ({ month: m, total: fromCents(total(at(m))) })),
     anomalies,
     projection: window
-      ? { total: fromCents(projectWithScheduled(totalCur, sum(cur.itemsAfter.values()))), revenue: fromCents(projectWithScheduled(cur.revenue, cur.revenueAfter)), ...window }
+      ? { total: fromCents(projectedTotal), revenue: fromCents(projectWithScheduled(cur.revenue, cur.revenueAfter)), ...window }
       : null,
     anomalyRule: ANOMALY_RULE,
+    comparison: untilDay == null ? { kind: 'fullMonth', untilDay: null } : { kind: 'samePeriod', untilDay },
   }
 }
