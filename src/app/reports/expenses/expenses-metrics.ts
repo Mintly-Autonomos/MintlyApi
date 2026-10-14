@@ -3,7 +3,7 @@ import { fromCents, toCents } from '../../../core/money/money'
 import { ValidationError } from '../../../core/errors/core/validation-error'
 import { addMonths } from '../shared/period'
 import { effectiveChannel } from '../shared/channel'
-import { ANOMALY_RULE, NO_SUBITEM_KEY, NO_SUBITEM_NAME, isAnomaly, project, projectionWindow, sortSubitems } from './expenses-detail'
+import { ANOMALY_RULE, MIN_DAYS_CURRENT_ANOMALY, NO_SUBITEM_KEY, NO_SUBITEM_NAME, isAnomaly, project, projectionWindow, sortSubitems } from './expenses-detail'
 
 /**
  * Custos & Despesas, fatias A e B (specs 20261013/custos-despesas.md e
@@ -187,7 +187,8 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   const untilDay = input.untilDay ?? null
   const cmpBuckets = untilDay == null
     ? buckets
-    : bucketize({ ...input, rows: input.rows.map((r) => (r.month === M ? r : { ...r, gross: r.grossUntil ?? r.gross, fee: r.feeUntil ?? r.fee })) }).buckets
+    // o mês atual também é cortado: o agendado para depois de hoje não entra na comparação
+    : bucketize({ ...input, rows: input.rows.map((r) => ({ ...r, gross: r.grossUntil ?? r.gross, fee: r.feeUntil ?? r.fee })) }).buckets
   const atCmp = (m: string) => cmpBuckets.get(m) ?? emptyBucket()
   const cur = at(M)
   const prev = atCmp(P)
@@ -196,6 +197,13 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   const averageOf = (bucket: (m: string) => MonthBucket, f: (b: MonthBucket) => number): number | null =>
     eligible.length === 0 ? null : Math.round(sum(eligible.map((m) => f(bucket(m)))) / eligible.length)
   const average = (f: (b: MonthBucket) => number): number | null => averageOf(atCmp, f)
+  // A2 (revisão): média de meses CHEIOS só desde o primeiro gasto do item — um
+  // aluguel que começou no mês passado não é projetado por um terço do valor.
+  const averageFromFirstSpend = (f: (b: MonthBucket) => number): number | null => {
+    const first = [...eligible].reverse().find((m) => f(at(m)) > 0)
+    const months = first == null ? [] : eligible.filter((m) => m >= first)
+    return months.length === 0 ? null : Math.round(sum(months.map((m) => f(at(m)))) / months.length)
+  }
   const money = (cents: number | null) => (cents == null ? null : fromCents(cents))
   const total = (b: MonthBucket) => sum(b.items.values())
   const sumWhere = (b: MonthBucket, pred: (meta: ItemMeta) => boolean) =>
@@ -209,7 +217,10 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   const projectedCents = (amount: number, fixedLike: boolean, fullAvg: number | null, afterCents: number) =>
     fixedLike ? Math.max(amount, fullAvg ?? amount) : projectWithScheduled(amount, afterCents)
   let projectedTotal = 0
-  const measure = (get: (b: MonthBucket) => number) => ({ amount: get(cur), previous: get(prev), avg: average(get) })
+  // amount = valor do mês (cheio, para exibir); cmpAmount = até hoje (para comparar).
+  const measure = (get: (b: MonthBucket) => number) => ({ amount: get(cur), cmpAmount: get(atCmp(M)), previous: get(prev), avg: average(get) })
+  // Revisão: base "mesmo período" muito curta no começo do mês gera alarme falso.
+  const anomalyAllowed = untilDay == null || untilDay >= MIN_DAYS_CURRENT_ANOMALY
   const anomalies: ExpenseAnomaly[] = []
   // Base da anomalia (decisão A da revisão): os meses elegíveis contam a partir do
   // primeiro mês em que AQUELA unidade (subitem ou categoria) teve gasto na janela —
@@ -237,12 +248,15 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   const items: ExpenseItem[] = []
   for (const meta of metas.values()) {
     const get = (b: MonthBucket) => b.items.get(meta.key) ?? 0
-    const { amount, previous, avg } = measure(get)
+    const { amount, cmpAmount, previous, avg } = measure(get)
     // Ajuste A2: fixo/misto projetado pela média dos meses CHEIOS — o aluguel do
     // dia 25 ainda não pago aparece (R$ 0 até agora, projetado pela média).
     const isFixedLike = meta.kind === 'category' && meta.behavior !== CategoryBehavior.Variable
-    const fullAvg = window && isFixedLike ? averageOf(at, get) : null
-    if (amount === 0 && previous === 0 && !avg && !fullAvg) continue
+    const fullAvg = window && isFixedLike ? averageFromFirstSpend(get) : null
+    // No mês atual, item com gasto no mês fechado fica listado (base do score e
+    // dos insights da Visão Geral lê o histórico dos itens).
+    const spentLastMonth = untilDay != null && get(at(P)) > 0
+    if (amount === 0 && previous === 0 && !avg && !fullAvg && !spentLastMonth) continue
 
     // Fatia 7 (B2): com subitens, avalia cada um; sem, a categoria inteira; taxa nunca.
     let subitems: ExpenseSubitem[] = []
@@ -253,10 +267,10 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
         const s = measure(getSub)
         if (s.amount === 0 && s.previous === 0 && !s.avg) continue
         const base = unitBase(getSub)
-        const anomaly = isAnomaly(s.amount, base.avg, base.months)
+        const anomaly = anomalyAllowed && isAnomaly(s.cmpAmount, base.avg, base.months)
         if (anomaly) {
           hasAnomaly = true
-          anomalies.push(anomalyOf(meta, sub, s.amount, base.avg!))
+          anomalies.push(anomalyOf(meta, sub, s.cmpAmount, base.avg!))
         }
         subitems.push({
           key: sub.key,
@@ -265,17 +279,17 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
           amount: fromCents(s.amount),
           previous: fromCents(s.previous),
           average3: money(s.avg),
-          deltaPrevious: delta(s.amount, s.previous),
-          deltaAverage3: delta(s.amount, s.avg),
+          deltaPrevious: delta(s.cmpAmount, s.previous),
+          deltaAverage3: delta(s.cmpAmount, s.avg),
           anomaly,
         })
       }
       subitems = sortSubitems(subitems)
     } else if (meta.kind === 'category') {
       const base = unitBase(get)
-      if (isAnomaly(amount, base.avg, base.months)) {
+      if (anomalyAllowed && isAnomaly(cmpAmount, base.avg, base.months)) {
         hasAnomaly = true
-        anomalies.push(anomalyOf(meta, null, amount, base.avg!))
+        anomalies.push(anomalyOf(meta, null, cmpAmount, base.avg!))
       }
     }
 
@@ -285,8 +299,8 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
       amount: fromCents(amount),
       previous: fromCents(previous),
       average3: money(avg),
-      deltaPrevious: delta(amount, previous),
-      deltaAverage3: delta(amount, avg),
+      deltaPrevious: delta(cmpAmount, previous),
+      deltaAverage3: delta(cmpAmount, avg),
       pctOfRevenue: share(amount, cur.revenue),
       subitems,
       hasAnomaly,
@@ -298,6 +312,7 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   anomalies.sort((a, b) => b.excess - a.excess || a.name.localeCompare(b.name, 'pt-BR'))
 
   const totalCur = total(cur)
+  const totalCmp = total(atCmp(M))
   const totalPrev = total(prev)
   const totalAvg = average(total)
   const cmv = sumWhere(cur, (m) => m.dreGroup === DreGroup.Cmv)
@@ -305,6 +320,7 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   const isFee = (m: ItemMeta) => m.kind === 'platformFee'
   const fee = sumWhere(cur, isFee)
   const feePrev = sumWhere(prev, isFee)
+  const feeCmp = sumWhere(atCmp(M), isFee)
   const behavior = (b: CategoryBehavior) => fromCents(sumWhere(cur, (m) => m.behavior === b))
 
   // % da taxa (decisão A, 13/10/2026): sobre o bruto das contas de plataforma —
@@ -319,12 +335,12 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
       current: fromCents(totalCur),
       previous: fromCents(totalPrev),
       average3: money(totalAvg),
-      deltaPrevious: delta(totalCur, totalPrev),
-      deltaAverage3: delta(totalCur, totalAvg),
+      deltaPrevious: delta(totalCmp, totalPrev),
+      deltaAverage3: delta(totalCmp, totalAvg),
     },
     cmv: { amount: fromCents(cmv), pctOfRevenue: share(cmv, cur.revenue), target: CMV_TARGET },
     primeCost: { amount: fromCents(cmv + labor), cmv: fromCents(cmv), labor: fromCents(labor), pctOfRevenue: share(cmv + labor, cur.revenue), targetMax: PRIME_COST_TARGET_MAX },
-    platformFee: { amount: fromCents(fee), previous: fromCents(feePrev), deltaPrevious: delta(fee, feePrev), deliveryRevenue: fromCents(cur.deliveryRevenue), pctOfDelivery: share(fee, cur.platformRevenue) },
+    platformFee: { amount: fromCents(fee), previous: fromCents(feePrev), deltaPrevious: delta(feeCmp, feePrev), deliveryRevenue: fromCents(cur.deliveryRevenue), pctOfDelivery: share(fee, cur.platformRevenue) },
     byBehavior: { fixed: behavior(CategoryBehavior.Fixed), variable: behavior(CategoryBehavior.Variable), mixed: behavior(CategoryBehavior.Mixed) },
     items,
     sharedExcluded: input.channel == null ? null : fromCents(cur.shared),

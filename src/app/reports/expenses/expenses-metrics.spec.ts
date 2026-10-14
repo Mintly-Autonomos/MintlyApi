@@ -239,10 +239,10 @@ describe('computeExpenses — fatia 7: subitens, anomalias, séries, projeção'
   it('mês atual (dia 10 de 31): projeção linear do total e de cada item', () => {
     const rr = scenario(null, { today: new Date('2026-08-10T15:00:00Z') })
     // A2: variáveis e taxas lineares; fixos/mistos = max(mês, média dos meses cheios)
-    expect(rr.projection).toEqual({ total: 71_460, revenue: 139_500, elapsedDays: 10, daysInMonth: 31 })
+    expect(rr.projection).toEqual({ total: 71_660, revenue: 139_500, elapsedDays: 10, daysInMonth: 31 })
     expect(byName(rr, 'Exp · Aluguel').projected).toBe(4_000)
     expect(byName(rr, 'Exp · Impostos').projected).toBe(2_200)
-    expect(byName(rr, 'Exp · Antiga').projected).toBe(100)
+    expect(byName(rr, 'Exp · Antiga').projected).toBe(300) // média desde o 1º gasto (só M−1)
     expect(byName(rr, 'Exp · CMV').projected).toBe(43_400)
     expect(rr.total.current).toBe(32_300)
     expect(rr.anomalies).toHaveLength(2)
@@ -356,5 +356,41 @@ describe('ajustes A1 e A2 — mês atual', () => {
     const closed = scenario(null, { rows, categories: cats, referenceMonth: addMonths(M, -1), untilDay: null })
     expect(closed.comparison).toEqual({ kind: 'fullMonth', untilDay: null })
     expect(byName(closed, 'CMV').previous).toBe(3_000)
+  })
+})
+
+describe('revisão dos ajustes — mês atual', () => {
+  const TODAY = new Date('2026-08-10T15:00:00Z')
+  const cats = new Map([
+    ['cmv', { name: 'CMV', behavior: CategoryBehavior.Variable, dreGroup: DreGroup.Cmv }],
+    ['alu', { name: 'Aluguel', behavior: CategoryBehavior.Fixed, dreGroup: DreGroup.Opex }],
+  ])
+  const out = (m: number, categoryId: string, gross: number, grossUntil: number, grossAfter = 0): ExpenseRow => ({ month: addMonths(M, m), direction: 'out', categoryId, categoryName: categoryId, accountId: 'c', accountName: 'Caixa', accountType: 'cash', channel: null, subcategoryId: null, subcategoryName: null, gross, fee: 0, grossUntil, feeUntil: 0, grossAfter })
+
+  it('lançamento agendado para depois de hoje não entra na comparação (valor do mês segue cheio)', () => {
+    const rows = [-3, -2, -1].map((m) => out(m, 'cmv', 3_000, 1_000)).concat([out(0, 'cmv', 3_100, 1_100, 2_000)])
+    const r = scenario(null, { rows, categories: cats, today: TODAY, untilDay: 10 })
+    expect(byName(r, 'CMV')).toMatchObject({ amount: 3_100, previous: 1_000, hasAnomaly: false })
+    expect(byName(r, 'CMV').deltaPrevious).toBeCloseTo(0.1, 10)
+    expect(r.total.deltaPrevious).toBeCloseTo(0.1, 10)
+  })
+
+  it('anomalia do mês atual só a partir do 7º dia (base pequena no começo do mês)', () => {
+    const rows = [-3, -2, -1].map((m) => out(m, 'cmv', 3_000, 200)).concat([out(0, 'cmv', 900, 900)])
+    expect(scenario(null, { rows, categories: cats, today: new Date('2026-08-03T15:00:00Z'), untilDay: 3 }).anomalies).toEqual([])
+    expect(scenario(null, { rows, categories: cats, today: new Date('2026-08-07T15:00:00Z'), untilDay: 7 }).anomalies).toHaveLength(1)
+  })
+
+  it('item variável com gasto no mês fechado fica listado no começo do mês (base do score/insights)', () => {
+    const rows = [-3, -2, -1].map((m) => out(m, 'cmv', 3_000, 0))
+    const r = scenario(null, { rows, categories: cats, today: new Date('2026-08-01T15:00:00Z'), untilDay: 1 })
+    expect(byName(r, 'CMV')).toMatchObject({ amount: 0 })
+    expect(byName(r, 'CMV').history.at(-2)!.amount).toBe(3_000)
+  })
+
+  it('fixo novo (começou no mês passado) é projetado pelos meses em que existiu', () => {
+    const rows = [out(-1, 'alu', 6_000, 0)]
+    const r = scenario(null, { rows, categories: cats, today: TODAY, untilDay: 10 })
+    expect(byName(r, 'Aluguel')).toMatchObject({ amount: 0, projected: 6_000 })
   })
 })

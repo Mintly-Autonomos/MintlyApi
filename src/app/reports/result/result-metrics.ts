@@ -277,6 +277,9 @@ export function computeResult (input: ResultInput): ResultReport {
   const currentAgg = aggs.get(input.referenceMonth)!
   const previousAgg = aggregateMonth(comparisonRows, previousMonth, input.categories)
   const previous = buildLines(previousAgg, input.taxByMonth.get(previousMonth) ?? NO_TAX)
+  // O mês atual também é cortado para comparar: o agendado para depois de hoje
+  // está no mês (e aparece em `current`), mas não entra na variação.
+  const currentCmp = untilDay == null ? current : buildLines(aggregateMonth(comparisonRows, input.referenceMonth, input.categories), input.taxByMonth.get(input.referenceMonth) ?? NO_TAX)
   const items = buildOpexItems(currentAgg, previousAgg)
   const tax = input.taxByMonth.get(input.referenceMonth) ?? NO_TAX
 
@@ -285,7 +288,7 @@ export function computeResult (input: ResultInput): ResultReport {
     previousMonth,
     current,
     previous,
-    deltas: buildDeltas(current, previous),
+    deltas: buildDeltas(currentCmp, previous),
     tax: {
       regime: input.regime,
       effectiveRate: tax.effectiveRate,
@@ -297,7 +300,7 @@ export function computeResult (input: ResultInput): ResultReport {
       const l = linesOf(m)
       return { month: m, grossRevenue: l.grossRevenue, netProfit: l.netProfit, netMargin: l.netMargin }
     }),
-    insights: buildInsights({ regime: input.regime, current, previous, previousHasActivity: hasActivity(previousAgg), items }),
+    insights: buildInsights({ regime: input.regime, current: currentCmp, previous, previousHasActivity: hasActivity(previousAgg), items }),
     comparison: untilDay == null ? { kind: 'fullMonth', untilDay: null } : { kind: 'samePeriod', untilDay },
   }
 }

@@ -293,6 +293,24 @@ describe('computeResult', () => {
     expect(report.insights[0]).toMatchObject({ kind: 'profitChanged', previousProfit: 25_000 - 1_500 - 9_000 })
   })
 
+  it('revisão — variação do mês atual ignora o agendado para depois de hoje', () => {
+    const report = computeResult({
+      referenceMonth: M,
+      regime: null,
+      rows: [
+        row({ direction: 'in', categoryId: 'ven', gross: 20_000, grossUntil: 15_000 }),
+        row({ month: '2026-06', direction: 'in', categoryId: 'ven', gross: 60_000, grossUntil: 25_000 }),
+      ],
+      categories: CATS,
+      taxByMonth: new Map(),
+      meiMonthlyDas: null,
+      dailyRevenue: new Map(),
+      untilDay: 13,
+    })
+    expect(report.current.grossRevenue).toBe(20_000)
+    expect(report.deltas.grossRevenue).toBeCloseTo(15_000 / 25_000 - 1, 10)
+  })
+
   it('ajuste A1 — mês fechado: meses cheios', () => {
     const report = computeResult({ referenceMonth: M, regime: null, rows: [row({ month: '2026-06', direction: 'in', categoryId: 'ven', gross: 60_000, grossUntil: 25_000 })], categories: CATS, taxByMonth: new Map(), meiMonthlyDas: null, dailyRevenue: new Map(), untilDay: null })
     expect(report.comparison).toEqual({ kind: 'fullMonth', untilDay: null })

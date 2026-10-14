@@ -160,15 +160,16 @@ export function criticalDayInsight (points: DailyPoint[], threshold: number): Cr
   return { kind: 'criticalDay', severity: 'warning', date: hit.date, balance: hit.balance, threshold }
 }
 
-/**
- * Lista de vencimentos: só movimentação COM vencimento — venda à vista não
- * entra, senão a lista vira extrato. Janela: pendentes até o fim do horizonte
- * (vencidas incluídas) + liquidadas nos últimos REALIZED_DAYS dias. Filtros e
- * agrupamento por dia são do front.
- */
 /** Categoria exibida no item agrupado de repasse (ajuste A5). */
 export const PAYOUT_CATEGORY_NAME = 'Repasse de plataforma'
 
+/**
+ * Lista de vencimentos: só movimentação COM vencimento — venda à vista não
+ * entra, senão a lista vira extrato. Janela: pendentes até o fim do horizonte
+ * (vencidas incluídas) + liquidadas nos últimos REALIZED_DAYS dias. Pedidos de
+ * plataforma vêm agrupados por conta × data de repasse (ajuste A5). Filtros e
+ * agrupamento por dia são do front.
+ */
 export function buildDueItems (movements: CashFlowMovement[], today: string, horizon: number, accountNames: Map<string, string> = new Map()): DueItem[] {
   const end = addDaysToDay(today, horizon)
   const realizedFrom = addDaysToDay(today, -REALIZED_DAYS)
