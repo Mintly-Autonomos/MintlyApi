@@ -18,7 +18,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 - Teste pesado (local, Mongo em memória): 5 restaurantes, ~4.700 lançamentos, todos os meses/canais/horizontes e entradas inválidas, com oráculo independente — 57.645 checks, 3 falhas conhecidas do próprio roteiro (conta com saldo não inativa: 409 esperado). Telas respondem em < 110 ms com ~3.900 lançamentos.
 - Revisão final (agente): 4 pontos importantes corrigidos com teste — comparação do mês atual também corta o próprio mês em hoje (agendado não infla a variação); anomalia do mês atual só a partir do 7º dia; item com gasto no mês fechado segue listado (base do score/insights); fixo novo projetado pela média desde o 1º gasto. Extra: mês anterior sem gasto real não conta como atividade.
 - Bateria final com o oráculo atualizado: **57.734 checks, 0 falhas** (2 pulados: inativar conta com saldo — 409 correto). Limite: a regra "anomalia só a partir do 7º dia" não foi exercitada ao vivo (hoje é dia 13; coberta por teste unitário).
-- Branch: `feat/20261014/ajustes-telas`. ~~lib #34~~ ✅ (2.17.0-preview) → **PR da API aberto, aguardando merge**.
+- Branch: `feat/20261014/ajustes-telas`. ~~lib #34~~ ✅ (2.17.0-preview) → **PR da API #47 aberto, aguardando merge**.
 
 ## Fatias
 
