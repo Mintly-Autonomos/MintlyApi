@@ -4,6 +4,7 @@ import { RequestContext } from '../../../core/context/request-context'
 import { decimalToNumber } from '../../../core/money/money'
 import { REPORT_TIME_ZONE, addMonths, startOfLocalMonth } from '../shared/period'
 import { CategoryInfo, MonthlyTotalRow } from './result-metrics'
+import { sumUntilDay } from '../shared/until-day'
 
 /**
  * Consultas do Resultado (spec, "Consultas"). Somas por competência no fuso de SP,
@@ -18,8 +19,11 @@ export class ResultRepository {
     return { $gte: startOfLocalMonth(from), $lt: startOfLocalMonth(addMonths(to, 1)) }
   }
 
-  /** Σ grossValue e Σ feeValue por mês × direção × categoria em [from, to]. */
-  async monthlyTotals (ctx: RequestContext, w: { from: string; to: string }): Promise<MonthlyTotalRow[]> {
+  /**
+   * Σ grossValue e Σ feeValue por mês × direção × categoria em [from, to]. Com
+   * `untilDay` (ajuste A1), também as somas até esse dia de cada mês.
+   */
+  async monthlyTotals (ctx: RequestContext, w: { from: string; to: string }, untilDay: number | null = null): Promise<MonthlyTotalRow[]> {
     const rows = await this.db(ctx).collection('financial_movements').aggregate([
       { $match: { restaurantId: ctx.restaurantId, status: { $ne: MovementStatus.Cancelled }, date: this.monthRange(w.from, w.to) } },
       {
@@ -32,6 +36,7 @@ export class ResultRepository {
           gross: { $sum: '$grossValue' },
           fee: { $sum: '$feeValue' },
           categoryName: { $first: '$category.name' },
+          ...(untilDay != null ? { grossUntil: sumUntilDay('$grossValue', untilDay), feeUntil: sumUntilDay('$feeValue', untilDay) } : {}),
         },
       },
     ]).toArray()
@@ -43,6 +48,7 @@ export class ResultRepository {
       categoryName: r.categoryName ?? '',
       gross: decimalToNumber(r.gross),
       fee: decimalToNumber(r.fee),
+      ...(untilDay != null ? { grossUntil: decimalToNumber(r.grossUntil), feeUntil: decimalToNumber(r.feeUntil) } : {}),
     }))
   }
 

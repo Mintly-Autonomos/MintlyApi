@@ -4,6 +4,7 @@ import { RequestContext } from '../../../core/context/request-context'
 import { decimalToNumber } from '../../../core/money/money'
 import { REPORT_TIME_ZONE, addMonths, startOfLocalMonth } from '../shared/period'
 import { ExpenseCategoryInfo, ExpenseRow } from './expenses-metrics'
+import { sumUntilDay } from '../shared/until-day'
 
 /**
  * Consultas de Custos & Despesas: por competência no fuso de SP, sem canceladas,
@@ -19,7 +20,7 @@ export class ExpensesRepository {
    * `after` (opcional): instante a partir do qual o lançamento ainda não aconteceu
    * (amanhã 00h em SP) — separa `grossAfter`/`feeAfter` para a projeção (fatia 7).
    */
-  async monthlyRows (ctx: RequestContext, w: { from: string; to: string }, after?: Date): Promise<ExpenseRow[]> {
+  async monthlyRows (ctx: RequestContext, w: { from: string; to: string }, after?: Date, untilDay: number | null = null): Promise<ExpenseRow[]> {
     const afterOnly = (field: string) => (after ? { $cond: [{ $gte: ['$date', after] }, { $ifNull: [field, 0] }, 0] } : 0)
     const rows = await this.db(ctx).collection('financial_movements').aggregate([
       { $match: { restaurantId: ctx.restaurantId, status: { $ne: MovementStatus.Cancelled }, date: { $gte: startOfLocalMonth(w.from), $lt: startOfLocalMonth(addMonths(w.to, 1)) } } },
@@ -39,6 +40,8 @@ export class ExpensesRepository {
           fee: { $sum: '$feeValue' },
           grossAfter: { $sum: afterOnly('$grossValue') },
           feeAfter: { $sum: afterOnly('$feeValue') },
+          // Ajuste A1: base "mesmo período" do mês atual.
+          ...(untilDay != null ? { grossUntil: sumUntilDay('$grossValue', untilDay), feeUntil: sumUntilDay('$feeValue', untilDay) } : {}),
           categoryName: { $first: '$category.name' },
           accountName: { $first: '$account.name' },
           subcategoryName: { $first: '$subcategory.name' },
@@ -61,6 +64,7 @@ export class ExpensesRepository {
       fee: decimalToNumber(r.fee),
       grossAfter: decimalToNumber(r.grossAfter),
       feeAfter: decimalToNumber(r.feeAfter),
+      ...(untilDay != null ? { grossUntil: decimalToNumber(r.grossUntil), feeUntil: decimalToNumber(r.feeUntil) } : {}),
     }))
   }
 

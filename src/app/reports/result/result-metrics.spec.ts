@@ -57,6 +57,8 @@ describe('aggregateMonth', () => {
     expect(empty).toMatchObject({ grossRevenue: 0, platformFee: 0, cmv: 0, fixed: 0, variable: 0 })
     expect(hasActivity(empty)).toBe(false)
     expect(hasActivity(agg)).toBe(true)
+    // categoria presente mas zerada (gasto do mês anterior caiu depois do dia de corte) não conta
+    expect(hasActivity(aggregateMonth([row({ categoryId: 'mkt', gross: 0 })], M, CATS))).toBe(false)
   })
 })
 
@@ -126,6 +128,12 @@ describe('variações', () => {
 })
 
 describe('buildOpexItems', () => {
+  it('categoria zerada no mês e no anterior não é listada (mês atual pelo mesmo período)', () => {
+    const current = aggregateMonth([row({ direction: 'in', categoryId: 'ven', gross: 1_000 })], M, CATS)
+    const previous = aggregateMonth([row({ month: '2026-06', categoryId: 'mkt', gross: 0 })], '2026-06', CATS)
+    expect(buildOpexItems(current, previous)).toEqual([])
+  })
+
   const cur = aggregateMonth([
     row({ direction: 'in', categoryId: 'ven', gross: 10_000, fee: 600 }),
     row({ categoryId: 'pro', gross: 800 }),
@@ -260,5 +268,54 @@ describe('computeResult', () => {
     const report = computeResult({ referenceMonth: M, regime: TaxRegime.Mei, rows: [], categories: CATS, taxByMonth: new Map(), meiMonthlyDas: 82.05, dailyRevenue: new Map() })
     expect(report.tax).toEqual({ regime: TaxRegime.Mei, effectiveRate: null, meiMonthlyDas: 82.05 })
     expect(report.current.taxes).toBe(0)
+  })
+
+  it('ajuste A1 — mês atual: anterior e variações pelo mesmo período (até o dia de hoje)', () => {
+    const report = computeResult({
+      referenceMonth: M,
+      regime: TaxRegime.SimplesNacionalAnexoI,
+      rows: [
+        row({ direction: 'in', categoryId: 'ven', gross: 20_000 }),
+        row({ categoryId: 'pro', gross: 9_000 }),
+        // junho inteiro: 60.000 de receita e 9.000 de pessoal; até o dia 13: 25.000 e 9.000
+        row({ month: '2026-06', direction: 'in', categoryId: 'ven', gross: 60_000, grossUntil: 25_000 }),
+        row({ month: '2026-06', categoryId: 'pro', gross: 9_000, grossUntil: 9_000 }),
+      ],
+      categories: CATS,
+      taxByMonth: new Map([[M, { effectiveRate: 0.06, fixedAmount: null }], ['2026-06', { effectiveRate: 0.06, fixedAmount: null }]]),
+      meiMonthlyDas: null,
+      dailyRevenue: new Map(),
+      untilDay: 13,
+    })
+
+    expect(report.comparison).toEqual({ kind: 'samePeriod', untilDay: 13 })
+    expect(report.previous.grossRevenue).toBe(25_000)
+    expect(report.deltas.grossRevenue).toBeCloseTo(20_000 / 25_000 - 1, 10)
+    expect(report.history.find((h) => h.month === '2026-06')!.grossRevenue).toBe(60_000)
+    expect(report.insights[0]).toMatchObject({ kind: 'profitChanged', previousProfit: 25_000 - 1_500 - 9_000 })
+  })
+
+  it('revisão — variação do mês atual ignora o agendado para depois de hoje', () => {
+    const report = computeResult({
+      referenceMonth: M,
+      regime: null,
+      rows: [
+        row({ direction: 'in', categoryId: 'ven', gross: 20_000, grossUntil: 15_000 }),
+        row({ month: '2026-06', direction: 'in', categoryId: 'ven', gross: 60_000, grossUntil: 25_000 }),
+      ],
+      categories: CATS,
+      taxByMonth: new Map(),
+      meiMonthlyDas: null,
+      dailyRevenue: new Map(),
+      untilDay: 13,
+    })
+    expect(report.current.grossRevenue).toBe(20_000)
+    expect(report.deltas.grossRevenue).toBeCloseTo(15_000 / 25_000 - 1, 10)
+  })
+
+  it('ajuste A1 — mês fechado: meses cheios', () => {
+    const report = computeResult({ referenceMonth: M, regime: null, rows: [row({ month: '2026-06', direction: 'in', categoryId: 'ven', gross: 60_000, grossUntil: 25_000 })], categories: CATS, taxByMonth: new Map(), meiMonthlyDas: null, dailyRevenue: new Map(), untilDay: null })
+    expect(report.comparison).toEqual({ kind: 'fullMonth', untilDay: null })
+    expect(report.previous.grossRevenue).toBe(60_000)
   })
 })

@@ -1,4 +1,4 @@
-import { CashFlowReport, CashFlowWeek, CriticalDayInsight, DailyPoint, DueItem, MovementDirection, MovementStatus } from 'mintly-lib'
+import { CashFlowReport, CashFlowWeek, CriticalDayInsight, DailyPoint, DueItem, FinancialAccountType, MovementDirection, MovementStatus } from 'mintly-lib'
 import { fromCents, toCents } from '../../../core/money/money'
 import { addDaysToDay, diffDays, toLocalDay } from '../shared/period'
 import { CashFlowMovement, cashAmount, cashDay, isOverdue } from '../shared/cash-date'
@@ -160,13 +160,17 @@ export function criticalDayInsight (points: DailyPoint[], threshold: number): Cr
   return { kind: 'criticalDay', severity: 'warning', date: hit.date, balance: hit.balance, threshold }
 }
 
+/** Categoria exibida no item agrupado de repasse (ajuste A5). */
+export const PAYOUT_CATEGORY_NAME = 'Repasse de plataforma'
+
 /**
  * Lista de vencimentos: só movimentação COM vencimento — venda à vista não
  * entra, senão a lista vira extrato. Janela: pendentes até o fim do horizonte
- * (vencidas incluídas) + liquidadas nos últimos REALIZED_DAYS dias. Filtros e
+ * (vencidas incluídas) + liquidadas nos últimos REALIZED_DAYS dias. Pedidos de
+ * plataforma vêm agrupados por conta × data de repasse (ajuste A5). Filtros e
  * agrupamento por dia são do front.
  */
-export function buildDueItems (movements: CashFlowMovement[], today: string, horizon: number): DueItem[] {
+export function buildDueItems (movements: CashFlowMovement[], today: string, horizon: number, accountNames: Map<string, string> = new Map()): DueItem[] {
   const end = addDaysToDay(today, horizon)
   const realizedFrom = addDaysToDay(today, -REALIZED_DAYS)
 
@@ -177,23 +181,55 @@ export function buildDueItems (movements: CashFlowMovement[], today: string, hor
     return false
   }
 
-  return movements
-    .filter((m) => m.dueDate != null && inWindow(m))
-    .map((m) => {
-      const item: DueItem = {
-        id: m.id,
-        title: m.title,
-        category: m.category,
+  const items: DueItem[] = []
+  // Ajuste A5: pedidos de plataforma (iFood/Rappi) viram um item por conta × data de
+  // repasse — senão a lista vira um extrato de pedidos e as contas somem no meio.
+  const payouts = new Map<string, DueItem>()
+  for (const m of movements) {
+    if (m.dueDate == null || !inWindow(m)) continue
+    const settled = isSettled(m)
+    if (m.direction === MovementDirection.In && m.account?.type === FinancialAccountType.Platform) {
+      const day = settled ? cashDay(m, today) : toLocalDay(m.dueDate)
+      const id = `payout:${m.account._id}:${day}:${m.status}`
+      const group = payouts.get(id)
+      if (group) {
+        group.amount = fromCents(toCents(group.amount) + toCents(cashAmount(m)))
+        group.itemCount = (group.itemCount ?? 0) + 1
+        continue
+      }
+      const payout: DueItem = {
+        id,
+        title: `Repasse ${accountNames.get(m.account._id) ?? m.account.name}`,
+        category: { _id: '', name: PAYOUT_CATEGORY_NAME },
         direction: m.direction,
         amount: cashAmount(m),
-        dueDate: toLocalDay(m.dueDate!),
+        dueDate: day,
         status: m.status as DueItem['status'],
         overdue: isOverdue(m, today),
+        kind: 'platformPayout',
+        itemCount: 1,
       }
-      if (isSettled(m)) item.settledAt = cashDay(m, today)
-      return item
-    })
-    .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.title.localeCompare(b.title, 'pt-BR'))
+      if (settled) payout.settledAt = day
+      payouts.set(id, payout)
+      items.push(payout)
+      continue
+    }
+    const item: DueItem = {
+      id: m.id,
+      title: m.title,
+      category: m.category,
+      direction: m.direction,
+      amount: cashAmount(m),
+      dueDate: toLocalDay(m.dueDate),
+      status: m.status as DueItem['status'],
+      overdue: isOverdue(m, today),
+      kind: 'movement',
+      itemCount: 1,
+    }
+    if (settled) item.settledAt = cashDay(m, today)
+    items.push(item)
+  }
+  return items.sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.title.localeCompare(b.title, 'pt-BR'))
 }
 
 export interface CashFlowInput {
@@ -202,6 +238,8 @@ export interface CashFlowInput {
   cashToday: number
   movements: CashFlowMovement[]
   outflowHistory: { total: number; firstMovementDay: string | null }
+  /** Nome atual das contas (título do repasse agrupado). */
+  accountNames?: Map<string, string>
 }
 
 /** O relatório inteiro, a partir das linhas e dos agregados que o repositório trouxe. */
@@ -226,7 +264,7 @@ export function computeCashFlow (input: CashFlowInput): CashFlowReport {
     projection,
     realized: buildRealized({ today, cashToday, movements }),
     weeks: groupWeeks(projection),
-    dueItems: buildDueItems(movements, today, horizon),
+    dueItems: buildDueItems(movements, today, horizon, input.accountNames),
     insights: critical ? [critical] : [],
   }
 }

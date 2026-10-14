@@ -101,3 +101,12 @@ export function parseReferenceMonth (value: string | undefined, now: Date): stri
   if (value > current) throw new ValidationError('month não pode estar no futuro.')
   return value
 }
+
+/**
+ * Ajuste A1: dia de corte da comparação "mesmo período". Só existe quando `month`
+ * é o mês de hoje em SP (o dia de hoje, inclusive); mês fechado → null.
+ */
+export function comparisonUntilDay (month: string, now: Date): number | null {
+  const day = toLocalDay(now)
+  return day.slice(0, 7) === month ? Number(day.slice(8, 10)) : null
+}

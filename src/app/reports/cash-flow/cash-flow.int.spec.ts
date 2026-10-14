@@ -175,4 +175,35 @@ describe('GET /reports/cash-flow (Integration)', () => {
     const res = await app.inject({ method: 'GET', url: '/reports/cash-flow', headers: { env: freshEnv() } })
     expect(res.statusCode).toBe(401)
   })
+
+  it('ajuste A5 — pedidos de plataforma da mesma data viram um repasse na lista', async () => {
+    const env = freshEnv()
+    const { auth, restaurantId } = await signup(env, 'p')
+    const today = toLocalDay(new Date())
+    const due = startOfLocalDay(addDaysToDay(today, 5))
+    const order = (gross: number, net: number) => ({
+      restaurantId,
+      title: 'Pedido iFood',
+      direction: 'in',
+      status: 'pending',
+      statusSource: 'auto',
+      date: new Date(),
+      dueDate: due,
+      grossValue: toDecimal128(gross),
+      feeValue: toDecimal128(gross - net),
+      netValue: toDecimal128(net),
+      account: { _id: 'acc-ifood', name: 'iFood', type: 'platform' },
+      category: { _id: 'v', name: 'Venda Delivery', type: 'revenue' },
+      paymentMethod: 'digitalWallet',
+      origin: 'manual',
+      history: [],
+      audit: { createdAt: new Date(), updatedAt: new Date() },
+    })
+    await mongoConnection.getDatabase(env).collection('financial_movements').insertMany([order(100, 77), order(200, 154)])
+
+    const r = (await get(auth)).json().payload
+
+    expect(r.dueItems).toEqual([expect.objectContaining({ title: 'Repasse iFood', amount: 231, itemCount: 2, kind: 'platformPayout', dueDate: addDaysToDay(today, 5) })])
+    expect(r.receivable).toBe(231)
+  })
 })

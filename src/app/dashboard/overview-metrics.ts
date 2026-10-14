@@ -24,6 +24,8 @@ export const PILLAR_RANGES: Record<HealthPillarKey, { zero: number; full: number
 export const HEALTH_BANDS = { risk: 40, attention: 70 }
 export const OVERVIEW_HORIZON = 30
 export const MAX_INSIGHTS = 4
+/** Ajuste A4: com menos pilares que isso, a nota não diz muito — sem nota (palpite N5). */
+export const MIN_PILLARS = 2
 
 export interface OverviewInput {
   result: ResultReport
@@ -41,10 +43,10 @@ export function pillarScore (key: HealthPillarKey, value: number | null): number
   return Math.min(100, Math.max(0, ((value - zero) / (full - zero)) * 100))
 }
 
-/** Média ponderada dos pilares com nota (pesos redistribuídos); nenhum → null. */
+/** Média ponderada dos pilares com nota (pesos redistribuídos); menos de MIN_PILLARS → null. */
 export function healthScore (pillars: HealthPillar[]): number | null {
   const scored = pillars.filter((p) => p.score != null)
-  if (scored.length === 0) return null
+  if (scored.length < MIN_PILLARS) return null
   const weight = scored.reduce((a, p) => a + p.weight, 0)
   return Math.round(scored.reduce((a, p) => a + p.weight * p.score!, 0) / weight)
 }
@@ -81,19 +83,22 @@ function groupPct (expenses: ExpensesReport, groups: DreGroup[], field: 'previou
 
 const points = (pct: number | null, previous: number | null) => (pct == null || previous == null ? null : (pct - previous) * 100)
 
-function buildInsights ({ result, cashFlow, expenses }: OverviewInput): OverviewInsight[] {
+/** Mês-base dos indicadores de CMV/prime cost (score e insights). */
+interface Basis { month: string; cmvPct: number | null; primePct: number | null; revenue: number }
+
+function buildInsights ({ result, cashFlow, expenses }: OverviewInput, basis: Basis): OverviewInsight[] {
   const list: OverviewInsight[] = []
   const critical = cashFlow.insights.find((i) => i.kind === 'criticalDay')
   if (critical) list.push({ kind: 'cashTight', severity: 'warning', date: critical.date, balance: critical.balance })
 
-  const cmvPct = expenses.cmv.pctOfRevenue
+  // Ajuste A3: CMV/prime cost avaliados no mês-base do score (no mês atual, o
+  // último mês fechado) — o mês pela metade não gera alerta que o score desmente.
   const cmvMax = expenses.cmv.target.max
-  if (cmvPct != null && cmvPct > cmvMax) {
-    list.push({ kind: 'cmvAboveTarget', severity: 'warning', pct: cmvPct, targetMax: cmvMax, impact: fromCents(Math.round((cmvPct - cmvMax) * toCents(expenses.revenue.current))) })
+  if (basis.cmvPct != null && basis.cmvPct > cmvMax) {
+    list.push({ kind: 'cmvAboveTarget', severity: 'warning', pct: basis.cmvPct, targetMax: cmvMax, impact: fromCents(Math.round((basis.cmvPct - cmvMax) * toCents(basis.revenue))), basisMonth: basis.month })
   }
-  const primePct = expenses.primeCost.pctOfRevenue
-  if (primePct != null && primePct > expenses.primeCost.targetMax) {
-    list.push({ kind: 'primeCostAboveTarget', severity: 'warning', pct: primePct, targetMax: expenses.primeCost.targetMax })
+  if (basis.primePct != null && basis.primePct > expenses.primeCost.targetMax) {
+    list.push({ kind: 'primeCostAboveTarget', severity: 'warning', pct: basis.primePct, targetMax: expenses.primeCost.targetMax, basisMonth: basis.month })
   }
   const anomaly = expenses.anomalies[0]
   if (anomaly) list.push({ kind: 'expenseAnomaly', severity: 'warning', name: anomaly.name, categoryName: anomaly.categoryName, excess: anomaly.excess, pctAbove: anomaly.pctAbove })
@@ -125,11 +130,22 @@ export function computeOverview (input: OverviewInput): OverviewReport {
   // fôlego (não temos o caixa da época) — e ela não muda com o tempo.
   const basisMonth = window ? addMonths(month, -1) : month
   const basisPoint = result.history.find((h) => h.month === basisMonth)
+  // No mês atual a base é o mês fechado CHEIO (histórico) — o "mês anterior" de
+  // Custos agora é do mesmo período (ajuste A1) e não serve de base.
+  const basisRevenue = window ? (basisPoint?.grossRevenue ?? 0) : expenses.revenue.current
+  const basisGroupPct = (groups: DreGroup[]): number | null => {
+    if (basisRevenue === 0) return null
+    const cents = expenses.items
+      .filter((i) => i.dreGroup != null && groups.includes(i.dreGroup))
+      .reduce((a, i) => a + toCents(window ? (i.history.find((h) => h.month === basisMonth)?.amount ?? 0) : i.amount), 0)
+    return cents / toCents(basisRevenue)
+  }
+  const basis: Basis = { month: basisMonth, cmvPct: basisGroupPct([DreGroup.Cmv]), primePct: basisGroupPct([DreGroup.Cmv, DreGroup.Labor]), revenue: basisRevenue }
   const values: Record<HealthPillarKey, number | null> = window
     ? {
       netMargin: basisPoint?.netMargin ?? null,
       runway,
-      primeCost: primePrev,
+      primeCost: basis.primePct,
       revenueTrend: basisPoint ? revenueTrend(basisPoint.grossRevenue, result.history, basisMonth) : null,
     }
     : {
@@ -158,7 +174,7 @@ export function computeOverview (input: OverviewInput): OverviewReport {
       primeCost: { pct: expenses.primeCost.pctOfRevenue, previousPct: primePrev, deltaPoints: points(expenses.primeCost.pctOfRevenue, primePrev), targetMax: expenses.primeCost.targetMax },
     },
     health: { score, label: healthLabel(score), basisMonth, pillars, bands: HEALTH_BANDS },
-    insights: buildInsights(input),
+    insights: buildInsights(input, basis),
     revenueVsExpense,
     profitWaterfall: {
       grossRevenue: result.current.grossRevenue,
@@ -167,5 +183,6 @@ export function computeOverview (input: OverviewInput): OverviewReport {
       operatingExpenses: result.current.operatingExpenses,
       netProfit: result.current.netProfit,
     },
+    comparison: result.comparison ?? { kind: 'fullMonth', untilDay: null },
   }
 }

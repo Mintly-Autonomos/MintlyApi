@@ -1,3 +1,4 @@
+import { ObjectId } from 'mongodb'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { MongoMemoryReplSet } from 'mongodb-memory-server'
 import { FastifyInstance } from 'fastify'
@@ -175,6 +176,15 @@ describe('GET /reports/expenses (Integration)', () => {
     expect(cmv.subitems.map((s: any) => [s.name, s.amount])).toEqual([['Frango inteiro', 6_000], ['Embalagens', 4_400], ['Sem subitem', 3_600]])
   })
 
+  // Categoria variável real: com o ajuste A2, categoria inexistente conta como fixa.
+  async function variableCategory (env: string, restaurantId: string, name: string) {
+    const _id = new ObjectId()
+    await mongoConnection.getDatabase(env).collection('financial_categories').insertOne({
+      _id, restaurantId, name, type: 'expense', behavior: 'variable', dreGroup: 'opex', operationalNature: 'operational', status: 'active', isSystem: false, usage: 0, history: [], subcategories: [], audit: { createdAt: new Date(), updatedAt: new Date() },
+    } as any)
+    return String(_id)
+  }
+
   it('mês atual: lançamento com data futura no mês entra na projeção sem ser multiplicado', async () => {
     const now = new Date()
     const day = toLocalDay(now)
@@ -183,6 +193,7 @@ describe('GET /reports/expenses (Integration)', () => {
     if (elapsed === days) return // último dia do mês: não há "depois de hoje" no mês
 
     const { auth, restaurantId } = await signup(freshEnv())
+    const catId = await variableCategory(auth.env, restaurantId, 'Insumos')
     const doc = (title: string, date: Date, gross: number) => ({
       restaurantId,
       title,
@@ -194,7 +205,7 @@ describe('GET /reports/expenses (Integration)', () => {
       feeValue: toDecimal128(0),
       netValue: toDecimal128(gross),
       account: { _id: 'a', name: 'Caixa', type: 'cash' },
-      category: { _id: 'c', name: 'Aluguel', type: 'expense' },
+      category: { _id: catId, name: 'Insumos', type: 'expense' },
       paymentMethod: 'pix',
       origin: 'manual',
       history: [],
@@ -211,6 +222,7 @@ describe('GET /reports/expenses (Integration)', () => {
 
   it('mês atual: projeção pelo dia de hoje em SP', async () => {
     const { auth, restaurantId } = await signup(freshEnv())
+    const catId = await variableCategory(auth.env, restaurantId, 'Gás')
     const now = new Date()
     await mongoConnection.getDatabase(auth.env).collection('financial_movements').insertOne({
       restaurantId,
@@ -223,7 +235,7 @@ describe('GET /reports/expenses (Integration)', () => {
       feeValue: toDecimal128(0),
       netValue: toDecimal128(310),
       account: { _id: 'a', name: 'Caixa', type: 'cash' },
-      category: { _id: 'c', name: 'Gás', type: 'expense' },
+      category: { _id: catId, name: 'Gás', type: 'expense' },
       paymentMethod: 'pix',
       origin: 'manual',
       history: [],
@@ -237,5 +249,40 @@ describe('GET /reports/expenses (Integration)', () => {
 
     expect(r.projection).toEqual({ total: Math.round(31_000 * days / elapsed) / 100, revenue: 0, elapsedDays: elapsed, daysInMonth: days })
     expect(r.items[0].projected).toBe(r.projection.total)
+  })
+
+  it('ajuste A1 — mês atual compara com os mesmos dias do mês anterior; A2 projeta fixo pela média', async () => {
+    const { auth, restaurantId } = await signup(freshEnv())
+    const now = new Date()
+    const todayDay = Number(toLocalDay(now).slice(8, 10))
+    const prev = addMonths(toLocalMonth(now), -1)
+    const lastPrevDay = new Date(Date.UTC(Number(prev.slice(0, 4)), Number(prev.slice(5, 7)), 0)).getUTCDate()
+    const dayOf = (month: string, day: number) => new Date(startOfLocalMonth(month).getTime() + (day - 1) * 86_400_000 + 12 * 3_600_000)
+    const doc = (date: Date, name: string, gross: number) => ({
+      restaurantId,
+      title: name,
+      direction: 'out',
+      status: 'settled',
+      statusSource: 'auto',
+      date,
+      grossValue: toDecimal128(gross),
+      feeValue: toDecimal128(0),
+      netValue: toDecimal128(gross),
+      account: { _id: 'a', name: 'Caixa', type: 'cash' },
+      category: { _id: name, name, type: 'expense' },
+      paymentMethod: 'pix',
+      origin: 'manual',
+      history: [],
+      audit: { createdAt: now, updatedAt: now },
+    })
+    await mongoConnection.getDatabase(auth.env).collection('financial_movements').insertMany([doc(dayOf(prev, 1), 'Gás', 100), doc(dayOf(prev, lastPrevDay), 'Gás', 300)])
+
+    const r = (await get(auth, '')).json().payload
+
+    expect(r.comparison).toEqual({ kind: 'samePeriod', untilDay: todayDay })
+    expect(r.total.previous).toBe(lastPrevDay <= todayDay ? 400 : 100)
+    expect(r.history.at(-2).total).toBe(400)
+    // categoria inexistente conta como fixa: aparece no mês atual projetada pela média dos meses cheios
+    expect(r.items.find((i: any) => i.name === 'Gás')).toMatchObject({ amount: 0, projected: 400 })
   })
 })

@@ -5,7 +5,7 @@ import { FastifyInstance } from 'fastify'
 import { mongoConnection } from '../../../infrastructure/db/mongodb'
 import { buildServer } from '../../../infrastructure/server/build-server'
 import { toDecimal128 } from '../../../core/money/money'
-import { addMonths, startOfLocalMonth, toLocalMonth } from '../shared/period'
+import { addMonths, startOfLocalMonth, toLocalDay, toLocalMonth } from '../shared/period'
 import { resultScenario, resultScenarioExpected } from './result-scenario'
 
 let envCounter = 0
@@ -132,5 +132,41 @@ describe('GET /reports/result (Integration)', () => {
     const { auth } = await signup(freshEnv())
     expect((await get(auth, '')).json().payload.referenceMonth).toBe(toLocalMonth(new Date()))
     expect((await app.inject({ method: 'GET', url: '/reports/result', headers: { env: freshEnv() } })).statusCode).toBe(401)
+  })
+
+  it('ajuste A1 — mês atual compara com o mês anterior até o mesmo dia', async () => {
+    const env = freshEnv()
+    const { auth, restaurantId } = await signup(env)
+    const now = new Date()
+    const today = toLocalDay(now)
+    const todayDay = Number(today.slice(8, 10))
+    const prev = addMonths(toLocalMonth(now), -1)
+    const lastPrevDay = Number(new Date(Date.UTC(Number(prev.slice(0, 4)), Number(prev.slice(5, 7)), 0)).toISOString().slice(8, 10))
+    const doc = (date: Date, gross: number) => ({
+      restaurantId,
+      title: 'Venda',
+      direction: 'in',
+      status: 'settled',
+      statusSource: 'auto',
+      date,
+      grossValue: toDecimal128(gross),
+      feeValue: toDecimal128(0),
+      netValue: toDecimal128(gross),
+      account: { _id: 'a', name: 'Caixa', type: 'cash' },
+      category: { _id: 'c', name: 'Vendas', type: 'revenue' },
+      paymentMethod: 'pix',
+      origin: 'manual',
+      history: [],
+      audit: { createdAt: now, updatedAt: now },
+    })
+    const dayOf = (month: string, day: number) => new Date(startOfLocalMonth(month).getTime() + (day - 1) * 86_400_000 + 12 * 3_600_000)
+    await mongoConnection.getDatabase(env).collection('financial_movements').insertMany([doc(dayOf(prev, 1), 1_000), doc(dayOf(prev, lastPrevDay), 5_000)])
+
+    const r = (await get(auth, '')).json().payload
+
+    expect(r.comparison).toEqual({ kind: 'samePeriod', untilDay: todayDay })
+    expect(r.previous.grossRevenue).toBe(lastPrevDay <= todayDay ? 6_000 : 1_000)
+    expect(r.history.at(-2).grossRevenue).toBe(6_000)
+    expect((await get(auth, `?month=${prev}`)).json().payload.comparison).toEqual({ kind: 'fullMonth', untilDay: null })
   })
 })

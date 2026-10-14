@@ -45,7 +45,7 @@ export function overviewScenario (): OverviewInput {
     insights: [{ kind: 'criticalDay', severity: 'warning', date: '2026-08-22', balance: 900, threshold: 6_475 }],
   } as unknown as CashFlowReport
 
-  const item = (key: string, dreGroup: string, amount: number, previous: number) => ({ key, kind: 'category', categoryId: key, name: key, behavior: 'variable', dreGroup, amount, previous, average3: null, deltaPrevious: null, deltaAverage3: null, pctOfRevenue: null, subitems: [], hasAnomaly: false, history: [], projected: null })
+  const item = (key: string, dreGroup: string, amount: number, previous: number) => ({ key, kind: 'category', categoryId: key, name: key, behavior: 'variable', dreGroup, amount, previous, average3: null, deltaPrevious: null, deltaAverage3: null, pctOfRevenue: null, subitems: [], hasAnomaly: false, history: [{ month: '2026-06', amount: previous }, { month: '2026-07', amount }], projected: null })
   const expenses = {
     referenceMonth: OVERVIEW_MONTH,
     previousMonth: '2026-06',

@@ -1,6 +1,6 @@
 import { ResultReport, TaxRegime } from 'mintly-lib'
 import { RequestContext } from '../../../../core/context/request-context'
-import { addMonths, parseReferenceMonth } from '../../shared/period'
+import { addMonths, comparisonUntilDay, parseReferenceMonth } from '../../shared/period'
 import { RestaurantRepository } from '../../../restaurant/restaurant-repository'
 import { TaxRepository } from '../../../tax/tax-repository'
 import { TaxSettingsRepository } from '../../../tax/tax-settings-repository'
@@ -21,7 +21,9 @@ export class ResultQuery {
   ) {}
 
   async execute (ctx: RequestContext, month?: string): Promise<ResultReport> {
-    const referenceMonth = parseReferenceMonth(month, this.clock())
+    const now = this.clock()
+    const referenceMonth = parseReferenceMonth(month, now)
+    const untilDay = comparisonUntilDay(referenceMonth, now)
     const from = addMonths(referenceMonth, -(HISTORY_MONTHS - 1))
     const months = Array.from({ length: HISTORY_MONTHS }, (_, i) => addMonths(from, i))
 
@@ -29,7 +31,7 @@ export class ResultQuery {
     const regime: TaxRegime | null = restaurant.taxRegime ?? null
 
     const [rows, categories, dailyRevenue, firstMonth, revenueByMonth, dasByMonth] = await Promise.all([
-      this.repo.monthlyTotals(ctx, { from, to: referenceMonth }),
+      this.repo.monthlyTotals(ctx, { from, to: referenceMonth }, untilDay),
       this.repo.categories(ctx),
       this.repo.dailyRevenue(ctx, referenceMonth),
       this.taxRepo.firstMovementMonth(ctx),
@@ -41,6 +43,6 @@ export class ResultQuery {
 
     const taxByMonth = new Map(months.map((m) => [m, monthTax({ regime, month: m, firstMonth, revenueByMonth, meiMonthlyDas: dasByMonth.get(m) ?? null })]))
 
-    return computeResult({ referenceMonth, regime, rows, categories, taxByMonth, meiMonthlyDas: dasByMonth.get(referenceMonth) ?? null, dailyRevenue })
+    return computeResult({ referenceMonth, regime, rows, categories, taxByMonth, meiMonthlyDas: dasByMonth.get(referenceMonth) ?? null, dailyRevenue, untilDay })
   }
 }

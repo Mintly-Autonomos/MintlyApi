@@ -21,6 +21,9 @@ export interface MonthlyTotalRow {
   categoryName: string
   gross: number
   fee: number
+  /** Ajuste A1: soma até o dia de corte (mesmo período); ausente = mês cheio. */
+  grossUntil?: number
+  feeUntil?: number
 }
 
 export interface CategoryInfo {
@@ -101,7 +104,7 @@ export function aggregateMonth (rows: MonthlyTotalRow[], month: string, categori
 }
 
 export function hasActivity (agg: MonthAggregate): boolean {
-  return agg.grossRevenue > 0 || agg.cmv > 0 || agg.platformFee > 0 || agg.opexCategories.size > 0
+  return agg.grossRevenue > 0 || agg.cmv > 0 || agg.platformFee > 0 || [...agg.opexCategories.values()].some((c) => c.cents > 0)
 }
 
 /**
@@ -170,6 +173,9 @@ export function buildOpexItems (current: MonthAggregate, previous: MonthAggregat
   for (const id of ids) {
     const c = current.opexCategories.get(id)
     const p = previous.opexCategories.get(id)
+    // Zerada nos dois lados (ex.: no mês atual, gasto do anterior caiu depois do
+    // dia de corte): linha vazia, fora da composição.
+    if ((c?.cents ?? 0) === 0 && (p?.cents ?? 0) === 0) continue
     const base = (c ?? p)!
     items.push(opexItem({ categoryId: base.categoryId, name: base.name, kind: base.kind, behavior: base.behavior }, c?.cents ?? 0, p?.cents ?? 0, current.grossRevenue))
   }
@@ -250,6 +256,8 @@ export interface ResultInput {
   taxByMonth: Map<string, MonthTax>
   meiMonthlyDas: number | null
   dailyRevenue: Map<string, number>
+  /** Ajuste A1: no mês atual, o dia de hoje (SP) — a comparação usa os mesmos dias. */
+  untilDay?: number | null
 }
 
 const NO_TAX: MonthTax = { effectiveRate: null, fixedAmount: null }
@@ -261,10 +269,17 @@ export function computeResult (input: ResultInput): ResultReport {
   const aggs = new Map(months.map((m) => [m, aggregateMonth(input.rows, m, input.categories)]))
   const linesOf = (m: string) => buildLines(aggs.get(m)!, input.taxByMonth.get(m) ?? NO_TAX)
 
+  // Ajuste A1: no mês atual, o anterior é comparado pelos mesmos dias (1..untilDay)
+  // — senão o mês pela metade sempre "cai". O histórico segue com meses cheios.
+  const untilDay = input.untilDay ?? null
+  const comparisonRows = untilDay == null ? input.rows : input.rows.map((r) => ({ ...r, gross: r.grossUntil ?? r.gross, fee: r.feeUntil ?? r.fee }))
   const current = linesOf(input.referenceMonth)
-  const previous = linesOf(previousMonth)
   const currentAgg = aggs.get(input.referenceMonth)!
-  const previousAgg = aggs.get(previousMonth)!
+  const previousAgg = aggregateMonth(comparisonRows, previousMonth, input.categories)
+  const previous = buildLines(previousAgg, input.taxByMonth.get(previousMonth) ?? NO_TAX)
+  // O mês atual também é cortado para comparar: o agendado para depois de hoje
+  // está no mês (e aparece em `current`), mas não entra na variação.
+  const currentCmp = untilDay == null ? current : buildLines(aggregateMonth(comparisonRows, input.referenceMonth, input.categories), input.taxByMonth.get(input.referenceMonth) ?? NO_TAX)
   const items = buildOpexItems(currentAgg, previousAgg)
   const tax = input.taxByMonth.get(input.referenceMonth) ?? NO_TAX
 
@@ -273,7 +288,7 @@ export function computeResult (input: ResultInput): ResultReport {
     previousMonth,
     current,
     previous,
-    deltas: buildDeltas(current, previous),
+    deltas: buildDeltas(currentCmp, previous),
     tax: {
       regime: input.regime,
       effectiveRate: tax.effectiveRate,
@@ -285,6 +300,7 @@ export function computeResult (input: ResultInput): ResultReport {
       const l = linesOf(m)
       return { month: m, grossRevenue: l.grossRevenue, netProfit: l.netProfit, netMargin: l.netMargin }
     }),
-    insights: buildInsights({ regime: input.regime, current, previous, previousHasActivity: hasActivity(previousAgg), items }),
+    insights: buildInsights({ regime: input.regime, current: currentCmp, previous, previousHasActivity: hasActivity(previousAgg), items }),
+    comparison: untilDay == null ? { kind: 'fullMonth', untilDay: null } : { kind: 'samePeriod', untilDay },
   }
 }

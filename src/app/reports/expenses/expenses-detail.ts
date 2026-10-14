@@ -19,6 +19,9 @@ export const ANOMALY_RULE: ExpensesAnomalyRule = {
   minHistoryMonths: ANOMALY_MIN_HISTORY_MONTHS,
 }
 
+/** Revisão dos ajustes: no mês atual, anomalia só a partir deste dia (base curta dá alarme falso). */
+export const MIN_DAYS_CURRENT_ANOMALY = 7
+
 export const NO_SUBITEM_KEY = 'none'
 export const NO_SUBITEM_NAME = 'Sem subitem'
 

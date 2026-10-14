@@ -33,7 +33,7 @@ export class CashFlowRepository {
           { status: MovementStatus.Settled, settledAt: { $exists: false }, dueDate: { $exists: false }, date: { $gte: w.realizedFrom } },
         ],
       },
-      { projection: { title: 1, category: 1, direction: 1, status: 1, date: 1, dueDate: 1, settledAt: 1, grossValue: 1, netValue: 1 } },
+      { projection: { title: 1, category: 1, account: 1, direction: 1, status: 1, date: 1, dueDate: 1, settledAt: 1, grossValue: 1, netValue: 1 } },
     ).toArray()
 
     return docs.map((d) => ({
@@ -47,6 +47,7 @@ export class CashFlowRepository {
       settledAt: d.settledAt ?? undefined,
       grossValue: decimalToNumber(d.grossValue),
       netValue: decimalToNumber(d.netValue),
+      ...(d.account ? { account: { _id: String(d.account._id), name: d.account.name, type: d.account.type } } : {}),
     }))
   }
 
@@ -76,5 +77,11 @@ export class CashFlowRepository {
       { $group: { _id: null, total: { $sum: '$availableBalance' } } },
     ]).toArray()
     return decimalToNumber(agg?.total)
+  }
+
+  /** Nome atual das contas — o repasse agrupado usa o nome vivo, não o do lançamento. */
+  async accountNames (ctx: RequestContext): Promise<Map<string, string>> {
+    const docs = await this.db(ctx).collection('financial_accounts').find({ restaurantId: ctx.restaurantId }, { projection: { name: 1 } }).toArray()
+    return new Map(docs.map((d) => [String(d._id), d.name]))
   }
 }
