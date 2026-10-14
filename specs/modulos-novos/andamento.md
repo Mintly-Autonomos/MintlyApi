@@ -16,7 +16,9 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 - Origem: revisão das prints × API + teste local com dados (13/10/2026). Decidido pelo dono: aplicar as recomendações.
 - A1 mês atual comparado pelo mesmo período · A2 projeção de despesa por comportamento · A3 insights de CMV/prime na base do score · A4 score exige 2 pilares · A5 repasses de plataforma agrupados. Extras achados no teste: DRE não lista despesa zerada nos dois lados; repasse usa o nome atual da conta.
 - Teste pesado (local, Mongo em memória): 5 restaurantes, ~4.700 lançamentos, todos os meses/canais/horizontes e entradas inválidas, com oráculo independente — 57.645 checks, 3 falhas conhecidas do próprio roteiro (conta com saldo não inativa: 409 esperado). Telas respondem em < 110 ms com ~3.900 lançamentos.
-- Branch: `feat/20261014/ajustes-telas` (lib e API). Etapa: TDD ✅ → conferência (revisor) → PR da lib → `npm i` → PR da API.
+- Revisão final (agente): 4 pontos importantes corrigidos com teste — comparação do mês atual também corta o próprio mês em hoje (agendado não infla a variação); anomalia do mês atual só a partir do 7º dia; item com gasto no mês fechado segue listado (base do score/insights); fixo novo projetado pela média desde o 1º gasto. Extra: mês anterior sem gasto real não conta como atividade.
+- Bateria final com o oráculo atualizado: **57.734 checks, 0 falhas** (2 pulados: inativar conta com saldo — 409 correto). Limite: a regra "anomalia só a partir do 7º dia" não foi exercitada ao vivo (hoje é dia 13; coberta por teste unitário).
+- Branch: `feat/20261014/ajustes-telas`. ~~lib #34~~ ✅ (2.17.0-preview) → **PR da API aberto, aguardando merge**.
 
 ## Fatias
 
@@ -36,7 +38,7 @@ Atualizado a cada fatia. O roteiro completo (o quê e por quê) está em
 
 1. Rodar o backfill de staging abaixo (o #39 já foi mergeado).
 2. Rodar os comandos da fatia 3 abaixo (o #41 já foi mergeado).
-3. Ajustes pós-teste: revisão → PR da lib → PR da API. Pendências para o front e o negócio (itens 6–9 da revisão das telas) abaixo.
+3. Ajustes pós-teste: merge do PR da API. Pendências para o front e o negócio (itens 6–9 da revisão das telas) abaixo.
 
 ## Postar no Jira (quando o MCP do Atlassian voltar)
 
