@@ -19,7 +19,11 @@ import { BaseError } from '../../core/errors/core/base-error'
 import { assertValidEnv } from '../../app/environment/env-allowlist'
 import { buildCorsOriginChecker } from '../../core/config/cors-origins'
 
-export async function buildServer (server: FastifyInstance = Fastify()): Promise<FastifyInstance> {
+// O default do Fastify (1 MiB) estoura com a foto de perfil: 1 MB de imagem vira ~1,4 MB em
+// base64 dentro do JSON do signup. 2 MiB cobre o teto da foto com folga, sem abrir demais.
+const BODY_LIMIT_BYTES = 2 * 1024 * 1024
+
+export async function buildServer (server: FastifyInstance = Fastify({ bodyLimit: BODY_LIMIT_BYTES })): Promise<FastifyInstance> {
   // Allowlist por CORS_ORIGINS (P4) — ver core/config/cors-origins.ts.
   // Negar CORS NÃO é bloquear a requisição no servidor: é só omitir o header
   // `Access-Control-Allow-Origin` na resposta. Quem recusa é o navegador, do lado

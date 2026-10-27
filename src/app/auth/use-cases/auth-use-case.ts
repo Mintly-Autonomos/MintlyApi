@@ -71,10 +71,13 @@ export class AuthUseCase {
 
     await logAudit('login', userId, ctx.env, user.restaurantId, { ip: meta.ip ?? null, userAgent: meta.userAgent ?? null }).catch(() => null)
 
+    // A foto é só um enfeite da UI: falha ao lê-la não pode derrubar um login válido.
+    const avatar = await this.repo.findPersonAvatar(user.person._id, ctx).catch(() => null)
+
     return {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
-      user: this.toPublic(user),
+      user: this.toPublic(user, avatar),
     }
   }
 
@@ -125,10 +128,11 @@ export class AuthUseCase {
     }
   }
 
-  /** Remove o passwordHash antes de devolver o usuário ao cliente. */
-  private toPublic (user: User): AuthUser {
+  /** Remove o passwordHash antes de devolver o usuário ao cliente (e anexa a foto, se houver). */
+  private toPublic (user: User, avatar: string | null): AuthUser {
     const copy: Partial<User> = { ...user }
     delete copy.passwordHash
-    return copy as AuthUser
+    const publicUser = copy as Omit<User, 'passwordHash'>
+    return { ...publicUser, person: { ...publicUser.person, ...(avatar ? { avatar } : {}) } }
   }
 }

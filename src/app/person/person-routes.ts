@@ -13,6 +13,7 @@ type GetPersonListRequest = FastifyRequest<{ Querystring: PersonListQuery, Heade
 type GetPersonByIdRequest = FastifyRequest<{ Params: PersonParams, Headers: PersonHeaders }>
 type PatchPersonRequest = FastifyRequest<{ Params: PersonParams, Body: Partial<PersonBody>, Headers: PersonHeaders }>
 type DeletePersonRequest = FastifyRequest<{ Params: PersonParams, Headers: PersonHeaders }>
+type GetPersonAvatarRequest = FastifyRequest<{ Params: { username: string }, Headers: PersonHeaders }>
 
 export async function personRoutes (fastify: FastifyInstance) {
   const personController = new PersonController()
@@ -28,6 +29,13 @@ export async function personRoutes (fastify: FastifyInstance) {
     return isMultipleResponse === 'true'
       ? personController.find(filter, request)
       : personController.findAll(filter, request)
+  })
+
+  // Foto de perfil pelo e-mail (só de quem é do mesmo restaurante do token).
+  fastify.get('/avatar/:username', {
+    schema: { tags: ['people'], summary: 'Foto de perfil pelo nome de usuário (e-mail)' },
+  }, (request: GetPersonAvatarRequest) => {
+    return personController.getAvatarByUsername(request.params.username, request)
   })
 
   fastify.get('/:id', (request: GetPersonByIdRequest) => {

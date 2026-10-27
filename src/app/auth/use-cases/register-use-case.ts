@@ -72,7 +72,14 @@ export class RegisterUseCase {
 
         // ── person ────────────────────────────────────────────────────────────
         const personInsert = await db.collection('people').insertOne(
-          { name: data.person.name, phone: data.person.phone, audit },
+          {
+            name: data.person.name,
+            phone: data.person.phone,
+            // Foto de perfil (data URL já validada pelo schema da lib) fica só no `people` —
+            // o ref em `users` leva apenas { _id, name }, p/ não inchar o doc lido a cada login.
+            ...(data.person.avatar ? { avatar: data.person.avatar } : {}),
+            audit,
+          },
           { session },
         )
         const personId = personInsert.insertedId.toHexString()
@@ -169,7 +176,11 @@ export class RegisterUseCase {
       refreshToken: tokens.refreshToken,
       user: {
         _id: created.userId,
-        person: { _id: created.personId, name: data.person.name },
+        person: {
+          _id: created.personId,
+          name: data.person.name,
+          ...(data.person.avatar ? { avatar: data.person.avatar } : {}),
+        },
         email,
         role: UserRole.Owner,
         status: UserStatus.Active,

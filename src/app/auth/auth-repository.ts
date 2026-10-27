@@ -28,6 +28,17 @@ export class AuthRepository {
     return user as UserRecord | null
   }
 
+  /** Foto de perfil (data URL) do Person, ou null. Fica só em `people` — nunca no ref do user. */
+  async findPersonAvatar (personId: string, ctx: RequestContext): Promise<string | null> {
+    if (!ObjectId.isValid(personId)) return null
+    const db = MongoDBConnection.getInstance().getDatabase(ctx.env)
+    const person = await db.collection('people').findOne(
+      { _id: new ObjectId(personId) },
+      { projection: { avatar: 1 } },
+    )
+    return typeof person?.avatar === 'string' ? person.avatar : null
+  }
+
   async updateLastAccess (userId: string, ctx: RequestContext): Promise<void> {
     const now = new Date()
     await this.getCollection(ctx).updateOne(
