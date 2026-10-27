@@ -17,11 +17,13 @@ const mockRevoke = vi.hoisted(() => vi.fn())
 const mockValidate = vi.hoisted(() => vi.fn())
 const mockFindById = vi.hoisted(() => vi.fn())
 const mockLogAudit = vi.hoisted(() => vi.fn())
+const mockFindPersonAvatar = vi.hoisted(() => vi.fn())
 
 vi.mock('../auth-repository', () => ({
   AuthRepository: class {
     findByEmail = mockFindByEmail
     findById = mockFindById
+    findPersonAvatar = mockFindPersonAvatar
     updateLastAccess = mockUpdateLastAccess
     resetLoginAttempts = mockResetAttempts
     registerFailedAttempt = mockRegisterFailedAttempt
@@ -70,6 +72,7 @@ describe('AuthUseCase', () => {
     mockRevoke.mockResolvedValue(undefined)
     mockValidate.mockResolvedValue({ succeeded: true, subject: 'user-id-123' })
     mockFindById.mockResolvedValue(MOCK_USER)
+    mockFindPersonAvatar.mockResolvedValue(null)
     useCase = new AuthUseCase()
   })
 
@@ -86,6 +89,21 @@ describe('AuthUseCase', () => {
       const result = await useCase.login('joao@restaurante.com', 'Senha123', CTX)
       expect(result.user.email).toBe('joao@restaurante.com')
       expect((result.user as any).passwordHash).toBeUndefined()
+    })
+
+    it('anexa a foto de perfil em user.person.avatar quando existe', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+      mockFindPersonAvatar.mockResolvedValue('data:image/png;base64,AAAA')
+      const result = await useCase.login('joao@restaurante.com', 'Senha123', CTX)
+      expect(result.user.person.avatar).toBe('data:image/png;base64,AAAA')
+    })
+
+    it('não derruba um login válido se a leitura da foto falhar', async () => {
+      mockFindByEmail.mockResolvedValue(MOCK_USER)
+      mockFindPersonAvatar.mockRejectedValue(new Error('mongo fora'))
+      const result = await useCase.login('joao@restaurante.com', 'Senha123', CTX)
+      expect(result.accessToken).toBe('mock-access-token')
+      expect(result.user.person.avatar).toBeUndefined()
     })
 
     it('gera token com claims name, email, role, restaurantId e status', async () => {
