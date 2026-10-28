@@ -3,5 +3,6 @@ export enum Resource {
   Restaurant = 'Restaurant',
   FinancialAccount = 'FinancialAccount',
   FinancialCategory = 'FinancialCategory',
-  FinancialMovement = 'FinancialMovement'
+  FinancialMovement = 'FinancialMovement',
+  MenuItem = 'MenuItem'
 }

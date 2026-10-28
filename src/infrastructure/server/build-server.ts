@@ -6,6 +6,7 @@ import { SapphireValidationError } from '@ascendance-hub/sapphire-core'
 import { personRoutes } from '../../app/person/person-routes'
 import { financialAccountRoutes } from '../../app/financial-account/financial-account-routes'
 import { financialCategoryRoutes } from '../../app/financial-category/financial-category-routes'
+import { menuItemRoutes } from '../../app/menu-item/menu-item-routes'
 import { financialMovementRoutes } from '../../app/financial-movement/financial-movement-routes'
 import { cashFlowRoutes } from '../../app/reports/cash-flow/cash-flow-routes'
 import { resultRoutes } from '../../app/reports/result/result-routes'
@@ -134,6 +135,7 @@ export async function buildServer (server: FastifyInstance = Fastify({ bodyLimit
 
     await protectedScope.register(financialAccountRoutes, { prefix: '/financial-accounts' })
     await protectedScope.register(financialCategoryRoutes, { prefix: '/financial-categories' })
+    await protectedScope.register(menuItemRoutes, { prefix: '/menu-items' })
 
     await protectedScope.register(financialMovementRoutes, { prefix: '/financial-movements' })
     await protectedScope.register(cashFlowRoutes, { prefix: '/reports' })
