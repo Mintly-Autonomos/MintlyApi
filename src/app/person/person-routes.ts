@@ -13,6 +13,7 @@ type GetPersonListRequest = FastifyRequest<{ Querystring: PersonListQuery, Heade
 type GetPersonByIdRequest = FastifyRequest<{ Params: PersonParams, Headers: PersonHeaders }>
 type PatchPersonRequest = FastifyRequest<{ Params: PersonParams, Body: Partial<PersonBody>, Headers: PersonHeaders }>
 type DeletePersonRequest = FastifyRequest<{ Params: PersonParams, Headers: PersonHeaders }>
+type UpdateMyAvatarRequest = FastifyRequest<{ Body: unknown, Headers: PersonHeaders }>
 type GetPersonAvatarRequest = FastifyRequest<{ Params: { username: string }, Headers: PersonHeaders }>
 
 export async function personRoutes (fastify: FastifyInstance) {
@@ -36,6 +37,23 @@ export async function personRoutes (fastify: FastifyInstance) {
     schema: { tags: ['people'], summary: 'Foto de perfil pelo nome de usuário (e-mail)' },
   }, (request: GetPersonAvatarRequest) => {
     return personController.getAvatarByUsername(request.params.username, request)
+  })
+
+  // Troca/remove a foto de perfil do PRÓPRIO usuário (a pessoa vem do token, não da URL).
+  fastify.put('/me/avatar', {
+    schema: {
+      tags: ['people'],
+      summary: 'Troca a foto de perfil do usuário autenticado',
+      body: { type: 'object', required: ['avatar'], properties: { avatar: { type: 'string' } } },
+    },
+  }, (request: UpdateMyAvatarRequest) => {
+    return personController.updateMyAvatar(request.body, request)
+  })
+
+  fastify.delete('/me/avatar', {
+    schema: { tags: ['people'], summary: 'Remove a foto de perfil do usuário autenticado' },
+  }, (request: FastifyRequest<{ Headers: PersonHeaders }>) => {
+    return personController.removeMyAvatar(request)
   })
 
   fastify.get('/:id', (request: GetPersonByIdRequest) => {
