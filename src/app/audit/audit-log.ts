@@ -9,6 +9,8 @@ export type AuditEvent =
   | 'account_temporarily_blocked'
   | 'password_recovery_requested'
   | 'password_reset'
+  | 'avatar_updated'
+  | 'avatar_removed'
 
 export interface AuditLog {
   _id?: string
