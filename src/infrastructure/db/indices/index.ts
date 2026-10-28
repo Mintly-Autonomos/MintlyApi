@@ -2,6 +2,7 @@ import MongoDBConnection from '../mongodb/mongodb-connection'
 import * as financialAccounts from './financial-accounts'
 import * as financialMovements from './financial-movements'
 import * as financialCategories from './financial-categories'
+import * as menuItems from './menu-items'
 import * as auditLogs from './audit-logs'
 
 /**
@@ -13,7 +14,7 @@ import * as auditLogs from './audit-logs'
  * quando o índice já existe, o runner roda tudo a cada deploy com segurança,
  * por ambiente (o env define o banco em `getDatabase(env)`).
  */
-const modules = [financialAccounts, financialMovements, financialCategories, auditLogs]
+const modules = [financialAccounts, financialMovements, financialCategories, menuItems, auditLogs]
 
 /**
  * Garante (idempotente) todos os índices registrados no banco do `env`.
