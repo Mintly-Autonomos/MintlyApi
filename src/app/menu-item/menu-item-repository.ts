@@ -27,6 +27,9 @@ export class MenuItemRepository extends MongodbCrudRepository<MenuItem & Documen
     const now = new Date()
     const scoped = {
       ...item,
+      // Custo e vendidos no mês são opcionais no cadastro: sem eles valem 0 (pratos antigos leem 0).
+      cost: item.cost ?? 0,
+      soldPerMonth: item.soldPerMonth ?? 0,
       restaurantId: ctx.restaurantId,
       status: RecordStatus.Active,
       priceUpdatedAt: now,

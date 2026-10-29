@@ -48,7 +48,7 @@ describe('/menu-items (integração)', () => {
   }
   const alerts = async (token: string) => (await call('GET', '/menu-items/price-alerts', token)).json().payload as Array<{ _id: string; daysSinceReview: number }>
   const get = async (token: string, id: string) => {
-    const list = (await call('GET', '/menu-items?isMultipleResponse=true', token)).json().payload as Array<Record<string, any>>
+    const list = (await call('GET', '/menu-items?isMultipleResponse=true&size=100', token)).json().payload as Array<Record<string, any>>
     return list.find((i) => i._id === id)!
   }
 
@@ -78,6 +78,33 @@ describe('/menu-items (integração)', () => {
     expect(doc.priceUpdatedAt).toBe(doc.priceReviewedAt)
     expect(Date.now() - new Date(doc.priceReviewedAt).getTime()).toBeLessThan(60_000)
     expect(doc.restaurantId).toBe(a.restaurantId)
+  })
+
+  it('custo e vendidos por mês: opcionais no cadastro (valem 0) e editáveis em PATCH /:id', async () => {
+    const sem = await create(a.token, 'Prato sem dados', 20)
+    const docSem = await get(a.token, sem._id)
+    expect([docSem.cost, docSem.soldPerMonth]).toEqual([0, 0])
+
+    const com = await call('POST', '/menu-items', a.token, { name: 'Prato com dados', price: 40, cost: 14.5, soldPerMonth: 320 })
+    expect(com.statusCode).toBe(201)
+    expect(com.json().payload).toMatchObject({ cost: 14.5, soldPerMonth: 320 })
+
+    const id = com.json().payload._id as string
+    const antes = await get(a.token, id)
+    const patch = await call('PATCH', `/menu-items/${id}`, a.token, { cost: 16, soldPerMonth: 350 })
+    expect(patch.statusCode).toBe(200)
+    expect(patch.json().payload).toMatchObject({ cost: 16, soldPerMonth: 350, price: 40 })
+    // mexer em custo/vendidos NÃO é revisar o preço: as datas de preço ficam como estavam
+    const depois = await get(a.token, id)
+    expect(depois.priceReviewedAt).toBe(antes.priceReviewedAt)
+    expect(depois.priceUpdatedAt).toBe(antes.priceUpdatedAt)
+  })
+
+  it('rejeita custo negativo e vendidos negativo ou fracionado', async () => {
+    expect((await call('POST', '/menu-items', a.token, { name: 'Custo ruim', price: 10, cost: -1 })).statusCode).toBe(400)
+    expect((await call('POST', '/menu-items', a.token, { name: 'Vendidos ruim', price: 10, soldPerMonth: 2.5 })).statusCode).toBe(400)
+    const item = await create(a.token, 'Prato valida patch', 10)
+    expect((await call('PATCH', `/menu-items/${item._id}`, a.token, { soldPerMonth: -4 })).statusCode).toBe(400)
   })
 
   it('o cliente não escolhe status, datas nem restaurante (insert estrito)', async () => {
