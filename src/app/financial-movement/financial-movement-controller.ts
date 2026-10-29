@@ -6,6 +6,7 @@ import { RegisterMovementUseCase, RegisterMovementInput } from './use-cases/regi
 import { ChangeMovementStatusUseCase } from './use-cases/change-movement-status.use-case'
 import { UpdateMovementUseCase, UpdateMovementInput } from './use-cases/update-movement.use-case'
 import { RecomputeBalancesUseCase } from './use-cases/recompute-balances.use-case'
+import { ImportMovementsUseCase, ImportMovementsInput } from './use-cases/import-movements.use-case'
 
 export class FinancialMovementController {
   constructor (
@@ -14,6 +15,7 @@ export class FinancialMovementController {
     private readonly changeStatusUseCase: ChangeMovementStatusUseCase,
     private readonly updateUseCase: UpdateMovementUseCase,
     private readonly recomputeUseCase: RecomputeBalancesUseCase,
+    private readonly importUseCase: ImportMovementsUseCase,
   ) {}
 
   /** POST /financial-movements — registra entrada/saída (transacional). */
@@ -23,6 +25,17 @@ export class FinancialMovementController {
 
     return new ResponseBuilder()
       .status(StatusCodes.CREATED)
+      .payload(result)
+      .send(reply)
+  }
+
+  /** POST /financial-movements/import — importa um lote; cada linha tem resultado próprio. */
+  async importBatch (request: any, reply: any) {
+    const ctx = buildRequestContext(request)
+    const result = await this.importUseCase.execute(request.body as ImportMovementsInput, ctx)
+
+    return new ResponseBuilder()
+      .status(result.replayed ? StatusCodes.OK : StatusCodes.CREATED)
       .payload(result)
       .send(reply)
   }
