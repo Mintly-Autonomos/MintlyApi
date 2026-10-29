@@ -51,4 +51,9 @@ export const errorGlossary: ErrorEntry = {
     apiMessage: 'Too many requests. Please try again later.',
     code: 'AUTH-0004',
   },
+  subscriptionRequired: {
+    message: 'Assinatura necessária para usar o Mintly.',
+    apiMessage: 'An active subscription is required.',
+    code: 'SUBSCRIPTION-0001',
+  },
 }

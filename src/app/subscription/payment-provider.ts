@@ -1,0 +1,49 @@
+import type { PaymentProviderName } from 'mintly-lib'
+
+/** Estado do pagamento já traduzido para o vocabulário do Mintly (cada provedor usa o seu). */
+export type PaymentStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'refunded'
+
+export interface CheckoutInput {
+  /** Id do pagamento no Mintly: volta do provedor como referência externa. */
+  paymentId: string
+  /** Ambiente (banco) do tenant: vai na URL do webhook, que não carrega o header `env`. */
+  env: string
+  title: string
+  amountCents: number
+  payerEmail?: string
+}
+
+export interface CheckoutOutput {
+  providerReference: string
+  checkoutUrl: string
+}
+
+export interface ProviderPayment {
+  id: string
+  status: PaymentStatus
+  amountCents: number
+  /** O `paymentId` que mandamos ao criar a cobrança. */
+  externalReference: string
+}
+
+export interface WebhookRequest {
+  headers: Record<string, string | string[] | undefined>
+  query: Record<string, unknown>
+  body: unknown
+}
+
+/**
+ * Contrato com o provedor de pagamento. Trocar de provedor é trocar a implementação escolhida em
+ * `get-payment-provider.ts` (variável PAYMENT_PROVIDER): o resto da assinatura não conhece o provedor.
+ */
+export interface PaymentProvider {
+  readonly name: PaymentProviderName
+  createCheckout (input: CheckoutInput): Promise<CheckoutOutput>
+  /** Consulta o pagamento NO PROVEDOR. É a única fonte de verdade: o conteúdo do webhook não é confiável. */
+  getPayment (providerPaymentId: string, env: string): Promise<ProviderPayment>
+  /**
+   * Valida e lê o aviso (webhook) do provedor. Devolve o id do pagamento a consultar, ou `null` quando o
+   * aviso não é de pagamento (ex.: pedido do comerciante). Lança UnauthorizedError se a assinatura não bater.
+   */
+  parseWebhook? (request: WebhookRequest): { providerPaymentId: string } | null
+}

@@ -16,6 +16,8 @@ import { restaurantRoutes } from '../../app/restaurant/restaurant-routes'
 import { healthRoutes } from '../../app/health/health-routes'
 import { authRoutes } from '../../app/auth/auth-routes'
 import { verifyJwt } from '../../core/hooks/verify-jwt'
+import { requireActiveSubscription } from '../../core/hooks/require-active-subscription'
+import { subscriptionRoutes, webhookRoutes } from '../../app/subscription/subscription-routes'
 import { BaseError } from '../../core/errors/core/base-error'
 import { assertValidEnv } from '../../app/environment/env-allowlist'
 import { buildCorsOriginChecker } from '../../core/config/cors-origins'
@@ -127,10 +129,22 @@ export async function buildServer (server: FastifyInstance = Fastify({ bodyLimit
   await server.register(healthRoutes)
   await server.register(authRoutes, { prefix: '/auth' })
 
+  // Webhooks dos provedores de pagamento: PÚBLICOS (o provedor não manda JWT). A segurança está na
+  // assinatura do aviso e em reconsultar o pagamento no provedor — ver SubscriptionController.
+  await server.register(webhookRoutes, { prefix: '/webhooks' })
+
+  // Assinatura: exige login, mas fica FORA do portão de assinatura — é por aqui que quem não tem assina.
+  await server.register(async (subscriptionScope: FastifyInstance) => {
+    subscriptionScope.addHook('preHandler', verifyJwt)
+    await subscriptionScope.register(subscriptionRoutes, { prefix: '/subscription' })
+  })
+
   // Rotas protegidas — exigem Bearer token válido. verifyJwt lança
   // UnauthorizedError, convertido pelo error handler no mesmo envelope (AUTH-0001).
+  // E exigem ASSINATURA VÁLIDA: sem ela, 402 (SUBSCRIPTION-0001) e o front leva à tela de assinatura.
   await server.register(async (protectedScope: FastifyInstance) => {
     protectedScope.addHook('preHandler', verifyJwt)
+    protectedScope.addHook('preHandler', requireActiveSubscription)
     await protectedScope.register(personRoutes, { prefix: '/people' })
 
     await protectedScope.register(financialAccountRoutes, { prefix: '/financial-accounts' })
