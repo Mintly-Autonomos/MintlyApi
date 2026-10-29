@@ -1,10 +1,12 @@
-import { Collection, Document, MongoServerError } from 'mongodb'
+import { Collection, Document, MongoServerError, ObjectId } from 'mongodb'
 import { MongodbCrudRepository } from '../../core/crud/mongodb-crud-repository'
 import { RequestContext } from '../../core/context/request-context'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
 import { ensure as ensureFinancialAccountIndexes } from '../../infrastructure/db/indices/financial-accounts'
 import { toDecimal128, decimalToNumber } from '../../core/money/money'
 import { FinancialAccount } from 'mintly-lib'
+import { NotFoundError } from '../../core/errors/core/not-found-error'
+import { AccountHistoryEntry } from './account-rules'
 
 /** Saldos são persistidos como Decimal128 (dinheiro exato); a leitura volta a number. */
 function balancesToNumber<T extends Record<string, any>> (doc: T): T {
@@ -18,6 +20,18 @@ function balancesToNumber<T extends Record<string, any>> (doc: T): T {
 export class FinancialAccountRepository extends MongodbCrudRepository<FinancialAccount & Document, string> {
   constructor () {
     super('financial_accounts')
+  }
+
+  /**
+   * Acrescenta eventos ao history[] da conta com $push (não reescreve o array: dois PATCHs
+   * simultâneos não perdem evento um do outro). Escopo de tenant como nas demais operações.
+   */
+  async appendHistory (id: string, entries: AccountHistoryEntry[], ctx: RequestContext): Promise<void> {
+    if (!ObjectId.isValid(id)) throw new NotFoundError('financial_accounts', id)
+    await this.getCollection(ctx).updateOne(
+      this.withTenant({ _id: new ObjectId(id) }, ctx) as any,
+      { $push: { history: { $each: entries } } } as any,
+    )
   }
 
   /**

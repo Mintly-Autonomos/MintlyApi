@@ -37,3 +37,59 @@ export function assertAccountUpdateAllowed (storedType: string, changes: Account
     )
   }
 }
+
+/** Evento gravado em `history[]` da conta (mesmo formato dos use cases de padrão/inativação). */
+export interface AccountHistoryEntry {
+  at: Date
+  by: string
+  action: string
+  detail?: string
+}
+
+export interface AccountHistoryState {
+  name?: string
+  status?: string
+  feePercent?: number
+  settlementDays?: number
+}
+
+const fmtNumber = (n: number): string => String(n).replace('.', ',')
+
+/**
+ * Eventos de histórico de um PATCH de conta, comparando o estado ARMAZENADO com o que o
+ * PATCH quer mudar. Só entra evento de campo que veio no PATCH E mudou de verdade (reenviar o
+ * formulário inteiro sem alterar nada não suja o histórico).
+ *
+ * `action` é um código estável (a tela traduz); `detail` já vem pronto para leitura, no formato
+ * do protótipo ("12% → 14%", "2 dias → 30 dias"). Taxa/prazo ausentes no armazenado valem 0.
+ * Ordem: nome, status, taxa, prazo.
+ */
+export function buildAccountChangeHistory (
+  stored: AccountHistoryState,
+  changes: AccountHistoryState,
+  by: string,
+  now: Date = new Date(),
+): AccountHistoryEntry[] {
+  const entries: AccountHistoryEntry[] = []
+  const add = (action: string, detail?: string) => {
+    entries.push(detail === undefined ? { at: now, by, action } : { at: now, by, action, detail })
+  }
+
+  if (changes.name !== undefined && changes.name !== stored.name) {
+    add('update-name', `${stored.name ?? ''} → ${changes.name}`)
+  }
+
+  if (changes.status !== undefined && changes.status !== stored.status) {
+    add(changes.status === 'active' ? 'reactivate' : 'inactivate')
+  }
+
+  if (changes.feePercent !== undefined && changes.feePercent !== (stored.feePercent ?? 0)) {
+    add('update-fee', `${fmtNumber(stored.feePercent ?? 0)}% → ${fmtNumber(changes.feePercent)}%`)
+  }
+
+  if (changes.settlementDays !== undefined && changes.settlementDays !== (stored.settlementDays ?? 0)) {
+    add('update-settlement', `${fmtNumber(stored.settlementDays ?? 0)} dias → ${fmtNumber(changes.settlementDays)} dias`)
+  }
+
+  return entries
+}
