@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb'
 import type { ClientSession, Collection } from 'mongodb'
-import type { PaymentProviderName, SubscriptionTier } from 'mintly-lib'
+import type { PaymentProviderName, SubscriptionPlanMonths, SubscriptionTier } from 'mintly-lib'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import type { PaymentStatus } from './payment-provider'
 
@@ -13,7 +13,7 @@ export interface PaymentRecord {
   provider: PaymentProviderName
   /** Tipo comprado (Básico ou Pro). Pagamentos antigos, sem o campo, eram Básico. */
   tier?: SubscriptionTier
-  months: number
+  months: SubscriptionPlanMonths
   amountCents: number
   status: PaymentStatus
   /** Id do pagamento no provedor (só depois que o provedor avisa). */

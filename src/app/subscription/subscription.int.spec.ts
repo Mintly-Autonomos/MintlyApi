@@ -3,7 +3,7 @@ import { createHmac } from 'node:crypto'
 import { ObjectId } from 'mongodb'
 import { MongoMemoryReplSet } from 'mongodb-memory-server'
 import { FastifyInstance } from 'fastify'
-import { addMonths } from 'mintly-lib'
+import { addDays as addDaysTo } from 'mintly-lib'
 import { mongoConnection } from '../../infrastructure/db/mongodb'
 import { ensureAllIndexes } from '../../infrastructure/db/indices'
 import { buildServer } from '../../infrastructure/server/build-server'
@@ -18,6 +18,8 @@ const SIGNUP_BASE = {
   termsAccepted: true,
 }
 const DAY = 24 * 60 * 60 * 1000
+/** Dias de cada plano (dias fixos): 1 mês = 30, 3 = 90, 6 = 180, 12 = 360. */
+const addDays = addDaysTo
 const WEBHOOK_SECRET = 'segredo-do-webhook'
 
 let envCounter = 0
@@ -278,13 +280,13 @@ describe('Assinatura (Integration)', () => {
       expect(await overview(auth)).toMatchObject({ status: 'active' })
     })
 
-    it('o plano de 12 meses libera por um ano', async () => {
+    it('o plano de 12 meses libera 360 dias', async () => {
       const { env, restaurantId, auth } = await signup()
       const { paymentId } = (await checkout(auth, 12)).json().payload
       await decide(auth, paymentId, 'approved')
       const endsAt = await getEndsAt(env, restaurantId)
-      expect(endsAt!.getTime()).toBeGreaterThan(Date.now() + 364 * DAY)
-      expect(endsAt!.getTime()).toBeLessThan(Date.now() + 367 * DAY)
+      expect(endsAt!.getTime()).toBeGreaterThan(Date.now() + 359 * DAY)
+      expect(endsAt!.getTime()).toBeLessThan(Date.now() + 361 * DAY)
     })
 
     it('o login depois de pagar já devolve assinatura ativa', async () => {
@@ -369,7 +371,7 @@ describe('Assinatura (Integration)', () => {
       await decide(auth, paymentId, 'approved')
 
       const endsAt = await getEndsAt(env, restaurantId)
-      expect(endsAt!.toISOString()).toBe(addMonths(current, 3).toISOString())
+      expect(endsAt!.toISOString()).toBe(addDays(current, 90).toISOString())
     })
 
     it('renovar depois de vencer conta a partir de agora, não da data antiga', async () => {
@@ -440,6 +442,25 @@ describe('Assinatura (Integration)', () => {
       expect((await checkout(auth, 1, { tier })).statusCode).toBe(400)
     })
 
+    it.each([['basic', 1, 30], ['basic', 3, 90], ['basic', 6, 180], ['basic', 12, 360], ['pro', 1, 30], ['pro', 12, 360]])(
+      'dias fixos: %s por %i mês(es) libera EXATAMENTE %i dias, não meses de calendário',
+      async (tier, months, days) => {
+        const { env, restaurantId, auth } = await signup()
+        const before = Date.now()
+        await pay(auth, months, tier)
+        const after = Date.now()
+        const endsAt = (await getEndsAt(env, restaurantId))!.getTime()
+        expect(endsAt).toBeGreaterThanOrEqual(before + days * DAY)
+        expect(endsAt).toBeLessThanOrEqual(after + days * DAY)
+      },
+    )
+
+    it('GET /subscription informa os dias de cada plano (30, 90, 180, 360) nos dois tipos', async () => {
+      const { auth } = await signup()
+      const state = await overview(auth)
+      for (const t of state.tiers) expect(t.plans.map((p: any) => p.days)).toEqual([30, 90, 180, 360])
+    })
+
     it('aprovar o Pro grava o tipo no restaurante e libera o acesso', async () => {
       const { env, restaurantId, auth } = await signup()
       await pay(auth, 1, 'pro')
@@ -454,7 +475,7 @@ describe('Assinatura (Integration)', () => {
       await db(env).collection('restaurants').updateOne({ _id: new ObjectId(restaurantId) }, { $set: { 'subscription.tier': 'pro' } })
 
       await pay(auth, 1, 'pro')
-      expect((await getEndsAt(env, restaurantId))!.toISOString()).toBe(addMonths(base, 1).toISOString())
+      expect((await getEndsAt(env, restaurantId))!.toISOString()).toBe(addDays(base, 30).toISOString())
       expect(await getTier(env, restaurantId)).toBe('pro')
     })
 
@@ -729,8 +750,8 @@ describe('Assinatura (Integration)', () => {
 
       expect(bodies).toHaveLength(1)
       expect(bodies[0].items[0]).toMatchObject({ id: 'mintly-pro-6m', title: 'Assinatura Mintly Pro — 6 meses', unit_price: 1236.6 })
-      expect(bodies[0].items[0].description).toBe('Assinatura Mintly Pro por 6 meses')
-      expect(bodies[0].metadata).toEqual({ tier: 'pro', months: 6, payment_id: res.json().payload.paymentId })
+      expect(bodies[0].items[0].description).toBe('Assinatura Mintly Pro por 6 meses (180 dias)')
+      expect(bodies[0].metadata).toEqual({ tier: 'pro', months: 6, days: 180, payment_id: res.json().payload.paymentId })
     })
 
     it('o tipo que vale é o do NOSSO registro: um aviso de Pro pago como Básico não vira Pro', async () => {
@@ -796,7 +817,7 @@ describe('Assinatura (Integration)', () => {
       useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
 
       await signedWebhook(ctx.env, '900001')
-      expect((await getEndsAt(ctx.env, ctx.restaurantId))!.toISOString()).toBe(addMonths(current, 1).toISOString())
+      expect((await getEndsAt(ctx.env, ctx.restaurantId))!.toISOString()).toBe(addDays(current, 30).toISOString())
     })
 
     it('valor diferente do que cobramos NÃO libera nada', async () => {
@@ -894,13 +915,13 @@ describe('Assinatura (Integration)', () => {
         const secondId = second.json().payload.paymentId as string
         useMercadoPago({ 900001: approved(first.paymentId, 15000), 900002: approved(secondId, 42750, '900002') })
         await signedWebhook(first.env, '900002')
-        expect((await getEndsAt(first.env, first.restaurantId))!.toISOString()).toBe(addMonths(afterFirst, 3).toISOString())
+        expect((await getEndsAt(first.env, first.restaurantId))!.toISOString()).toBe(addDays(afterFirst, 90).toISOString())
 
         useMercadoPago({ 900001: refunded(first.paymentId, 15000), 900002: approved(secondId, 42750, '900002') })
         await signedWebhook(first.env, '900001')
 
         const grantedByFirst = (await db(first.env).collection('payments').findOne({ _id: new ObjectId(first.paymentId) }))!.grantedMs as number
-        expect((await getEndsAt(first.env, first.restaurantId))!.toISOString()).toBe(new Date(addMonths(afterFirst, 3).getTime() - grantedByFirst).toISOString())
+        expect((await getEndsAt(first.env, first.restaurantId))!.toISOString()).toBe(new Date(addDays(afterFirst, 90).getTime() - grantedByFirst).toISOString())
         expect((await app.inject({ method: 'GET', url: '/financial-accounts', headers: first.auth })).statusCode).toBe(200)
       })
 

@@ -1,8 +1,9 @@
 import { ObjectId } from 'mongodb'
 import {
   DEFAULT_SUBSCRIPTION_TIER,
+  SUBSCRIPTION_PLAN_DAYS,
   SUBSCRIPTION_TIER_LABEL,
-  addMonths,
+  addDays,
   applySubscriptionPurchase,
   isSubscriptionPlan,
   isSubscriptionTier,
@@ -82,6 +83,7 @@ export class CreateCheckoutUseCase {
         title: `Assinatura Mintly ${SUBSCRIPTION_TIER_LABEL[tier]} — ${price.months} ${price.months === 1 ? 'mês' : 'meses'}`,
         tier,
         months: price.months,
+        days: price.days,
         amountCents: price.totalCents,
         payerEmail,
       })
@@ -215,9 +217,9 @@ export class ConfirmPaymentUseCase {
           outcome = { result: 'revoked', endsAt: atual }
           return
         }
-        // Pagamentos antigos, sem o tempo guardado, caem no cálculo por meses.
+        // Pagamentos antigos, sem o tempo guardado, caem nos dias do plano.
         const endsAt = payment.grantedMs === undefined
-          ? addMonths(atual, -payment.months)
+          ? addDays(atual, -SUBSCRIPTION_PLAN_DAYS[payment.months])
           : new Date(atual.getTime() - payment.grantedMs)
         await restaurants.updateOne(
           { _id },
