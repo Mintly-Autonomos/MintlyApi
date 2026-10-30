@@ -11,8 +11,14 @@ export async function subscriptionRoutes (fastify: FastifyInstance) {
   // GET /subscription — estado (ativa/vencida/nenhuma), tipo, data limite, dias que faltam, tipos com seus planos e provedor.
   fastify.get('/', async (request, reply) => controller.overview(request, reply))
 
-  // POST /subscription/checkout — body: { months: 1|3|6|12, tier?: "basic"|"pro" } -> { paymentId, checkoutUrl, … }
+  // POST /subscription/checkout — body: { months: 1|3|6|12, tier?: "basic"|"pro", autoRenew?: boolean } -> { paymentId, checkoutUrl, … }
   fastify.post('/checkout', async (request, reply) => controller.checkout(request, reply))
+
+  // POST /subscription/cancel-renewal — cancela a renovação automática (sem corpo).
+  fastify.post('/cancel-renewal', async (request, reply) => controller.cancelRenewal(request, reply))
+
+  // POST /subscription/mock/charge-next — só com PAYMENT_PROVIDER=mock: simula a cobrança do próximo ciclo.
+  fastify.post('/mock/charge-next', async (request, reply) => controller.mockChargeNext(request, reply))
 
   // POST /subscription/mock/decide — body: { paymentId, decision } — só com PAYMENT_PROVIDER=mock (senão 404).
   fastify.post('/mock/decide', async (request, reply) => controller.mockDecide(request, reply))

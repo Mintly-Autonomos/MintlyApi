@@ -15,6 +15,10 @@ export interface PaymentRecord {
   tier?: SubscriptionTier
   months: SubscriptionPlanMonths
   amountCents: number
+  /** `recurring`: faz parte de uma renovação automática. Sem o campo (ou `one_time`): pagamento único. */
+  kind?: 'one_time' | 'recurring'
+  /** Id da assinatura (renovação automática) no provedor. */
+  preapprovalId?: string
   status: PaymentStatus
   /** Id do pagamento no provedor (só depois que o provedor avisa). */
   providerPaymentId?: string
@@ -44,6 +48,45 @@ export class PaymentRepository {
     const now = new Date()
     const record: PaymentRecord = { ...doc, _id: new ObjectId(), status: 'pending', createdAt: now, updatedAt: now }
     await this.col(env).insertOne(record)
+    return record
+  }
+
+  async findByProviderPaymentId (env: string, providerPaymentId: string): Promise<PaymentRecord | null> {
+    return this.col(env).findOne({ providerPaymentId })
+  }
+
+  async setPreapproval (env: string, id: ObjectId, preapprovalId: string): Promise<void> {
+    await this.col(env).updateOne({ _id: id }, { $set: { preapprovalId, updatedAt: new Date() } })
+  }
+
+  /**
+   * Registro de UMA cobrança de uma renovação automática, copiando o plano da assinatura (`intent`). O id
+   * do pagamento do provedor é único: se a cobrança já foi registrada (aviso repetido ou simultâneo),
+   * devolve `null` e nada é somado de novo.
+   */
+  async createCharge (env: string, intent: PaymentRecord, providerPaymentId: string): Promise<PaymentRecord | null> {
+    const now = new Date()
+    const record: PaymentRecord = {
+      _id: new ObjectId(),
+      restaurantId: intent.restaurantId,
+      userId: intent.userId,
+      provider: intent.provider,
+      tier: intent.tier,
+      months: intent.months,
+      amountCents: intent.amountCents,
+      kind: 'recurring',
+      preapprovalId: intent.preapprovalId,
+      status: 'pending',
+      providerPaymentId,
+      createdAt: now,
+      updatedAt: now,
+    }
+    try {
+      await this.col(env).insertOne(record)
+    } catch (error) {
+      if ((error as { code?: number }).code === 11000) return null
+      throw error
+    }
     return record
   }
 

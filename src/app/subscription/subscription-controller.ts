@@ -2,11 +2,12 @@ import { FastifyReply, FastifyRequest } from 'fastify'
 import { StatusCodes } from 'http-status-codes'
 import { buildRequestContext } from '../../core/context/build-request-context'
 import { ResponseBuilder } from '../../core/builders/response-builder/response-builder'
-import { MissingEnvError } from '../../core/errors/core/missing-env-error'
 import { NotFoundError } from '../../core/errors/core/not-found-error'
 import { assertValidEnv } from '../environment/env-allowlist'
 import { getPaymentProvider } from './get-payment-provider'
 import { GiftSubscriptionUseCase } from './gift-use-case'
+import { CancelRenewalUseCase, ConfirmAuthorizedPaymentUseCase, MockChargeNextUseCase, SyncPreapprovalUseCase } from './recurring-use-cases'
+import { PaymentRepository } from './payment-repository'
 import {
   ConfirmPaymentUseCase,
   CreateCheckoutUseCase,
@@ -19,8 +20,12 @@ export class SubscriptionController {
     private readonly overviewUseCase = new GetSubscriptionOverviewUseCase(),
     private readonly checkoutUseCase = new CreateCheckoutUseCase(),
     private readonly mockDecideUseCase = new MockDecideUseCase(),
-    private readonly confirmUseCase = new ConfirmPaymentUseCase(),
+    private readonly confirmUseCase: ConfirmPaymentUseCase = new ConfirmPaymentUseCase(),
     private readonly giftUseCase = new GiftSubscriptionUseCase(),
+    private readonly authorizedPaymentUseCase = new ConfirmAuthorizedPaymentUseCase(confirmUseCase),
+    private readonly syncPreapprovalUseCase = new SyncPreapprovalUseCase(),
+    private readonly cancelRenewalUseCase = new CancelRenewalUseCase(),
+    private readonly mockChargeNextUseCase = new MockChargeNextUseCase(new PaymentRepository(), confirmUseCase),
   ) {}
 
   /** GET /subscription */
@@ -33,7 +38,7 @@ export class SubscriptionController {
   async checkout (request: FastifyRequest, reply: FastifyReply) {
     const ctx = buildRequestContext(request)
     const claims = (request as any).jwtClaims?.claims as Record<string, string[]> | undefined
-    const result = await this.checkoutUseCase.execute((request.body ?? {}) as { months: unknown, tier?: unknown }, ctx, claims?.email?.[0])
+    const result = await this.checkoutUseCase.execute((request.body ?? {}) as { months: unknown, tier?: unknown, autoRenew?: unknown }, ctx, claims?.email?.[0])
     return new ResponseBuilder().status(StatusCodes.CREATED).payload(result).send(reply)
   }
 
@@ -50,6 +55,18 @@ export class SubscriptionController {
       ctx,
     )
     return new ResponseBuilder().status(StatusCodes.OK).payload({ granted: result.granted, endsAt: result.endsAt.toISOString() }).send(reply)
+  }
+
+  /** POST /subscription/cancel-renewal — cancela a renovação automática (o acesso vale até a data paga). */
+  async cancelRenewal (request: FastifyRequest, reply: FastifyReply) {
+    const result = await this.cancelRenewalUseCase.execute(buildRequestContext(request))
+    return new ResponseBuilder().status(StatusCodes.OK).payload(result).send(reply)
+  }
+
+  /** POST /subscription/mock/charge-next — só no simulador: faz de conta que cobrou o próximo ciclo. */
+  async mockChargeNext (request: FastifyRequest, reply: FastifyReply) {
+    const result = await this.mockChargeNextUseCase.execute(buildRequestContext(request))
+    return new ResponseBuilder().status(StatusCodes.OK).payload(result).send(reply)
   }
 
   /** POST /subscription/mock/decide — body: { paymentId, decision } (só no provedor simulado) */
@@ -69,9 +86,11 @@ export class SubscriptionController {
    * consulta ao provedor vira 500, e o Mercado Pago tenta de novo.
    */
   async mercadoPagoWebhook (request: FastifyRequest, reply: FastifyReply) {
-    const env = String((request.query as Record<string, unknown>)?.env ?? '').trim()
-    if (!env) throw new MissingEnvError()
-    await assertValidEnv(env)
+    // Pagamento único: o ambiente vai na URL. Cobranças da renovação automática chegam no webhook do painel
+    // do provedor, sem ele: aí o ambiente sai da referência que o provedor devolve na reconsulta.
+    const queryEnv = String((request.query as Record<string, unknown>)?.env ?? '').trim()
+    const env = queryEnv || undefined
+    if (env) await assertValidEnv(env)
 
     const provider = getPaymentProvider()
     if (provider.name !== 'mercadopago' || !provider.parseWebhook) throw new NotFoundError('route', 'webhooks/mercadopago')
@@ -81,7 +100,14 @@ export class SubscriptionController {
       query: (request.query ?? {}) as Record<string, unknown>,
       body: request.body,
     })
-    if (parsed) await this.confirmUseCase.execute(parsed.providerPaymentId, env, provider)
+    if (parsed?.kind === 'payment') {
+      if (!env) await this.confirmUseCase.execute(parsed.id, undefined, provider)
+      else await this.confirmUseCase.execute(parsed.id, env, provider)
+    } else if (parsed?.kind === 'authorized_payment') {
+      await this.authorizedPaymentUseCase.execute(parsed.id, env, provider)
+    } else if (parsed?.kind === 'preapproval') {
+      await this.syncPreapprovalUseCase.execute(parsed.id, env, provider)
+    }
 
     return reply.status(StatusCodes.OK).send({ received: true })
   }

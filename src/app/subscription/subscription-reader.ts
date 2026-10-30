@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb'
-import { computeSubscriptionState } from 'mintly-lib'
-import type { SubscriptionState, SubscriptionTier } from 'mintly-lib'
+import { DEFAULT_SUBSCRIPTION_TIER, SUBSCRIPTION_PLAN_DAYS, computeSubscriptionState } from 'mintly-lib'
+import type { SubscriptionRecurring, SubscriptionState, SubscriptionTier } from 'mintly-lib'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 
 /**
@@ -23,6 +23,25 @@ export async function readSubscriptionRecord (
   if (!raw) return { endsAt: null, tier }
   const d = raw instanceof Date ? raw : new Date(raw)
   return { endsAt: Number.isNaN(d.getTime()) ? null : d, tier }
+}
+
+/** Renovação automática de um restaurante, como o app mostra (`null` = nunca houve). */
+export async function readRecurring (env: string, restaurantId: string | undefined): Promise<SubscriptionRecurring | null> {
+  if (!restaurantId || !ObjectId.isValid(restaurantId)) return null
+  const doc = await MongoDBConnection.getInstance()
+    .getDatabase(env)
+    .collection('restaurants')
+    .findOne({ _id: new ObjectId(restaurantId) }, { projection: { 'subscription.recurring': 1 } })
+  const r = doc?.subscription?.recurring
+  if (!r?.preapprovalId) return null
+  const months = r.months as keyof typeof SUBSCRIPTION_PLAN_DAYS
+  return {
+    status: r.status,
+    tier: r.tier ?? DEFAULT_SUBSCRIPTION_TIER,
+    months,
+    days: SUBSCRIPTION_PLAN_DAYS[months] ?? 0,
+    startedAt: r.startedAt ? new Date(r.startedAt).toISOString() : null,
+  }
 }
 
 export async function readSubscriptionEndsAt (env: string, restaurantId: string | undefined): Promise<Date | null> {

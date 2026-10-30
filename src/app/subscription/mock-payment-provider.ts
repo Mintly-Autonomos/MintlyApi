@@ -1,4 +1,4 @@
-import type { CheckoutInput, CheckoutOutput, PaymentProvider, ProviderPayment } from './payment-provider'
+import type { CheckoutInput, CheckoutOutput, PaymentProvider, ProviderPayment, RecurringInput } from './payment-provider'
 import { PaymentRepository } from './payment-repository'
 import { NotFoundError } from '../../core/errors/core/not-found-error'
 
@@ -21,6 +21,16 @@ export class MockPaymentProvider implements PaymentProvider {
       providerReference: input.paymentId,
       checkoutUrl: `${this.frontendUrl.replace(/\/$/, '')}/assinatura/simulador?pagamento=${encodeURIComponent(input.paymentId)}`,
     }
+  }
+
+  /** Renovação automática simulada: a mesma tela do simulador; a primeira cobrança é a decisão da pessoa. */
+  async createRecurring (input: RecurringInput): Promise<CheckoutOutput> {
+    const out = await this.createCheckout(input)
+    return { ...out, providerReference: `mock-pre-${input.paymentId}` }
+  }
+
+  async cancelRecurring (): Promise<void> {
+    // Nada a cancelar fora do Mintly: no simulador a renovação só existe no registro do restaurante.
   }
 
   async getPayment (providerPaymentId: string, env: string): Promise<ProviderPayment> {

@@ -141,15 +141,15 @@ describe('MercadoPagoPaymentProvider.parseWebhook', () => {
   const withSecret = new MercadoPagoPaymentProvider({ ...baseConfig, webhookSecret: 'segredo' }, vi.fn() as unknown as typeof fetch)
 
   it('aviso de pagamento: devolve o id a consultar (query data.id)', () => {
-    expect(noSecret.parseWebhook({ headers: {}, query: { 'data.id': '987', type: 'payment' }, body: {} })).toEqual({ providerPaymentId: '987' })
+    expect(noSecret.parseWebhook({ headers: {}, query: { 'data.id': '987', type: 'payment' }, body: {} })).toEqual({ kind: 'payment', id: '987' })
   })
 
   it('aceita o id e o tipo no corpo', () => {
-    expect(noSecret.parseWebhook({ headers: {}, query: {}, body: { type: 'payment', data: { id: 555 } } })).toEqual({ providerPaymentId: '555' })
+    expect(noSecret.parseWebhook({ headers: {}, query: {}, body: { type: 'payment', data: { id: 555 } } })).toEqual({ kind: 'payment', id: '555' })
   })
 
   it('aceita topic=payment (formato antigo)', () => {
-    expect(noSecret.parseWebhook({ headers: {}, query: { topic: 'payment', 'data.id': '1' }, body: null })).toEqual({ providerPaymentId: '1' })
+    expect(noSecret.parseWebhook({ headers: {}, query: { topic: 'payment', 'data.id': '1' }, body: null })).toEqual({ kind: 'payment', id: '1' })
   })
 
   it('aviso que não é de pagamento (ex.: pedido do comerciante) é ignorado', () => {
@@ -164,14 +164,14 @@ describe('MercadoPagoPaymentProvider.parseWebhook', () => {
     const ts = '1700000000'
     const v1 = sign('segredo', '987', 'req-1', ts)
     const out = withSecret.parseWebhook({ headers: { 'x-signature': `ts=${ts},v1=${v1}`, 'x-request-id': 'req-1' }, query: { 'data.id': '987', type: 'payment' }, body: {} })
-    expect(out).toEqual({ providerPaymentId: '987' })
+    expect(out).toEqual({ kind: 'payment', id: '987' })
   })
 
   it('com segredo: id alfanumérico é normalizado para minúsculas no manifesto', () => {
     const ts = '1700000000'
     const v1 = sign('segredo', 'abc123', 'req-1', ts)
     const out = withSecret.parseWebhook({ headers: { 'x-signature': `ts=${ts},v1=${v1}`, 'x-request-id': 'req-1' }, query: { 'data.id': 'ABC123', type: 'payment' }, body: {} })
-    expect(out).toEqual({ providerPaymentId: 'ABC123' })
+    expect(out).toEqual({ kind: 'payment', id: 'ABC123' })
   })
 
   it('com segredo: assinatura errada é recusada (401)', () => {

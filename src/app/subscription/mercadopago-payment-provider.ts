@@ -1,5 +1,18 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
-import type { CheckoutInput, CheckoutOutput, PaymentProvider, PaymentStatus, ProviderPayment, WebhookRequest } from './payment-provider'
+import type {
+  CheckoutInput,
+  CheckoutOutput,
+  PaymentProvider,
+  PaymentStatus,
+  ProviderAuthorizedPayment,
+  ProviderPayment,
+  ProviderPreapproval,
+  RecurringInput,
+  RecurringStatus,
+  WebhookEvent,
+  WebhookRequest,
+} from './payment-provider'
+import { encodeReference } from './payment-reference'
 import { UnauthorizedError } from '../../core/errors/auth/unauthorized-error'
 
 export interface MercadoPagoConfig {
@@ -27,6 +40,20 @@ export function mapMercadoPagoStatus (status: string | undefined): PaymentStatus
     case 'refunded':
     case 'charged_back':
       return 'refunded'
+    default:
+      return 'pending'
+  }
+}
+
+/** Estados da assinatura (preapproval) no Mercado Pago -> os do Mintly. Desconhecido = pendente (não mostra renovação ativa). */
+export function mapMercadoPagoRecurringStatus (status: string | undefined): RecurringStatus {
+  switch (status) {
+    case 'authorized':
+      return 'authorized'
+    case 'paused':
+      return 'paused'
+    case 'cancelled':
+      return 'cancelled'
     default:
       return 'pending'
   }
@@ -104,15 +131,82 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
     }
   }
 
-  parseWebhook (request: WebhookRequest): { providerPaymentId: string } | null {
+  /**
+   * Tópicos que importam: `payment` (pagamento único ou cobrança), `subscription_authorized_payment` (cada
+   * cobrança da renovação) e `subscription_preapproval` (a assinatura foi autorizada, pausada ou cancelada).
+   * Os demais (ex.: planos) são ignorados.
+   */
+  parseWebhook (request: WebhookRequest): WebhookEvent | null {
     const body = (request.body ?? {}) as { type?: string, action?: string, data?: { id?: string | number } }
     const dataId = String(request.query['data.id'] ?? body.data?.id ?? '')
     const type = String(request.query.type ?? request.query.topic ?? body.type ?? '')
 
     if (this.config.webhookSecret) this.assertSignature(request, dataId)
 
-    if (type !== 'payment' || !dataId) return null
-    return { providerPaymentId: dataId }
+    if (!dataId) return null
+    if (type === 'payment') return { kind: 'payment', id: dataId }
+    if (type === 'subscription_authorized_payment' || type === 'authorized_payment') return { kind: 'authorized_payment', id: dataId }
+    if (type === 'subscription_preapproval' || type === 'preapproval') return { kind: 'preapproval', id: dataId }
+    return null
+  }
+
+  /**
+   * Renovação automática: assinatura SEM plano associado, com a cobrança de N em N dias. O 1º pagamento
+   * acontece quando a pessoa autoriza no link devolvido (cartão no ambiente do Mercado Pago).
+   */
+  async createRecurring (input: RecurringInput): Promise<CheckoutOutput> {
+    if (!input.payerEmail) throw new Error('A renovação automática precisa do e-mail de quem assina.')
+    const body = {
+      reason: input.title,
+      // Leva o ambiente: os avisos das cobranças seguintes chegam sem ele (ver payment-reference.ts).
+      external_reference: encodeReference(input.env, input.paymentId),
+      payer_email: input.payerEmail,
+      back_url: `${this.config.frontendUrl}/assinatura/retorno`,
+      auto_recurring: {
+        frequency: input.frequencyDays,
+        frequency_type: 'days',
+        transaction_amount: input.amountCents / 100,
+        currency_id: 'BRL',
+      },
+      status: 'pending',
+    }
+    const res = await this.fetchImpl(`${API}/preapproval`, {
+      method: 'POST',
+      headers: this.headers({ 'X-Idempotency-Key': input.paymentId }),
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) throw new Error(`Mercado Pago recusou criar a renovação automática (HTTP ${res.status}).`)
+    const json = (await res.json()) as { id?: string, init_point?: string, sandbox_init_point?: string }
+    const checkoutUrl = this.config.sandbox ? (json.sandbox_init_point ?? json.init_point) : json.init_point
+    if (!json.id || !checkoutUrl) throw new Error('Resposta do Mercado Pago sem link de autorização.')
+    return { providerReference: json.id, checkoutUrl }
+  }
+
+  async getPreapproval (preapprovalId: string): Promise<ProviderPreapproval> {
+    const res = await this.fetchImpl(`${API}/preapproval/${encodeURIComponent(preapprovalId)}`, { headers: this.headers() })
+    if (!res.ok) throw new Error(`Mercado Pago não devolveu a assinatura ${preapprovalId} (HTTP ${res.status}).`)
+    const p = (await res.json()) as { id: string, status?: string, external_reference?: string }
+    return { id: String(p.id), status: mapMercadoPagoRecurringStatus(p.status), externalReference: p.external_reference ?? '' }
+  }
+
+  async getAuthorizedPayment (authorizedPaymentId: string): Promise<ProviderAuthorizedPayment> {
+    const res = await this.fetchImpl(`${API}/authorized_payments/${encodeURIComponent(authorizedPaymentId)}`, { headers: this.headers() })
+    if (!res.ok) throw new Error(`Mercado Pago não devolveu a cobrança ${authorizedPaymentId} (HTTP ${res.status}).`)
+    const p = (await res.json()) as { id: number | string, preapproval_id?: string, payment?: { id?: number | string } }
+    return {
+      id: String(p.id),
+      preapprovalId: String(p.preapproval_id ?? ''),
+      paymentId: p.payment?.id !== undefined && p.payment.id !== null ? String(p.payment.id) : null,
+    }
+  }
+
+  async cancelRecurring (preapprovalId: string): Promise<void> {
+    const res = await this.fetchImpl(`${API}/preapproval/${encodeURIComponent(preapprovalId)}`, {
+      method: 'PUT',
+      headers: this.headers(),
+      body: JSON.stringify({ status: 'cancelled' }),
+    })
+    if (!res.ok) throw new Error(`Mercado Pago recusou cancelar a assinatura ${preapprovalId} (HTTP ${res.status}).`)
   }
 
   /** x-signature: "ts=…,v1=…"; v1 = HMAC-SHA256(segredo, "id:<data.id>;request-id:<x-request-id>;ts:<ts>;"). */

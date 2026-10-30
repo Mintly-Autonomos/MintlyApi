@@ -18,6 +18,34 @@ export interface CheckoutInput {
   payerEmail?: string
 }
 
+/** Cobrança de uma renovação automática: o mesmo que um pagamento único, mais de quantos em quantos dias cobrar. */
+export interface RecurringInput extends CheckoutInput {
+  frequencyDays: number
+}
+
+export type RecurringStatus = 'pending' | 'authorized' | 'paused' | 'cancelled'
+
+/** A assinatura (renovação automática) como o provedor a conhece. */
+export interface ProviderPreapproval {
+  id: string
+  status: RecurringStatus
+  /** A referência que mandamos ao criar a assinatura (leva o ambiente: ver payment-reference.ts). */
+  externalReference: string
+}
+
+/** Uma cobrança de uma renovação automática. `paymentId` fica vazio enquanto o pagamento não existe. */
+export interface ProviderAuthorizedPayment {
+  id: string
+  preapprovalId: string
+  paymentId: string | null
+}
+
+/** O que o aviso (webhook) diz ter mudado. O conteúdo do aviso nunca vale: só aponta o que reconsultar. */
+export interface WebhookEvent {
+  kind: 'payment' | 'authorized_payment' | 'preapproval'
+  id: string
+}
+
 export interface CheckoutOutput {
   providerReference: string
   checkoutUrl: string
@@ -50,5 +78,10 @@ export interface PaymentProvider {
    * Valida e lê o aviso (webhook) do provedor. Devolve o id do pagamento a consultar, ou `null` quando o
    * aviso não é de pagamento (ex.: pedido do comerciante). Lança UnauthorizedError se a assinatura não bater.
    */
-  parseWebhook? (request: WebhookRequest): { providerPaymentId: string } | null
+  parseWebhook? (request: WebhookRequest): WebhookEvent | null
+  /** Renovação automática: cria a assinatura no provedor e devolve o link para a pessoa autorizar. */
+  createRecurring? (input: RecurringInput): Promise<CheckoutOutput>
+  getPreapproval? (preapprovalId: string, env: string): Promise<ProviderPreapproval>
+  getAuthorizedPayment? (authorizedPaymentId: string, env: string): Promise<ProviderAuthorizedPayment>
+  cancelRecurring? (preapprovalId: string, env: string): Promise<void>
 }
