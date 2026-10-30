@@ -538,16 +538,110 @@ describe('Assinatura (Integration)', () => {
       expect(await getEndsAt(ctx.env, ctx.restaurantId)).not.toBeNull()
     })
 
-    it('estorno depois de aprovado não tira o que já foi concedido', async () => {
-      useMercadoPago({})
-      const ctx = await openPayment(1)
-      useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
-      await signedWebhook(ctx.env, '900001')
-      const granted = await getEndsAt(ctx.env, ctx.restaurantId)
+    describe('estorno e chargeback de pagamento já aprovado', () => {
+      const refunded = (paymentId: string, cents: number, id = '900001'): MpPayment => ({ ...approved(paymentId, cents, id), status: 'refunded' })
 
-      useMercadoPago({ 900001: { ...approved(ctx.paymentId, 15000), status: 'refunded' } })
-      await signedWebhook(ctx.env, '900001')
-      expect((await getEndsAt(ctx.env, ctx.restaurantId))!.getTime()).toBe(granted!.getTime())
+      it('estorno desconta os meses que o pagamento deu e a conta volta a ser barrada (402)', async () => {
+        useMercadoPago({})
+        const ctx = await openPayment(1)
+        useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
+        await signedWebhook(ctx.env, '900001')
+        expect((await app.inject({ method: 'GET', url: '/financial-accounts', headers: ctx.auth })).statusCode).toBe(200)
+
+        useMercadoPago({ 900001: refunded(ctx.paymentId, 15000) })
+        const res = await signedWebhook(ctx.env, '900001')
+
+        expect(res.statusCode).toBe(200)
+        expect((await getEndsAt(ctx.env, ctx.restaurantId))!.getTime()).toBeLessThanOrEqual(Date.now())
+        expect((await app.inject({ method: 'GET', url: '/financial-accounts', headers: ctx.auth })).statusCode).toBe(402)
+        expect(await overview(ctx.auth)).toMatchObject({ status: 'expired' })
+        const saved = await db(ctx.env).collection('payments').findOne({ _id: new ObjectId(ctx.paymentId) })
+        expect(saved).toMatchObject({ status: 'refunded' })
+        expect(saved?.revokedAt).toBeInstanceOf(Date)
+      })
+
+      it('chargeback (charged_back) também desconta', async () => {
+        useMercadoPago({})
+        const ctx = await openPayment(3)
+        useMercadoPago({ 900001: approved(ctx.paymentId, 42750) })
+        await signedWebhook(ctx.env, '900001')
+
+        useMercadoPago({ 900001: { ...approved(ctx.paymentId, 42750), status: 'charged_back' } })
+        await signedWebhook(ctx.env, '900001')
+        expect((await app.inject({ method: 'GET', url: '/financial-accounts', headers: ctx.auth })).statusCode).toBe(402)
+      })
+
+      it('o aviso de estorno repetido desconta UMA vez só (inclusive simultâneos)', async () => {
+        useMercadoPago({})
+        const ctx = await openPayment(1)
+        const base = new Date(Date.now() + 60 * DAY)
+        await setEndsAt(ctx.env, ctx.restaurantId, base)
+        useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
+        await signedWebhook(ctx.env, '900001') // base + 1 mês
+
+        useMercadoPago({ 900001: refunded(ctx.paymentId, 15000) })
+        await Promise.all([signedWebhook(ctx.env, '900001'), signedWebhook(ctx.env, '900001'), signedWebhook(ctx.env, '900001')])
+        await signedWebhook(ctx.env, '900001')
+
+        expect((await getEndsAt(ctx.env, ctx.restaurantId))!.toISOString()).toBe(base.toISOString())
+      })
+
+      it('estornar UM pagamento não tira o que outro pagamento deu: continua com acesso', async () => {
+        useMercadoPago({})
+        const first = await openPayment(1)
+        useMercadoPago({ 900001: approved(first.paymentId, 15000) })
+        await signedWebhook(first.env, '900001')
+        const afterFirst = (await getEndsAt(first.env, first.restaurantId))!
+
+        const second = await checkout(first.auth, 3)
+        const secondId = second.json().payload.paymentId as string
+        useMercadoPago({ 900001: approved(first.paymentId, 15000), 900002: approved(secondId, 42750, '900002') })
+        await signedWebhook(first.env, '900002')
+        expect((await getEndsAt(first.env, first.restaurantId))!.toISOString()).toBe(addMonths(afterFirst, 3).toISOString())
+
+        useMercadoPago({ 900001: refunded(first.paymentId, 15000), 900002: approved(secondId, 42750, '900002') })
+        await signedWebhook(first.env, '900001')
+
+        const grantedByFirst = (await db(first.env).collection('payments').findOne({ _id: new ObjectId(first.paymentId) }))!.grantedMs as number
+        expect((await getEndsAt(first.env, first.restaurantId))!.toISOString()).toBe(new Date(addMonths(afterFirst, 3).getTime() - grantedByFirst).toISOString())
+        expect((await app.inject({ method: 'GET', url: '/financial-accounts', headers: first.auth })).statusCode).toBe(200)
+      })
+
+      it('pagamento antigo, sem o tempo guardado, é descontado pelos meses do plano', async () => {
+        useMercadoPago({})
+        const ctx = await openPayment(3)
+        const base = new Date(Date.now() + 10 * DAY)
+        await setEndsAt(ctx.env, ctx.restaurantId, base)
+        useMercadoPago({ 900001: approved(ctx.paymentId, 42750) })
+        await signedWebhook(ctx.env, '900001')
+        await db(ctx.env).collection('payments').updateOne({ _id: new ObjectId(ctx.paymentId) }, { $unset: { grantedMs: '' } })
+
+        useMercadoPago({ 900001: refunded(ctx.paymentId, 42750) })
+        await signedWebhook(ctx.env, '900001')
+        expect((await getEndsAt(ctx.env, ctx.restaurantId))!.toISOString()).toBe(base.toISOString())
+      })
+
+      it('estorno de uma tentativa que nunca liberou nada não mexe na assinatura', async () => {
+        useMercadoPago({})
+        const ctx = await openPayment(1)
+        useMercadoPago({ 900001: approved(ctx.paymentId, 15000, '900001') })
+        await signedWebhook(ctx.env, '900001')
+        const granted = await getEndsAt(ctx.env, ctx.restaurantId)
+
+        // outro id no provedor, apontando para a mesma cobrança, que veio estornado: não é o que liberou o acesso
+        useMercadoPago({ 900009: refunded(ctx.paymentId, 15000, '900009') })
+        await signedWebhook(ctx.env, '900009')
+
+        expect((await getEndsAt(ctx.env, ctx.restaurantId))!.getTime()).toBe(granted!.getTime())
+      })
+
+      it('pagamento estornado ANTES de o aviso de aprovação chegar nunca libera acesso', async () => {
+        useMercadoPago({})
+        const ctx = await openPayment(1)
+        useMercadoPago({ 900001: refunded(ctx.paymentId, 15000) })
+        await signedWebhook(ctx.env, '900001')
+        expect(await getEndsAt(ctx.env, ctx.restaurantId)).toBeNull()
+      })
     })
 
     it('pagamento que não é nosso (referência desconhecida) é ignorado com 200', async () => {

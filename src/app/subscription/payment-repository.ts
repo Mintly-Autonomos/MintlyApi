@@ -22,6 +22,10 @@ export interface PaymentRecord {
   updatedAt: Date
   /** Marca de que ESTE pagamento já foi somado à assinatura: garante que aviso repetido não soma de novo. */
   appliedAt?: Date
+  /** Quanto tempo (ms) ESTE pagamento acrescentou à assinatura: é exatamente isso que um estorno desconta. */
+  grantedMs?: number
+  /** Marca de que o estorno/chargeback deste pagamento JÁ foi descontado da assinatura (uma vez só). */
+  revokedAt?: Date
 }
 
 export class PaymentRepository {
@@ -58,6 +62,24 @@ export class PaymentRepository {
     const res = await this.col(env).findOneAndUpdate(
       { _id: id, appliedAt: { $exists: false } },
       { $set: { appliedAt: now, status: 'approved', providerPaymentId, updatedAt: now } },
+      { session },
+    )
+    return res !== null
+  }
+
+  async setGrantedMs (env: string, id: ObjectId, grantedMs: number, session: ClientSession): Promise<void> {
+    await this.col(env).updateOne({ _id: id }, { $set: { grantedMs } }, { session })
+  }
+
+  /**
+   * Reserva o desconto do estorno: só UMA chamada leva um pagamento já aplicado (e do mesmo id no
+   * provedor) de "não revogado" para "revogado". Avisos repetidos de estorno não descontam de novo.
+   */
+  async claimRevocation (env: string, id: ObjectId, providerPaymentId: string, session: ClientSession): Promise<boolean> {
+    const now = new Date()
+    const res = await this.col(env).findOneAndUpdate(
+      { _id: id, appliedAt: { $exists: true }, revokedAt: { $exists: false }, providerPaymentId },
+      { $set: { revokedAt: now, status: 'refunded', updatedAt: now } },
       { session },
     )
     return res !== null
