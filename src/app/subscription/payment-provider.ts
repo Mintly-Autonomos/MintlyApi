@@ -1,4 +1,4 @@
-import type { PaymentProviderName } from 'mintly-lib'
+import type { PaymentProviderName, SubscriptionTier } from 'mintly-lib'
 
 /** Estado do pagamento já traduzido para o vocabulário do Mintly (cada provedor usa o seu). */
 export type PaymentStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'refunded'
@@ -9,6 +9,9 @@ export interface CheckoutInput {
   /** Ambiente (banco) do tenant: vai na URL do webhook, que não carrega o header `env`. */
   env: string
   title: string
+  /** Tipo e duração comprados: vão junto na cobrança (metadados) para o pagamento "saber" qual plano é. */
+  tier: SubscriptionTier
+  months: number
   amountCents: number
   payerEmail?: string
 }

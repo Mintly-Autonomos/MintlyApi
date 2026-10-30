@@ -6,6 +6,7 @@ import { MissingEnvError } from '../../core/errors/core/missing-env-error'
 import { NotFoundError } from '../../core/errors/core/not-found-error'
 import { assertValidEnv } from '../environment/env-allowlist'
 import { getPaymentProvider } from './get-payment-provider'
+import { GiftSubscriptionUseCase } from './gift-use-case'
 import {
   ConfirmPaymentUseCase,
   CreateCheckoutUseCase,
@@ -19,6 +20,7 @@ export class SubscriptionController {
     private readonly checkoutUseCase = new CreateCheckoutUseCase(),
     private readonly mockDecideUseCase = new MockDecideUseCase(),
     private readonly confirmUseCase = new ConfirmPaymentUseCase(),
+    private readonly giftUseCase = new GiftSubscriptionUseCase(),
   ) {}
 
   /** GET /subscription */
@@ -31,8 +33,23 @@ export class SubscriptionController {
   async checkout (request: FastifyRequest, reply: FastifyReply) {
     const ctx = buildRequestContext(request)
     const claims = (request as any).jwtClaims?.claims as Record<string, string[]> | undefined
-    const result = await this.checkoutUseCase.execute((request.body ?? {}) as { months: unknown }, ctx, claims?.email?.[0])
+    const result = await this.checkoutUseCase.execute((request.body ?? {}) as { months: unknown, tier?: unknown }, ctx, claims?.email?.[0])
     return new ResponseBuilder().status(StatusCodes.CREATED).payload(result).send(reply)
+  }
+
+  /**
+   * POST /admin/subscription-gift — headers: env, x-admin-key; body: { email }.
+   * Rota PÚBLICA (sem JWT) protegida pela chave de administrador; ver GiftSubscriptionUseCase.
+   */
+  async gift (request: FastifyRequest, reply: FastifyReply) {
+    const ctx = buildRequestContext(request.headers)
+    await assertValidEnv(ctx.env)
+    const result = await this.giftUseCase.execute(
+      (request.body ?? {}) as { email: unknown },
+      request.headers['x-admin-key'],
+      ctx,
+    )
+    return new ResponseBuilder().status(StatusCodes.OK).payload({ granted: result.granted, endsAt: result.endsAt.toISOString() }).send(reply)
   }
 
   /** POST /subscription/mock/decide — body: { paymentId, decision } (só no provedor simulado) */

@@ -17,7 +17,7 @@ import { healthRoutes } from '../../app/health/health-routes'
 import { authRoutes } from '../../app/auth/auth-routes'
 import { verifyJwt } from '../../core/hooks/verify-jwt'
 import { requireActiveSubscription } from '../../core/hooks/require-active-subscription'
-import { subscriptionRoutes, webhookRoutes } from '../../app/subscription/subscription-routes'
+import { adminRoutes, subscriptionRoutes, webhookRoutes } from '../../app/subscription/subscription-routes'
 import { BaseError } from '../../core/errors/core/base-error'
 import { assertValidEnv } from '../../app/environment/env-allowlist'
 import { buildCorsOriginChecker } from '../../core/config/cors-origins'
@@ -132,6 +132,9 @@ export async function buildServer (server: FastifyInstance = Fastify({ bodyLimit
   // Webhooks dos provedores de pagamento: PÚBLICOS (o provedor não manda JWT). A segurança está na
   // assinatura do aviso e em reconsultar o pagamento no provedor — ver SubscriptionController.
   await server.register(webhookRoutes, { prefix: '/webhooks' })
+
+  // Administração (presente de 1 dia): público, mas só com a chave ADMIN_API_KEY; sem ela configurada a rota não existe (404).
+  await server.register(adminRoutes, { prefix: '/admin' })
 
   // Assinatura: exige login, mas fica FORA do portão de assinatura — é por aqui que quem não tem assina.
   await server.register(async (subscriptionScope: FastifyInstance) => {

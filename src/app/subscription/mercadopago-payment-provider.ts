@@ -63,13 +63,16 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
     const back = `${this.config.frontendUrl}/assinatura/retorno`
     const body = {
       items: [{
-        id: input.paymentId,
+        id: `mintly-${input.tier}-${input.months}m`,
         title: input.title,
+        description: `Assinatura Mintly ${input.tier === 'pro' ? 'Pro' : 'Básico'} por ${input.months} ${input.months === 1 ? 'mês' : 'meses'}`,
         quantity: 1,
         currency_id: 'BRL',
         unit_price: input.amountCents / 100,
       }],
       external_reference: input.paymentId,
+      // Informativo: quem vale é o registro do pagamento no Mintly (o aviso é sempre reconsultado e conferido).
+      metadata: { tier: input.tier, months: input.months, payment_id: input.paymentId },
       // O webhook não manda o header `env`: o ambiente (banco) do tenant vai na própria URL.
       notification_url: `${this.config.apiUrl}/webhooks/mercadopago?env=${encodeURIComponent(input.env)}`,
       back_urls: { success: back, pending: back, failure: back },

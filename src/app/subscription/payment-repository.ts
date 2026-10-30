@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb'
 import type { ClientSession, Collection } from 'mongodb'
-import type { PaymentProviderName } from 'mintly-lib'
+import type { PaymentProviderName, SubscriptionTier } from 'mintly-lib'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import type { PaymentStatus } from './payment-provider'
 
@@ -11,6 +11,8 @@ export interface PaymentRecord {
   restaurantId: string
   userId?: string
   provider: PaymentProviderName
+  /** Tipo comprado (Básico ou Pro). Pagamentos antigos, sem o campo, eram Básico. */
+  tier?: SubscriptionTier
   months: number
   amountCents: number
   status: PaymentStatus
@@ -24,6 +26,11 @@ export interface PaymentRecord {
   appliedAt?: Date
   /** Quanto tempo (ms) ESTE pagamento acrescentou à assinatura: é exatamente isso que um estorno desconta. */
   grantedMs?: number
+  /**
+   * O tempo deste pagamento deixou de existir na assinatura (a compra seguinte recomeçou a contagem:
+   * troca de tipo ou assinatura já vencida). Estornar um pagamento assim não tira nada de `endsAt`.
+   */
+  supersededAt?: Date
   /** Marca de que o estorno/chargeback deste pagamento JÁ foi descontado da assinatura (uma vez só). */
   revokedAt?: Date
 }
@@ -65,6 +72,15 @@ export class PaymentRepository {
       { session },
     )
     return res !== null
+  }
+
+  /** Uma compra que recomeça a contagem encerra o tempo de todos os pagamentos aplicados antes dela. */
+  async supersedePrevious (env: string, restaurantId: string, exceptId: ObjectId, session: ClientSession): Promise<void> {
+    await this.col(env).updateMany(
+      { restaurantId, _id: { $ne: exceptId }, appliedAt: { $exists: true }, supersededAt: { $exists: false } },
+      { $set: { supersededAt: new Date() } },
+      { session },
+    )
   }
 
   async setGrantedMs (env: string, id: ObjectId, grantedMs: number, session: ClientSession): Promise<void> {

@@ -1,10 +1,13 @@
 import { ObjectId } from 'mongodb'
 import {
+  DEFAULT_SUBSCRIPTION_TIER,
+  SUBSCRIPTION_TIER_LABEL,
   addMonths,
-  extendSubscription,
+  applySubscriptionPurchase,
   isSubscriptionPlan,
+  isSubscriptionTier,
   subscriptionPlanPrice,
-  subscriptionPlans,
+  subscriptionTiers,
 } from 'mintly-lib'
 import type { SubscriptionCheckoutResponse, SubscriptionOverview } from 'mintly-lib'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
@@ -40,7 +43,7 @@ export class GetSubscriptionOverviewUseCase {
 
   async execute (ctx: RequestContext): Promise<SubscriptionOverview> {
     const state = await readSubscriptionState(ctx.env, ctx.restaurantId)
-    return { ...state, plans: subscriptionPlans(), provider: this.provider().name }
+    return { ...state, tiers: subscriptionTiers(), provider: this.provider().name }
   }
 }
 
@@ -51,18 +54,23 @@ export class CreateCheckoutUseCase {
     private readonly provider: () => PaymentProvider = getPaymentProvider,
   ) {}
 
-  async execute (input: { months: unknown }, ctx: RequestContext, payerEmail?: string): Promise<SubscriptionCheckoutResponse> {
+  async execute (input: { months: unknown, tier?: unknown }, ctx: RequestContext, payerEmail?: string): Promise<SubscriptionCheckoutResponse> {
     if (!isSubscriptionPlan(input?.months)) {
       throw new ValidationError('Plano inválido: escolha 1, 3, 6 ou 12 meses.')
     }
+    if (input.tier !== undefined && !isSubscriptionTier(input.tier)) {
+      throw new ValidationError('Tipo de assinatura inválido: escolha basic ou pro.')
+    }
     if (!ctx.restaurantId) throw new NotFoundError('restaurants', ctx.restaurantId)
 
-    const price = subscriptionPlanPrice(input.months)
+    const tier = input.tier ?? DEFAULT_SUBSCRIPTION_TIER
+    const price = subscriptionPlanPrice(input.months, tier)
     const provider = this.provider()
     const payment = await this.payments.create(ctx.env, {
       restaurantId: ctx.restaurantId,
       userId: ctx.userId,
       provider: provider.name,
+      tier,
       months: price.months,
       amountCents: price.totalCents,
     })
@@ -71,7 +79,9 @@ export class CreateCheckoutUseCase {
       const checkout = await provider.createCheckout({
         paymentId: String(payment._id),
         env: ctx.env,
-        title: `Assinatura Mintly — ${price.months} ${price.months === 1 ? 'mês' : 'meses'}`,
+        title: `Assinatura Mintly ${SUBSCRIPTION_TIER_LABEL[tier]} — ${price.months} ${price.months === 1 ? 'mês' : 'meses'}`,
+        tier,
+        months: price.months,
         amountCents: price.totalCents,
         payerEmail,
       })
@@ -79,6 +89,7 @@ export class CreateCheckoutUseCase {
         paymentId: String(payment._id),
         checkoutUrl: checkout.checkoutUrl,
         provider: provider.name,
+        tier,
         months: price.months,
         totalCents: price.totalCents,
       }
@@ -135,21 +146,31 @@ export class ConfirmPaymentUseCase {
         }
         const restaurants = connection.getDatabase(env).collection('restaurants')
         const _id = new ObjectId(payment.restaurantId)
-        const current = await restaurants.findOne({ _id }, { projection: { 'subscription.endsAt': 1 }, session })
+        const current = await restaurants.findOne({ _id }, { projection: { 'subscription.endsAt': 1, 'subscription.tier': 1 }, session })
         if (!current) throw new NotFoundError('restaurants', payment.restaurantId)
 
         const raw = current.subscription?.endsAt
-        const currentEndsAt = raw ? new Date(raw) : null
-        const endsAt = extendSubscription(currentEndsAt, payment.months, now)
+        const tier = payment.tier ?? DEFAULT_SUBSCRIPTION_TIER
+        // Mesmo tipo e ainda ativa: soma ao que sobrou. Tipo diferente (up ou downgrade) ou vencida: conta de hoje.
+        const purchase = applySubscriptionPurchase(
+          { endsAt: raw ? new Date(raw) : null, tier: current.subscription?.tier },
+          { tier, months: payment.months },
+          now,
+        )
+        const endsAt = purchase.endsAt
         // O que este pagamento acrescentou, em tempo exato: o estorno desconta isso (mês tem tamanhos diferentes).
-        const base = currentEndsAt && currentEndsAt.getTime() > now.getTime() ? currentEndsAt : now
-        await this.payments.setGrantedMs(env, payment._id, endsAt.getTime() - base.getTime(), session)
+        await this.payments.setGrantedMs(env, payment._id, endsAt.getTime() - purchase.startedAt.getTime(), session)
+        // Recomeçou a contagem: o tempo dos pagamentos anteriores não existe mais na assinatura.
+        if (purchase.startedAt.getTime() === now.getTime()) {
+          await this.payments.supersedePrevious(env, payment.restaurantId, payment._id, session)
+        }
 
         await restaurants.updateOne(
           { _id },
           {
             $set: {
               'subscription.endsAt': endsAt,
+              'subscription.tier': tier,
               'subscription.plan': payment.months,
               'subscription.lastPaymentId': String(payment._id),
               'subscription.updatedAt': now,
@@ -188,6 +209,12 @@ export class ConfirmPaymentUseCase {
 
         const raw = current.subscription?.endsAt
         const atual = raw ? new Date(raw) : now
+        // Se uma compra posterior recomeçou a contagem (troca de tipo ou vencida), o tempo deste pagamento
+        // já não está na assinatura: não há o que tirar.
+        if (payment.supersededAt) {
+          outcome = { result: 'revoked', endsAt: atual }
+          return
+        }
         // Pagamentos antigos, sem o tempo guardado, caem no cálculo por meses.
         const endsAt = payment.grantedMs === undefined
           ? addMonths(atual, -payment.months)

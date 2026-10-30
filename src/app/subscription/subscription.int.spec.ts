@@ -93,7 +93,7 @@ describe('Assinatura (Integration)', () => {
   describe('portão: sem assinatura não entra', () => {
     it('conta recém-criada nasce SEM assinatura e o cadastro já avisa', async () => {
       const { signupPayload } = await signup()
-      expect(signupPayload.subscription).toEqual({ status: 'none', endsAt: null, daysLeft: null, expiresSoon: false })
+      expect(signupPayload.subscription).toEqual({ status: 'none', tier: null, endsAt: null, daysLeft: null, expiresSoon: false })
     })
 
     it('o login devolve o estado da assinatura (none) para o front levar à tela de assinatura', async () => {
@@ -186,16 +186,35 @@ describe('Assinatura (Integration)', () => {
   })
 
   describe('GET /subscription', () => {
-    it('devolve os 4 planos com os preços e descontos, e o provedor', async () => {
+    it('devolve os tipos Básico e Pro, cada um com os 4 planos, preços e descontos, e o provedor', async () => {
       const { auth } = await signup()
       const state = await overview(auth)
       expect(state.provider).toBe('mock')
-      expect(state.plans.map((p: any) => [p.months, p.totalCents, p.discountPercent])).toEqual([
+      expect(state.tiers.map((t: any) => [t.tier, t.label, t.monthlyCents])).toEqual([
+        ['basic', 'Básico', 15000],
+        ['pro', 'Pro', 22900],
+      ])
+      const plans = (tier: string) => state.tiers.find((t: any) => t.tier === tier).plans.map((p: any) => [p.months, p.totalCents, p.discountPercent])
+      expect(plans('basic')).toEqual([
         [1, 15000, 0],
         [3, 42750, 5],
         [6, 81000, 10],
         [12, 153000, 15],
       ])
+      expect(plans('pro')).toEqual([
+        [1, 22900, 0],
+        [3, 65265, 5],
+        [6, 123660, 10],
+        [12, 233580, 15],
+      ])
+    })
+
+    it('o estado traz o tipo: nenhum antes de assinar, pro depois de pagar o Pro', async () => {
+      const { auth } = await signup()
+      expect((await overview(auth)).tier).toBeNull()
+      const { paymentId } = (await checkout(auth, 1, { tier: 'pro' })).json().payload
+      await decide(auth, paymentId, 'approved')
+      expect(await overview(auth)).toMatchObject({ status: 'active', tier: 'pro' })
     })
   })
 
@@ -384,6 +403,256 @@ describe('Assinatura (Integration)', () => {
     })
   })
 
+  describe('tipos de assinatura: Básico e Pro', () => {
+    const getTier = async (env: string, restaurantId: string) =>
+      (await db(env).collection('restaurants').findOne({ _id: new ObjectId(restaurantId) }))?.subscription?.tier
+
+    async function pay (auth: Record<string, string>, months: number, tier?: string) {
+      const res = await checkout(auth, months, tier ? { tier } : {})
+      expect(res.statusCode).toBe(201)
+      const { paymentId } = res.json().payload
+      expect((await decide(auth, paymentId, 'approved')).statusCode).toBe(200)
+      return paymentId as string
+    }
+
+    it.each([['basic', 1, 15000], ['pro', 1, 22900], ['pro', 3, 65265], ['pro', 6, 123660], ['pro', 12, 233580]])(
+      'tipo %s por %i mês(es) cobra %i centavos e o pagamento guarda o tipo',
+      async (tier, months, cents) => {
+        const { env, auth } = await signup()
+        const res = await checkout(auth, months, { tier })
+        expect(res.statusCode).toBe(201)
+        expect(res.json().payload).toMatchObject({ tier, months, totalCents: cents })
+        const saved = await db(env).collection('payments').findOne({ _id: new ObjectId(res.json().payload.paymentId) })
+        expect(saved).toMatchObject({ tier, months, amountCents: cents })
+      },
+    )
+
+    it('sem informar o tipo, é Básico', async () => {
+      const { env, auth } = await signup()
+      const res = await checkout(auth, 1)
+      expect(res.json().payload).toMatchObject({ tier: 'basic', totalCents: 15000 })
+      const saved = await db(env).collection('payments').findOne({ _id: new ObjectId(res.json().payload.paymentId) })
+      expect(saved?.tier).toBe('basic')
+    })
+
+    it.each([['premium'], ['PRO'], [1], [null], [{}]])('tipo inválido (%s) → 400', async (tier) => {
+      const { auth } = await signup()
+      expect((await checkout(auth, 1, { tier })).statusCode).toBe(400)
+    })
+
+    it('aprovar o Pro grava o tipo no restaurante e libera o acesso', async () => {
+      const { env, restaurantId, auth } = await signup()
+      await pay(auth, 1, 'pro')
+      expect(await getTier(env, restaurantId)).toBe('pro')
+      expect((await app.inject({ method: 'GET', url: '/financial-accounts', headers: auth })).statusCode).toBe(200)
+    })
+
+    it('renovar o MESMO tipo soma ao que sobrou', async () => {
+      const { env, restaurantId, auth } = await signup()
+      const base = new Date(Date.now() + 10 * DAY)
+      await setEndsAt(env, restaurantId, base)
+      await db(env).collection('restaurants').updateOne({ _id: new ObjectId(restaurantId) }, { $set: { 'subscription.tier': 'pro' } })
+
+      await pay(auth, 1, 'pro')
+      expect((await getEndsAt(env, restaurantId))!.toISOString()).toBe(addMonths(base, 1).toISOString())
+      expect(await getTier(env, restaurantId)).toBe('pro')
+    })
+
+    it('UPGRADE com tempo sobrando: o Pro conta de HOJE, sem somar nem dar crédito pelo Básico que sobrava', async () => {
+      const { env, restaurantId, auth } = await signup()
+      await setEndsAt(env, restaurantId, new Date(Date.now() + 20 * DAY)) // sem tipo gravado = Básico
+
+      await pay(auth, 1, 'pro')
+
+      const endsAt = (await getEndsAt(env, restaurantId))!
+      expect(endsAt.getTime()).toBeGreaterThan(Date.now() + 27 * DAY)
+      expect(endsAt.getTime()).toBeLessThan(Date.now() + 32 * DAY)
+      expect(await getTier(env, restaurantId)).toBe('pro')
+    })
+
+    it('DOWNGRADE com tempo sobrando: o Básico conta de HOJE e o Pro que sobrava é descartado', async () => {
+      const { env, restaurantId, auth } = await signup()
+      await pay(auth, 12, 'pro') // ~1 ano de Pro
+      expect(await getTier(env, restaurantId)).toBe('pro')
+
+      await pay(auth, 1, 'basic')
+
+      const endsAt = (await getEndsAt(env, restaurantId))!
+      expect(endsAt.getTime()).toBeLessThan(Date.now() + 32 * DAY)
+      expect(endsAt.getTime()).toBeGreaterThan(Date.now() + 27 * DAY)
+      expect(await getTier(env, restaurantId)).toBe('basic')
+    })
+
+    it('trocar de tipo com a assinatura vencida: conta de hoje (como qualquer pagamento vencido)', async () => {
+      const { env, restaurantId, auth } = await signup()
+      await setEndsAt(env, restaurantId, new Date(Date.now() - DAY))
+      await pay(auth, 3, 'pro')
+      const endsAt = (await getEndsAt(env, restaurantId))!
+      expect(endsAt.getTime()).toBeGreaterThan(Date.now() + 88 * DAY)
+      expect(endsAt.getTime()).toBeLessThan(Date.now() + 93 * DAY)
+    })
+
+    it('conta com data mas SEM tipo gravado (liberada à mão) é Básico no estado', async () => {
+      const { env, restaurantId, auth } = await signup()
+      await setEndsAt(env, restaurantId, new Date(Date.now() + 30 * DAY))
+      expect(await overview(auth)).toMatchObject({ status: 'active', tier: 'basic' })
+      expect(await getTier(env, restaurantId)).toBeUndefined()
+    })
+
+    it('o login devolve o tipo da assinatura', async () => {
+      const { env, email, auth } = await signup()
+      await pay(auth, 1, 'pro')
+      const login = await app.inject({ method: 'POST', url: '/auth/login', headers: { env }, payload: { email, password: SIGNUP_BASE.password } })
+      expect(login.json().payload.subscription).toMatchObject({ status: 'active', tier: 'pro' })
+    })
+
+    it('trocar de tipo encerra o tempo dos pagamentos anteriores: estornar o antigo não tira nada do novo', async () => {
+      const { env, restaurantId, auth } = await signup()
+      const first = await pay(auth, 1, 'basic')
+      await pay(auth, 1, 'pro')
+      const after = (await getEndsAt(env, restaurantId))!
+      const firstDoc = await db(env).collection('payments').findOne({ _id: new ObjectId(first) })
+      expect(firstDoc?.supersededAt).toBeInstanceOf(Date)
+
+      // estorno do pagamento Básico (já substituído): o tempo dele nem existia mais na assinatura
+      await db(env).collection('payments').updateOne({ _id: new ObjectId(first) }, { $set: { providerPaymentId: 'x1' } })
+      const { ConfirmPaymentUseCase } = await import('./subscription-use-cases')
+      const provider = { name: 'mock' as const, getPayment: async () => ({ id: 'x1', status: 'refunded' as const, amountCents: 15000, externalReference: first }), createCheckout: async () => { throw new Error('x') } }
+      const out = await new ConfirmPaymentUseCase().execute('x1', env, provider as any)
+
+      expect(out.result).toBe('revoked')
+      expect((await getEndsAt(env, restaurantId))!.toISOString()).toBe(after.toISOString())
+    })
+  })
+
+  describe('presente de 1 dia (POST /admin/subscription-gift)', () => {
+    const KEY = 'chave-admin-de-teste-0123456789'
+
+    beforeEach(() => {
+      process.env.ADMIN_API_KEY = KEY
+    })
+    afterEach(() => {
+      delete process.env.ADMIN_API_KEY
+    })
+
+    const gift = (env: string, payload: unknown, key: string | null = KEY) =>
+      app.inject({
+        method: 'POST',
+        url: '/admin/subscription-gift',
+        headers: { env, ...(key ? { 'x-admin-key': key } : {}) },
+        payload: payload as Record<string, unknown>,
+      })
+
+    it('sem ADMIN_API_KEY configurada a rota não existe (404), mesmo com qualquer chave', async () => {
+      delete process.env.ADMIN_API_KEY
+      const { env, email } = await signup()
+      expect((await gift(env, { email }, 'qualquer')).statusCode).toBe(404)
+      expect((await gift(env, { email }, '')).statusCode).toBe(404)
+    })
+
+    it.each([['sem chave', null], ['chave errada', 'outra-chave'], ['chave parecida', 'chave-admin-de-teste-012345678']])('%s → 401 e nada é concedido', async (_nome, key) => {
+      const { env, email, restaurantId } = await signup()
+      const res = await gift(env, { email }, key)
+      expect(res.statusCode).toBe(401)
+      expect(await getEndsAt(env, restaurantId)).toBeNull()
+    })
+
+    it('um token de usuário comum não serve como chave de administrador', async () => {
+      const { env, email, auth, restaurantId } = await signup()
+      const res = await gift(env, { email }, auth.authorization.replace('Bearer ', ''))
+      expect(res.statusCode).toBe(401)
+      expect(await getEndsAt(env, restaurantId)).toBeNull()
+    })
+
+    it('exige o email e a conta precisa existir', async () => {
+      const { env } = await signup()
+      expect((await gift(env, {})).statusCode).toBe(400)
+      expect((await gift(env, { email: '   ' })).statusCode).toBe(400)
+      expect((await gift(env, { email: 123 })).statusCode).toBe(400)
+      expect((await gift(env, { email: 'ninguem@teste.com' })).statusCode).toBe(404)
+    })
+
+    it('conta sem assinatura ganha acesso até amanhã (agora + 24h) e passa a entrar', async () => {
+      const { env, email, auth, restaurantId } = await signup()
+      expect((await app.inject({ method: 'GET', url: '/financial-accounts', headers: auth })).statusCode).toBe(402)
+
+      const before = Date.now()
+      const res = await gift(env, { email })
+      const after = Date.now()
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json().payload.granted).toBe(true)
+      const endsAt = (await getEndsAt(env, restaurantId))!
+      expect(endsAt.getTime()).toBeGreaterThanOrEqual(before + DAY)
+      expect(endsAt.getTime()).toBeLessThanOrEqual(after + DAY)
+      expect(res.json().payload.endsAt).toBe(endsAt.toISOString())
+      expect((await app.inject({ method: 'GET', url: '/financial-accounts', headers: auth })).statusCode).toBe(200)
+      expect(await overview(auth)).toMatchObject({ status: 'active', daysLeft: 1 })
+    })
+
+    it('o email não diferencia maiúsculas nem espaços', async () => {
+      const { env, email, restaurantId } = await signup()
+      const res = await gift(env, { email: `  ${email.toUpperCase()} ` })
+      expect(res.statusCode).toBe(200)
+      expect(await getEndsAt(env, restaurantId)).not.toBeNull()
+    })
+
+    it('o limite é de UM dia: nenhum parâmetro (days, months, endsAt) muda isso', async () => {
+      const { env, email, restaurantId } = await signup()
+      const res = await gift(env, { email, days: 365, months: 12, endsAt: '2099-01-01T00:00:00Z' })
+      expect(res.statusCode).toBe(200)
+      const endsAt = (await getEndsAt(env, restaurantId))!
+      expect(endsAt.getTime()).toBeLessThanOrEqual(Date.now() + DAY)
+    })
+
+    it('assinatura vencida volta a valer só até amanhã', async () => {
+      const { env, email, restaurantId } = await signup()
+      await setEndsAt(env, restaurantId, new Date(Date.now() - 5 * DAY))
+      const res = await gift(env, { email })
+      expect(res.json().payload.granted).toBe(true)
+      expect((await getEndsAt(env, restaurantId))!.getTime()).toBeLessThanOrEqual(Date.now() + DAY)
+    })
+
+    it('quem já tem MAIS de um dia não recebe nada: o presente nunca encurta nem soma', async () => {
+      const { env, email, restaurantId } = await signup()
+      const current = new Date(Date.now() + 10 * DAY)
+      await setEndsAt(env, restaurantId, current)
+
+      const res = await gift(env, { email })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.json().payload).toEqual({ granted: false, endsAt: current.toISOString() })
+      expect((await getEndsAt(env, restaurantId))!.toISOString()).toBe(current.toISOString())
+    })
+
+    it('quem tem só algumas horas sobrando passa a ter até amanhã (nunca mais que 24h a partir de agora)', async () => {
+      const { env, email, restaurantId } = await signup()
+      await setEndsAt(env, restaurantId, new Date(Date.now() + 3 * 60 * 60 * 1000))
+      const res = await gift(env, { email })
+      expect(res.json().payload.granted).toBe(true)
+      const endsAt = (await getEndsAt(env, restaurantId))!
+      expect(endsAt.getTime()).toBeGreaterThan(Date.now() + DAY - 60 * 1000)
+      expect(endsAt.getTime()).toBeLessThanOrEqual(Date.now() + DAY)
+    })
+
+    it('não cria pagamento nem mexe no tipo; só marca que foi presente', async () => {
+      const { env, email, restaurantId } = await signup()
+      await gift(env, { email })
+      const doc = await db(env).collection('restaurants').findOne({ _id: new ObjectId(restaurantId) })
+      expect(doc?.subscription?.tier).toBeUndefined()
+      expect(doc?.subscription?.giftedAt).toBeInstanceOf(Date)
+      expect(await db(env).collection('payments').countDocuments({ restaurantId })).toBe(0)
+    })
+
+    it('só vale no banco (env) do cabeçalho: a mesma conta em outro env não ganha nada', async () => {
+      const a = await signup()
+      const b = await signup()
+      const res = await gift(b.env, { email: a.email })
+      expect(res.statusCode).toBe(404)
+      expect(await getEndsAt(a.env, a.restaurantId)).toBeNull()
+    })
+  })
+
   describe('webhook do Mercado Pago', () => {
     interface MpPayment { id: string, status: string, transaction_amount: number, currency_id: string, external_reference: string }
 
@@ -444,6 +713,34 @@ describe('Assinatura (Integration)', () => {
       const saved = await db(ctx.env).collection('payments').find({ restaurantId: ctx.restaurantId }).toArray()
       expect(saved).toHaveLength(1)
       expect(saved[0].status).toBe('cancelled')
+    })
+
+    it('a cobrança no Mercado Pago leva o tipo e a duração: título, descrição e metadados', async () => {
+      const bodies: any[] = []
+      process.env.PAYMENT_PROVIDER = 'mercadopago'
+      process.env.MP_ACCESS_TOKEN = 'APP_USR-test'
+      vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: { body?: string }) => {
+        bodies.push(JSON.parse(init?.body ?? '{}'))
+        return { ok: true, status: 201, json: async () => ({ id: 'pref-1', init_point: 'https://mp.test/pagar', sandbox_init_point: 'https://sandbox.mp.test/pagar' }) }
+      }))
+      const ctx = await signup()
+      const res = await checkout(ctx.auth, 6, { tier: 'pro' })
+      expect(res.statusCode).toBe(201)
+
+      expect(bodies).toHaveLength(1)
+      expect(bodies[0].items[0]).toMatchObject({ id: 'mintly-pro-6m', title: 'Assinatura Mintly Pro — 6 meses', unit_price: 1236.6 })
+      expect(bodies[0].items[0].description).toBe('Assinatura Mintly Pro por 6 meses')
+      expect(bodies[0].metadata).toEqual({ tier: 'pro', months: 6, payment_id: res.json().payload.paymentId })
+    })
+
+    it('o tipo que vale é o do NOSSO registro: um aviso de Pro pago como Básico não vira Pro', async () => {
+      useMercadoPago({})
+      const ctx = await openPayment(1) // Básico, R$ 150
+      // o valor pago bate com o Básico; o Mercado Pago não decide o tipo
+      useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
+      await signedWebhook(ctx.env, '900001')
+      const doc = await db(ctx.env).collection('restaurants').findOne({ _id: new ObjectId(ctx.restaurantId) })
+      expect(doc?.subscription?.tier).toBe('basic')
     })
 
     it('aviso de pagamento aprovado libera o acesso pelo período pago', async () => {

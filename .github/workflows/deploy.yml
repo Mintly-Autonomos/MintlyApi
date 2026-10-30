@@ -78,6 +78,8 @@ jobs:
       MP_ACCESS_TOKEN: ${{ secrets.MP_ACCESS_TOKEN }}
       MP_WEBHOOK_SECRET: ${{ secrets.MP_WEBHOOK_SECRET }}
       MP_SANDBOX: ${{ vars.MP_SANDBOX }}
+      # Chave do endpoint de presente de 1 dia (POST /admin/subscription-gift). Opcional: sem ela a rota responde 404.
+      ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
       # Allowlist do CORS (P4): CSV com as origens do MintlyWeb. SEM ela a
       # allowlist nasce vazia e o servidor NEGA toda origem de navegador — o
       # front perde a API. Por isso é REQUIRED no sync abaixo: falhar o deploy
@@ -152,7 +154,7 @@ jobs:
           REQUIRED="MONGODB_HOSTS MONGODB_USER MONGODB_PASSWORD MONGODB_REPLICA_SET MONGODB_AUTH_SOURCE"
           REQUIRED="$REQUIRED MONGO_ENV API_URL GMAIL_USER GMAIL_APP_PASSWORD EMAIL_FROM FRONTEND_URL"
           REQUIRED="$REQUIRED CORS_ORIGINS PAYMENT_PROVIDER"
-          OPTIONAL="MONGODB_TLS MP_ACCESS_TOKEN MP_WEBHOOK_SECRET MP_SANDBOX"
+          OPTIONAL="MONGODB_TLS MP_ACCESS_TOKEN MP_WEBHOOK_SECRET MP_SANDBOX ADMIN_API_KEY"
 
           # Provedor real sem credencial = ninguém consegue pagar: falhar o deploy é melhor.
           if [ "${PAYMENT_PROVIDER:-}" = "mercadopago" ] && [ -z "${MP_ACCESS_TOKEN:-}" ]; then
