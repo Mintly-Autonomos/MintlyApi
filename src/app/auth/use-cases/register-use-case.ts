@@ -8,6 +8,7 @@ import {
   CategoryType,
   CategoryBehavior,
   OperationalNature,
+  computeSubscriptionState,
 } from 'mintly-lib'
 import type { SignupResult } from 'mintly-lib'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
@@ -190,6 +191,8 @@ export class RegisterUseCase {
         audit: created.audit,
       },
       restaurant: { _id: created.restaurantId, name: data.restaurantName, audit: created.audit },
+      // Conta nova nunca tem assinatura: o front leva direto à tela de assinatura.
+      subscription: computeSubscriptionState(null),
     }
   }
 

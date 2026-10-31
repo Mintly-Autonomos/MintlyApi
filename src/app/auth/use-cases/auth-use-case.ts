@@ -9,6 +9,7 @@ import { RequestContext } from '../../../core/context/request-context'
 import { logAudit } from '../../audit/audit-service'
 import { normalizeEmail } from '../normalize-email'
 import type { MintlyClaims } from '../jwt-claims'
+import { readSubscriptionState } from '../../subscription/subscription-reader'
 
 const TENANT = 'mintly'
 const MAX_LOGIN_ATTEMPTS = Number(process.env.MAX_LOGIN_ATTEMPTS ?? 5)
@@ -78,6 +79,8 @@ export class AuthUseCase {
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken,
       user: this.toPublic(user, avatar),
+      // Sem assinatura válida o front leva à tela de assinatura em vez do app.
+      subscription: await readSubscriptionState(ctx.env, user.restaurantId),
     }
   }
 

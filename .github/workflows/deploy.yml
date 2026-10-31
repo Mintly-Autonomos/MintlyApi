@@ -71,6 +71,15 @@ jobs:
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
       FRONTEND_URL: ${{ vars.FRONTEND_URL }}
+      # Assinatura. PAYMENT_PROVIDER = mock (simulador, sem cobrança real) ou mercadopago. Sem ela a API
+      # NÃO cria cobrança em produção (falha fechada: o simulado aprova sem cobrar), por isso é REQUIRED
+      # no sync abaixo. MP_* só valem com PAYMENT_PROVIDER=mercadopago.
+      PAYMENT_PROVIDER: ${{ vars.PAYMENT_PROVIDER }}
+      MP_ACCESS_TOKEN: ${{ secrets.MP_ACCESS_TOKEN }}
+      MP_WEBHOOK_SECRET: ${{ secrets.MP_WEBHOOK_SECRET }}
+      MP_SANDBOX: ${{ vars.MP_SANDBOX }}
+      # Chave do endpoint de presente de 1 dia (POST /admin/subscription-gift). Opcional: sem ela a rota responde 404.
+      ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
       # Allowlist do CORS (P4): CSV com as origens do MintlyWeb. SEM ela a
       # allowlist nasce vazia e o servidor NEGA toda origem de navegador — o
       # front perde a API. Por isso é REQUIRED no sync abaixo: falhar o deploy
@@ -144,8 +153,14 @@ jobs:
 
           REQUIRED="MONGODB_HOSTS MONGODB_USER MONGODB_PASSWORD MONGODB_REPLICA_SET MONGODB_AUTH_SOURCE"
           REQUIRED="$REQUIRED MONGO_ENV API_URL GMAIL_USER GMAIL_APP_PASSWORD EMAIL_FROM FRONTEND_URL"
-          REQUIRED="$REQUIRED CORS_ORIGINS"
-          OPTIONAL="MONGODB_TLS"
+          REQUIRED="$REQUIRED CORS_ORIGINS PAYMENT_PROVIDER"
+          OPTIONAL="MONGODB_TLS MP_ACCESS_TOKEN MP_WEBHOOK_SECRET MP_SANDBOX ADMIN_API_KEY"
+
+          # Provedor real sem credencial = ninguém consegue pagar: falhar o deploy é melhor.
+          if [ "${PAYMENT_PROVIDER:-}" = "mercadopago" ] && [ -z "${MP_ACCESS_TOKEN:-}" ]; then
+            echo "::error::PAYMENT_PROVIDER=mercadopago exige o secret MP_ACCESS_TOKEN."
+            exit 1
+          fi
 
           MISSING=""
           for VAR in $REQUIRED; do

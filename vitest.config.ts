@@ -19,6 +19,7 @@ export default defineConfig({
           name: 'integration',
           include: ['src/**/*.int.spec.ts'],
           exclude: ['node_modules/**', 'dist/**'],
+          setupFiles: ['src/test-support/skip-subscription-gate.ts'],
           testTimeout: 30000,
           hookTimeout: 60000,
         },
