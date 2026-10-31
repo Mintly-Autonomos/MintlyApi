@@ -48,6 +48,47 @@ describe('configFromEnv', () => {
   })
 })
 
+describe('MercadoPagoPaymentProvider: log do endereço de aviso', () => {
+  const input = { paymentId: 'pay123', env: 'staging', title: 'x', tier: 'basic' as const, months: 1 as const, days: 30, amountCents: 15000, payerEmail: 'a@b.com' }
+  const ok = () => vi.fn().mockResolvedValue(jsonResponse({ id: 'p', init_point: 'a', sandbox_init_point: 'b' }))
+
+  it('mostra no log para onde o Mercado Pago vai avisar (URL e ambiente, sem o token)', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await new MercadoPagoPaymentProvider(baseConfig, ok() as unknown as typeof fetch).createCheckout(input)
+    expect(log).toHaveBeenCalledWith('[mercadopago] cobrança pay123: aviso em https://api.mintly.test/webhooks/mercadopago?env=staging')
+    expect(JSON.stringify(log.mock.calls)).not.toContain(baseConfig.accessToken)
+    expect(warn).not.toHaveBeenCalled()
+    log.mockRestore()
+    warn.mockRestore()
+  })
+
+  it('avisa no log quando o API_URL não está configurado (cai no localhost)', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await new MercadoPagoPaymentProvider({ ...baseConfig, apiUrl: 'http://localhost:3000' }, ok() as unknown as typeof fetch).createCheckout(input)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('API_URL não está configurado'))
+    log.mockRestore()
+    warn.mockRestore()
+  })
+
+  it('API_URL que nem é uma URL também gera o aviso no log', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    await new MercadoPagoPaymentProvider({ ...baseConfig, apiUrl: 'sem-esquema' }, ok() as unknown as typeof fetch).createCheckout(input)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('API_URL não está configurado'))
+    log.mockRestore()
+    warn.mockRestore()
+  })
+
+  it('renovação: registra que os avisos vêm do webhook do painel, com a referência', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    await new MercadoPagoPaymentProvider(baseConfig, ok() as unknown as typeof fetch).createRecurring({ ...input, frequencyDays: 30 })
+    expect(log).toHaveBeenCalledWith('[mercadopago] renovação pay123: avisos pelo webhook do painel (referência staging|pay123)')
+    log.mockRestore()
+  })
+})
+
 describe('MercadoPagoPaymentProvider.createCheckout', () => {
   const input = { paymentId: 'pay123', env: 'staging', title: 'Assinatura Mintly — 3 meses', amountCents: 42750, payerEmail: 'dono@rest.com' }
 
