@@ -12,6 +12,8 @@ export default defineConfig({
           name: 'unit',
           include: ['src/**/*.spec.ts'],
           exclude: ['src/**/*.int.spec.ts', 'src/**/*.e2e.spec.ts', 'node_modules/**', 'dist/**'],
+          // Variáveis do deploy (MP_SANDBOX etc.) não podem mudar o resultado dos testes.
+          setupFiles: ['src/test-support/clean-payment-env.ts'],
         },
       },
       {
@@ -19,7 +21,7 @@ export default defineConfig({
           name: 'integration',
           include: ['src/**/*.int.spec.ts'],
           exclude: ['node_modules/**', 'dist/**'],
-          setupFiles: ['src/test-support/skip-subscription-gate.ts'],
+          setupFiles: ['src/test-support/clean-payment-env.ts', 'src/test-support/skip-subscription-gate.ts'],
           testTimeout: 30000,
           hookTimeout: 60000,
         },
