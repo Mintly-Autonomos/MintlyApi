@@ -86,8 +86,30 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
     return { Authorization: `Bearer ${this.config.accessToken}`, 'Content-Type': 'application/json', ...extra }
   }
 
+  /**
+   * Registra para onde o Mercado Pago vai mandar o aviso desta cobrança (sem segredos: só a URL e o ambiente).
+   * É o que responde "por que o aviso não chegou?": o endereço sai do API_URL do deploy, não do que o site usa.
+   */
+  /** O endereço da API é localhost (API_URL ausente no deploy cai no padrão de desenvolvimento). */
+  private apiUrlIsLocal (): boolean {
+    try {
+      return ['localhost', '127.0.0.1'].includes(new URL(this.config.apiUrl).hostname)
+    } catch {
+      return true
+    }
+  }
+
+  private logNotificationTarget (paymentId: string, notificationUrl: string): void {
+    console.log(`[mercadopago] cobrança ${paymentId}: aviso em ${notificationUrl}`)
+    if (this.apiUrlIsLocal()) {
+      console.warn('[mercadopago] API_URL não está configurado (ou aponta para localhost): o Mercado Pago não conseguirá avisar este pagamento.')
+    }
+  }
+
   async createCheckout (input: CheckoutInput): Promise<CheckoutOutput> {
     const back = `${this.config.frontendUrl}/assinatura/retorno`
+    const notificationUrl = `${this.config.apiUrl}/webhooks/mercadopago?env=${encodeURIComponent(input.env)}`
+    this.logNotificationTarget(input.paymentId, notificationUrl)
     const body = {
       items: [{
         id: `mintly-${input.tier}-${input.months}m`,
@@ -101,7 +123,7 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
       // Informativo: quem vale é o registro do pagamento no Mintly (o aviso é sempre reconsultado e conferido).
       metadata: { tier: input.tier, months: input.months, days: input.days, payment_id: input.paymentId },
       // O webhook não manda o header `env`: o ambiente (banco) do tenant vai na própria URL.
-      notification_url: `${this.config.apiUrl}/webhooks/mercadopago?env=${encodeURIComponent(input.env)}`,
+      notification_url: notificationUrl,
       back_urls: { success: back, pending: back, failure: back },
       auto_return: 'approved',
       statement_descriptor: 'MINTLY',
@@ -156,6 +178,8 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
    */
   async createRecurring (input: RecurringInput): Promise<CheckoutOutput> {
     if (!input.payerEmail) throw new Error('A renovação automática precisa do e-mail de quem assina.')
+    // A assinatura não leva notification_url: os avisos vêm do webhook cadastrado no painel do Mercado Pago.
+    console.log(`[mercadopago] renovação ${input.paymentId}: avisos pelo webhook do painel (referência ${encodeReference(input.env, input.paymentId)})`)
     const body = {
       reason: input.title,
       // Leva o ambiente: os avisos das cobranças seguintes chegam sem ele (ver payment-reference.ts).
