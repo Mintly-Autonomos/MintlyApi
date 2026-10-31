@@ -283,4 +283,67 @@ describe('Financial Account (Integration)', () => {
 
     expect(response.statusCode).toBe(200)
   })
+
+  // ---------------------------------------------------------
+  // Histórico da conta no PATCH (taxa, prazo, nome, status)
+  // ---------------------------------------------------------
+  describe('histórico de alterações (PATCH)', () => {
+    const headers = () => ({
+      'x-restaurant-id': fakeRestaurantId,
+      authorization: `Bearer ${testToken}`,
+      env: 'test',
+    })
+    const patch = (payload: Record<string, unknown>) =>
+      app.inject({ method: 'PATCH', url: `/financial-accounts/${platformAccountId}`, headers: headers(), payload })
+    const history = async (): Promise<Array<{ action: string; detail?: string; by: string }>> => {
+      const res = await app.inject({ method: 'GET', url: '/financial-accounts?name=Maquininha', headers: headers() })
+      const acc = JSON.parse(res.payload).payload.find((a: any) => a._id === platformAccountId)
+      return acc.history
+    }
+
+    it('o PATCH de taxa aceito antes ficou no histórico, com antes e depois', async () => {
+      const h = await history()
+      const fee = h.find((e) => e.action === 'update-fee')
+      expect(fee).toBeDefined()
+      expect(fee!.detail).toBe('3% → 15%')
+      expect(fee!.by).toBe('admin-user-id')
+    })
+
+    it('prazo e nome entram juntos, na ordem nome → prazo, e acumulam sobre o que já existia', async () => {
+      const before = (await history()).length
+      const res = await patch({ settlementDays: 2, name: 'Maquininha Integração 2' })
+      expect(res.statusCode).toBe(200)
+
+      const h = await history()
+      expect(h.length).toBe(before + 2)
+      expect(h.slice(-2).map((e) => [e.action, e.detail])).toEqual([
+        ['update-name', 'Maquininha Integração → Maquininha Integração 2'],
+        ['update-settlement', '30 dias → 2 dias'],
+      ])
+    })
+
+    it('reenviar os mesmos valores não suja o histórico', async () => {
+      const before = (await history()).length
+      const res = await patch({ name: 'Maquininha Integração 2', feePercent: 15, settlementDays: 2 })
+      expect(res.statusCode).toBe(200)
+      expect((await history()).length).toBe(before)
+    })
+
+    it('PATCH inválido (taxa negativa) é recusado e não grava histórico', async () => {
+      const before = (await history()).length
+      const res = await patch({ feePercent: -5 })
+      expect(res.statusCode).toBe(400)
+      expect((await history()).length).toBe(before)
+    })
+
+    it('inativar e reativar pelo status registra os dois eventos', async () => {
+      const before = (await history()).length
+      expect((await patch({ status: 'inactive' })).statusCode).toBe(200)
+      expect((await patch({ status: 'active' })).statusCode).toBe(200)
+
+      const h = await history()
+      expect(h.length).toBe(before + 2)
+      expect(h.slice(-2).map((e) => e.action)).toEqual(['inactivate', 'reactivate'])
+    })
+  })
 })

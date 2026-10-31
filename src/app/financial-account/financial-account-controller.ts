@@ -10,7 +10,7 @@ import { SetDefaultAccountUseCase } from './use-cases/set-default-account.use-ca
 import { InactivateAccountUseCase } from './use-cases/inactivate-account.use-case'
 import { escapeRegex } from '../../core/util/escape-regex'
 import { StatusCodes } from 'http-status-codes'
-import { assertAccountUpdateAllowed, AccountUpdateChanges } from './account-rules'
+import { assertAccountUpdateAllowed, buildAccountChangeHistory, AccountUpdateChanges } from './account-rules'
 
 export class FinancialAccountController extends CrudController<FinancialAccount, string> {
   constructor (
@@ -49,18 +49,32 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
       changes.type !== undefined ||
       changes.feePercent !== undefined ||
       changes.settlementDays !== undefined
+    const touchesHistoryFields = touchesTypeOrFee || item.name !== undefined || item.status !== undefined
 
-    // Só vai ao banco quando o PATCH mexe em tipo/taxa — não onera um rename.
-    if (touchesTypeOrFee) {
-      const ctx = buildRequestContext(source)
-      const stored = await this.accountRepo.findById(id, ctx)
+    // Só vai ao banco quando o PATCH mexe em algo que a regra ou o histórico precisam comparar.
+    let stored: any
+    const ctx = buildRequestContext(source)
+    if (touchesHistoryFields) {
+      stored = await this.accountRepo.findById(id, ctx)
       if (!stored) {
         throw new NotFoundError(Resource.FinancialAccount, id)
       }
-      assertAccountUpdateAllowed(String((stored as any).type), changes)
+      if (touchesTypeOrFee) assertAccountUpdateAllowed(String(stored.type), changes)
     }
 
-    return super.update(id, item, source)
+    const response = await super.update(id, item, source)
+
+    // Histórico (nome, status, taxa, prazo): só depois do update validado e gravado.
+    if (stored) {
+      const entries = buildAccountChangeHistory(
+        stored,
+        { name: item.name, status: item.status, feePercent: changes.feePercent, settlementDays: changes.settlementDays },
+        ctx.userId ?? 'system',
+      )
+      if (entries.length > 0) await this.accountRepo.appendHistory(id, entries, ctx)
+    }
+
+    return response
   }
 
   /**

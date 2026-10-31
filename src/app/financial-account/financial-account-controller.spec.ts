@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { FinancialAccountController } from './financial-account-controller'
 import { CrudController } from '../../core/crud/crud-controller'
 
@@ -43,18 +43,59 @@ describe('FinancialAccountController', () => {
       .toThrow('O campo isDefault não pode ser editado manualmente')
   })
 
-  it('deve permitir a atualização de outros campos normalmente', async () => {
-    // Espião no Pai: se o filho chamar super.update, ele intercepta.
-    const superUpdateSpy = vi.spyOn(CrudController.prototype, 'update')
-      .mockResolvedValue({ payload: { success: true } } as any)
+  describe('update: histórico da conta', () => {
+    const source = { headers: { env: 'test' }, jwtClaims: { subject: 'user-1', claims: { restaurantId: ['rest-1'] } } } as any
+    let superUpdateSpy: any
 
-    const updatePayload = { name: 'Novo Nome', status: 'inactive' } as any
+    beforeEach(() => {
+      // Espião no Pai: o filho valida a regra/histórico e delega a gravação ao CrudController.
+      superUpdateSpy = vi.spyOn(CrudController.prototype, 'update')
+        .mockResolvedValue({ payload: { success: true } } as any)
+      mockRepository.appendHistory = vi.fn()
+    })
 
-    await controller.update('id-qualquer', updatePayload)
+    afterEach(() => {
+      superUpdateSpy.mockRestore()
+    })
 
-    expect(superUpdateSpy).toHaveBeenCalled()
+    it('delega o update e grava o histórico do que mudou', async () => {
+      mockRepository.findById.mockResolvedValue({ name: 'iFood', type: 'platform', status: 'active', feePercent: 12, settlementDays: 30 })
 
-    superUpdateSpy.mockRestore()
+      await controller.update('id-1', { name: 'iFood Delivery', feePercent: 14 } as any, source)
+
+      expect(superUpdateSpy).toHaveBeenCalled()
+      expect(mockRepository.appendHistory).toHaveBeenCalledTimes(1)
+      const entries = mockRepository.appendHistory.mock.calls[0][1]
+      expect(entries.map((e: any) => e.action)).toEqual(['update-name', 'update-fee'])
+      expect(entries.every((e: any) => e.by === 'user-1')).toBe(true)
+    })
+
+    it('PATCH que não muda nada não suja o histórico', async () => {
+      mockRepository.findById.mockResolvedValue({ name: 'Caixa', type: 'cash', status: 'active' })
+
+      await controller.update('id-1', { name: 'Caixa', status: 'active' } as any, source)
+
+      expect(superUpdateSpy).toHaveBeenCalled()
+      expect(mockRepository.appendHistory).not.toHaveBeenCalled()
+    })
+
+    it('se o update falhar na validação, nada é gravado no histórico', async () => {
+      mockRepository.findById.mockResolvedValue({ name: 'Caixa', type: 'cash', status: 'active' })
+      superUpdateSpy.mockRejectedValue(new Error('Validation failed'))
+
+      await expect(controller.update('id-1', { name: 'Novo' } as any, source)).rejects.toThrow('Validation failed')
+
+      expect(mockRepository.appendHistory).not.toHaveBeenCalled()
+    })
+
+    it('conta que não existe vira 404 antes de qualquer gravação', async () => {
+      mockRepository.findById.mockResolvedValue(null)
+
+      await expect(controller.update('id-1', { name: 'Novo' } as any, source)).rejects.toThrow()
+
+      expect(superUpdateSpy).not.toHaveBeenCalled()
+      expect(mockRepository.appendHistory).not.toHaveBeenCalled()
+    })
   })
 
   describe('findAll (busca textual)', () => {
