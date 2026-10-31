@@ -6,6 +6,7 @@ import { Field } from '@ascendance-hub/sapphire-core'
 import { NotFoundError } from '../errors/core/not-found-error'
 import { Resource } from '../types/resource'
 import { ResponseBuilder, ResponseStructure } from '../builders/response-builder/response-builder'
+import { attachAuditNames, attachAuditNamesTo } from '../audit/audit-names'
 
 export class CrudController <T extends Record<string, any>, ID = any> {
   private readonly useCase: CrudUseCase<T, ID>
@@ -37,7 +38,7 @@ export class CrudController <T extends Record<string, any>, ID = any> {
     if (!result) {
       throw new NotFoundError(this.resource, id)
     }
-    return new ResponseBuilder().payload(result).build()
+    return new ResponseBuilder().payload(await attachAuditNamesTo(result as Record<string, any>, ctx)).build()
   }
 
   async find (filter: Partial<T>, source?: ContextSource): Promise<ResponseStructure> {
@@ -56,7 +57,7 @@ export class CrudController <T extends Record<string, any>, ID = any> {
     ])
     const size = Number(filter.size) || 10
     return new ResponseBuilder()
-      .payload(result)
+      .payload(Array.isArray(result) ? await attachAuditNames(result as Array<Record<string, any>>, ctx) : result)
       .pagination({
         ...filter,
         totalItems,

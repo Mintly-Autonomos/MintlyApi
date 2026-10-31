@@ -7,6 +7,7 @@ import { ChangeMovementStatusUseCase } from './use-cases/change-movement-status.
 import { UpdateMovementUseCase, UpdateMovementInput } from './use-cases/update-movement.use-case'
 import { RecomputeBalancesUseCase } from './use-cases/recompute-balances.use-case'
 import { ImportMovementsUseCase, ImportMovementsInput } from './use-cases/import-movements.use-case'
+import { attachAuditNames } from '../../core/audit/audit-names'
 
 export class FinancialMovementController {
   constructor (
@@ -54,7 +55,7 @@ export class FinancialMovementController {
 
     return new ResponseBuilder()
       .status(StatusCodes.OK)
-      .payload(result)
+      .payload(await attachAuditNames(result as unknown as Array<Record<string, any>>, ctx))
       .pagination({
         ...filter,
         totalItems,
