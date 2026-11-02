@@ -7,6 +7,57 @@ const cash = { type: 'cash' }
 const platform = { type: 'platform', feePercent: 12, settlementDays: 30 }
 
 describe('movement-rules', () => {
+  describe('computeSnapshot — regra de repasse por dia da semana/mês', () => {
+    const quarta = { type: 'platform', feePercent: 12, settlementRule: { kind: 'weekly', weekday: 3 } } as any
+    const sale = (iso: string, account: any = quarta, fee?: any) =>
+      computeSnapshot({ direction: MovementDirection.In, grossValue: 100, date: new Date(`${iso}T00:00:00.000Z`), account, fee })
+    const dueOf = (s: { dueDate?: Date }) => s.dueDate?.toISOString().slice(0, 10)
+
+    it('repasse toda quarta: venda na terça cai na quarta; venda na quarta só na quarta seguinte', () => {
+      expect(dueOf(sale('2026-11-03'))).toBe('2026-11-04') // terça
+      expect(dueOf(sale('2026-11-04'))).toBe('2026-11-11') // quarta
+      expect(dueOf(sale('2026-11-05'))).toBe('2026-11-11') // quinta
+    })
+
+    it('grava a regra aplicada (snapshot) e não o settlementDaysApplied', () => {
+      const s = sale('2026-11-03')
+      expect(s.settlementRuleApplied).toEqual({ kind: 'weekly', weekday: 3 })
+      expect(s.settlementDaysApplied).toBeUndefined()
+      expect(s.feeValue).toBe(12)
+      expect(s.netValue).toBe(88)
+    })
+
+    it('quinzenal e mensal', () => {
+      const dias5e20 = { type: 'platform', feePercent: 0, settlementRule: { kind: 'biweekly', firstDay: 5, secondDay: 20 } }
+      expect(dueOf(sale('2026-11-05', dias5e20))).toBe('2026-11-20')
+      expect(dueOf(sale('2026-11-20', dias5e20))).toBe('2026-12-05')
+      const dia10 = { type: 'platform', feePercent: 0, settlementRule: { kind: 'monthly', day: 10 } }
+      expect(dueOf(sale('2026-11-11', dia10))).toBe('2026-12-10')
+    })
+
+    it('regra "N dias" segue gravando settlementDaysApplied (como antes)', () => {
+      const s = sale('2026-11-03', { type: 'platform', feePercent: 0, settlementRule: { kind: 'afterDays', days: 7 } })
+      expect(s.settlementDaysApplied).toBe(7)
+      expect(s.settlementRuleApplied).toBeUndefined()
+      expect(dueOf(s)).toBe('2026-11-10')
+    })
+
+    it('conta antiga (só settlementDays) continua igual', () => {
+      expect(dueOf(sale('2026-11-03', { type: 'platform', feePercent: 0, settlementDays: 2 }))).toBe('2026-11-05')
+    })
+
+    it('editar usa a regra CONGELADA, mesmo que a conta tenha mudado de regra', () => {
+      const contaAgora = { type: 'platform', feePercent: 12, settlementRule: { kind: 'monthly', day: 1 } }
+      const s = sale('2026-11-03', contaAgora, { percent: 12, settlementRule: { kind: 'weekly', weekday: 3 } })
+      expect(dueOf(s)).toBe('2026-11-04')
+    })
+
+    it('saída e conta que não é plataforma não têm repasse', () => {
+      const s = computeSnapshot({ direction: MovementDirection.Out, grossValue: 100, date: new Date('2026-11-03T00:00:00.000Z'), account: quarta })
+      expect(s.dueDate).toBeUndefined()
+    })
+  })
+
   describe('defaultStatus', () => {
     it('com vencimento futuro → pending', () => {
       expect(defaultStatus({ dueDate: new Date('2099-01-01T00:00:00.000Z') })).toBe(MovementStatus.Pending)

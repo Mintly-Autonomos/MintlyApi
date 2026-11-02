@@ -123,6 +123,7 @@ export class UpdateMovementUseCase {
           : {
             percent: mov.feePercentApplied != null ? num(mov.feePercentApplied) : undefined,
             settlementDays: mov.settlementDaysApplied != null ? Number(mov.settlementDaysApplied) : undefined,
+            settlementRule: mov.settlementRuleApplied ?? undefined,
           }
 
         const snapshot = computeSnapshot({
@@ -142,8 +143,8 @@ export class UpdateMovementUseCase {
         // aquele lançamento passou a ser à vista.
         //
         // `storedWasComputed` é o que separa os dois tipos de vencimento. Só
-        // entrada de plataforma grava `settlementDaysApplied`, então a presença
-        // dele significa "esta data foi derivada do repasse daquela conta" — e ela
+        // entrada de plataforma grava `settlementDaysApplied` (ou `settlementRuleApplied`, nas
+        // regras por dia da semana/mês), então a presença de um deles significa "esta data foi derivada do repasse daquela conta" — e ela
         // tem que sumir quando o movimento sai de lá. Um vencimento informado pelo
         // dono é do lançamento e sobrevive a qualquer troca de conta.
         const newDueDate = resolveDueDate({
@@ -152,7 +153,7 @@ export class UpdateMovementUseCase {
             : undefined,
           computed: snapshot.dueDate,
           stored: mov.dueDate != null ? new Date(mov.dueDate) : undefined,
-          storedWasComputed: mov.settlementDaysApplied != null,
+          storedWasComputed: mov.settlementDaysApplied != null || mov.settlementRuleApplied != null,
         })
 
         // P8 — o status acompanha o vencimento quando ele passa a existir ou deixa
@@ -204,6 +205,7 @@ export class UpdateMovementUseCase {
         }
         if (snapshot.feePercentApplied != null) newDoc.feePercentApplied = snapshot.feePercentApplied
         if (snapshot.settlementDaysApplied != null) newDoc.settlementDaysApplied = snapshot.settlementDaysApplied
+        if (snapshot.settlementRuleApplied != null) newDoc.settlementRuleApplied = snapshot.settlementRuleApplied
         if (newDueDate != null) newDoc.dueDate = newDueDate
         // Mudança explícita de status é ação humana (agora); recompute pela regra
         // segue o lançamento (newDate). Quem continua liquidada preserva o que tinha
