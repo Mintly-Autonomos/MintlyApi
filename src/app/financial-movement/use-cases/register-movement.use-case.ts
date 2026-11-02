@@ -8,6 +8,7 @@ import { Resource } from '../../../core/types/resource'
 import { FinancialMovementRepository, movementToStorage, movementFromStorage } from '../financial-movement-repository'
 import { computeSnapshot, defaultStatus, balanceImpact, resolveDueDate, resolveSettledAt, resolveMovementSubcategory } from '../movement-rules'
 import { applyBalanceImpact } from '../movement-balance'
+import { MovementItemRequest, resolveMovementItems } from '../movement-items'
 
 export interface RegisterMovementInput {
   direction: MovementDirection
@@ -23,6 +24,8 @@ export interface RegisterMovementInput {
   counterparty?: { name: string; kind: string; refId?: string }
   fiscalNote?: string
   description?: string
+  /** Pratos vendidos: o servidor copia nome e preço do cardápio. */
+  items?: MovementItemRequest[]
   origin?: string
   confirmDuplicate?: boolean
   /** Fatia 5: subcategoria da categoria escolhida (tem que estar ativa). */
@@ -131,6 +134,10 @@ export class RegisterMovementUseCase {
         if (input.counterparty) doc.counterparty = input.counterparty
         if (input.fiscalNote) doc.fiscalNote = input.fiscalNote
         if (input.description) doc.description = input.description
+        // Pratos da venda: nome e preço vêm do cardápio vivo (cópia no dia da venda).
+        if (input.items?.length) {
+          doc.items = await resolveMovementItems({ db, restaurantId: ctx.restaurantId ?? '', items: input.items, session })
+        }
         // Fatia 5: subcategoria (opcional, da categoria e ativa) e canal.
         const subcategory = resolveMovementSubcategory({ category: category as any, categoryChanged: true, requested: input.subcategoryId })
         if (subcategory) doc.subcategory = subcategory

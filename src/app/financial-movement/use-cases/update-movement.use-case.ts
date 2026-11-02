@@ -8,6 +8,7 @@ import { Resource } from '../../../core/types/resource'
 import { computeSnapshot, balanceImpact, defaultStatus, resolveDueDate, shouldRecomputeStatus, resolveSettledAt, resolveMovementSubcategory } from '../movement-rules'
 import { applyBalanceImpact } from '../movement-balance'
 import { movementToStorage, movementFromStorage } from '../financial-movement-repository'
+import { MovementItemRequest, resolveMovementItems } from '../movement-items'
 
 export interface UpdateMovementInput {
   title?: string
@@ -22,6 +23,8 @@ export interface UpdateMovementInput {
   counterparty?: { name: string; kind: string; refId?: string }
   fiscalNote?: string
   description?: string
+  /** Troca a lista de pratos; lista vazia remove; ausente mantém. */
+  items?: MovementItemRequest[]
   /** Fatia 5: `null` remove; ausente mantém (a menos que a categoria mude). */
   subcategoryId?: string | null
   /** Fatia 5: `null` remove (volta ao canal efetivo); ausente mantém. */
@@ -229,6 +232,20 @@ export class UpdateMovementUseCase {
         if (fiscalNote) newDoc.fiscalNote = fiscalNote
         const description = changes.description ?? mov.description
         if (description) newDoc.description = description
+        // Pratos: ausente mantém o que já estava; lista nova é resolvida contra o cardápio (um prato que
+        // já estava na venda e saiu do cardápio depois pode ficar); lista vazia remove.
+        if (changes.items !== undefined) {
+          const resolved = await resolveMovementItems({
+            db,
+            restaurantId: ctx.restaurantId ?? '',
+            items: changes.items,
+            session,
+            keepInactive: new Set<string>((mov.items ?? []).map((i: any) => String(i.menuItemId))),
+          })
+          if (resolved.length > 0) newDoc.items = resolved
+        } else if (mov.items?.length) {
+          newDoc.items = mov.items
+        }
         if (subcategory) newDoc.subcategory = subcategory
         if (channel != null) newDoc.channel = channel
 
