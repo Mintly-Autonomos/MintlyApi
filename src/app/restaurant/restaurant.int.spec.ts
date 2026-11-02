@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { ObjectId } from 'mongodb'
 import { MongoMemoryReplSet } from 'mongodb-memory-server'
 import { FastifyInstance } from 'fastify'
 import { mongoConnection } from '../../infrastructure/db/mongodb'
@@ -94,6 +95,47 @@ describe('/restaurants/me (Integration)', () => {
     const { auth } = await signup(freshEnv())
     const q = query === 'FUTURE' ? `?month=${addMonths(month, 1)}` : query
     expect((await getMe(auth, q)).statusCode).toBe(400)
+  })
+
+  describe('onboarding no servidor', () => {
+    it('quem acabou de se cadastrar nasce com o onboarding pendente', async () => {
+      const { auth } = await signup(freshEnv())
+      const res = await getMe(auth)
+      expect(res.json().payload.restaurant.onboardingPending).toBe(true)
+    })
+
+    it('concluir: PATCH onboardingPending=false; continua concluído nas leituras seguintes', async () => {
+      const { auth } = await signup(freshEnv())
+      const done = await patchMe(auth, { onboardingPending: false })
+      expect(done.statusCode).toBe(200)
+      expect(done.json().payload.onboardingPending).toBe(false)
+      expect((await getMe(auth)).json().payload.restaurant.onboardingPending).toBe(false)
+    })
+
+    it('ninguém reabre o onboarding: onboardingPending=true é recusado e nada muda', async () => {
+      const { auth } = await signup(freshEnv())
+      await patchMe(auth, { onboardingPending: false })
+      const res = await patchMe(auth, { onboardingPending: true })
+      expect(res.statusCode).toBe(400)
+      expect((await getMe(auth)).json().payload.restaurant.onboardingPending).toBe(false)
+    })
+
+    it('restaurante anterior ao onboarding no servidor (sem o campo) não tem nada pendente', async () => {
+      const env = freshEnv()
+      const { auth, restaurantId } = await signup(env)
+      await mongoConnection.getDatabase(env).collection('restaurants')
+        .updateOne({ _id: new ObjectId(restaurantId) }, { $unset: { onboardingPending: '' } })
+      const restaurant = (await getMe(auth)).json().payload.restaurant
+      expect(restaurant.onboardingPending).toBeUndefined()
+    })
+
+    it('concluir o onboarding de um restaurante não mexe no do outro', async () => {
+      const env = freshEnv()
+      const a = await signup(env, 'a')
+      const b = await signup(env, 'b')
+      await patchMe(a.auth, { onboardingPending: false })
+      expect((await getMe(b.auth)).json().payload.restaurant.onboardingPending).toBe(true)
+    })
   })
 
   it('sem token → 401', async () => {

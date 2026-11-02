@@ -87,7 +87,9 @@ export class RegisterUseCase {
 
         // ── restaurant ────────────────────────────────────────────────────────
         const restaurantInsert = await db.collection('restaurants').insertOne(
-          { name: data.restaurantName, audit },
+          // onboardingPending: quem acabou de se cadastrar ainda precisa do onboarding (guardado aqui, e não no
+          // navegador, para valer em qualquer aparelho e depois de sair e entrar). Os antigos não têm o campo.
+          { name: data.restaurantName, onboardingPending: true, audit },
           { session },
         )
         const restaurantId = restaurantInsert.insertedId.toHexString()
