@@ -30,13 +30,16 @@ export class FinancialMovementController {
       .send(reply)
   }
 
-  /** POST /financial-movements/import — importa um lote; cada linha tem resultado próprio. */
+  /**
+   * POST /financial-movements/import — importa um lote, tudo ou nada. 201 quando gravou; 200 quando
+   * nada foi gravado (reenvio de uma importação já feita, ou lote desfeito por linha com erro).
+   */
   async importBatch (request: any, reply: any) {
     const ctx = buildRequestContext(request)
     const result = await this.importUseCase.execute(request.body as ImportMovementsInput, ctx)
 
     return new ResponseBuilder()
-      .status(result.replayed ? StatusCodes.OK : StatusCodes.CREATED)
+      .status(result.replayed || result.created === 0 ? StatusCodes.OK : StatusCodes.CREATED)
       .payload(result)
       .send(reply)
   }

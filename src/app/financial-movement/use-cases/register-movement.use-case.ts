@@ -1,4 +1,4 @@
-import { ObjectId } from 'mongodb'
+import { ClientSession, ObjectId } from 'mongodb'
 import { financialMovementSchema, MovementDirection, MovementOrigin, MovementStatusSource } from 'mintly-lib'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import { RequestContext } from '../../../core/context/request-context'
@@ -36,18 +36,21 @@ export interface RegisterMovementInput {
  * MESMA transação (MIN-49/50). Busca conta (ativa) + categoria vivas para o
  * snapshot (Extended Reference); calcula fee/net/vencimento; status default pela
  * presença do vencimento; bloqueia duplicidade (<2min) salvo `confirmDuplicate`.
+ *
+ * Com `outerSession` (importação em lote) NÃO abre transação própria: grava dentro da transação
+ * de quem chamou, que decide commitar ou desfazer tudo.
  */
 export class RegisterMovementUseCase {
   constructor (private readonly movementRepo: FinancialMovementRepository = new FinancialMovementRepository()) {}
 
-  async execute (input: RegisterMovementInput, ctx: RequestContext): Promise<any> {
+  async execute (input: RegisterMovementInput, ctx: RequestContext, outerSession?: ClientSession): Promise<any> {
     const connection = MongoDBConnection.getInstance()
-    const session = connection.getClient().startSession()
+    const session = outerSession ?? connection.getClient().startSession()
     const db = connection.getDatabase(ctx.env)
 
     try {
       let created: any
-      await session.withTransaction(async () => {
+      const run = async (): Promise<void> => {
         const accounts = db.collection('financial_accounts')
         const categories = db.collection('financial_categories')
         const movements = db.collection('financial_movements')
@@ -162,11 +165,13 @@ export class RegisterMovementUseCase {
         await applyBalanceImpact(accounts, account._id, ctx.restaurantId, impact, 1, session, now)
 
         created = movementFromStorage({ ...(storageDoc as any), _id: insertRes.insertedId })
-      })
+      }
+      if (outerSession) await run()
+      else await session.withTransaction(run)
 
       return created
     } finally {
-      await session.endSession()
+      if (!outerSession) await session.endSession()
     }
   }
 }

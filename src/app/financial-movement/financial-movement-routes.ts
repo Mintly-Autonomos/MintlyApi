@@ -21,8 +21,9 @@ export async function financialMovementRoutes (fastify: FastifyInstance) {
 
   // POST /financial-movements/import — importação em massa (até 500 linhas), idempotente.
   // body: { idempotencyKey, rows: [{ row, ...campos do POST / }] }
-  // 201 { replayed:false, total, created, failed, results[] }; reenvio da mesma chave -> 200 replayed:true.
-  // Linha inválida/duplicada vira `failed` no resultado; não derruba as outras.
+  // 201 { replayed:false, total, created, failed:0, results[] }; reenvio da mesma chave -> 200 replayed:true.
+  // TUDO OU NADA: uma linha inválida/duplicada desfaz o lote inteiro -> 200 { created:0, failed:total },
+  // a linha com problema traz o motivo e as demais voltam como ROLLED_BACK (a chave é liberada).
   fastify.post('/import', { bodyLimit: 2 * 1024 * 1024 }, async (request: any, reply) => {
     return controller.importBatch(request, reply)
   })
