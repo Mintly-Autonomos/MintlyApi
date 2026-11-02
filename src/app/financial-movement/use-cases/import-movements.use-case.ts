@@ -4,7 +4,6 @@ import {
   ImportMovementsResult,
   importMovementRowSchema,
 } from 'mintly-lib'
-import { ClientSession } from 'mongodb'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import { RequestContext } from '../../../core/context/request-context'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
@@ -25,11 +24,14 @@ export const ROLLED_BACK_CODE = 'ROLLED_BACK'
 const ROLLED_BACK_MESSAGE = 'Não foi importada: outra linha tem problema e a importação inteira foi cancelada. Nada foi gravado.'
 
 /**
- * Importa várias movimentações num só pedido, TUDO OU NADA: todas as linhas passam pelo MESMO
+ * Importa várias movimentações num só pedido, TUDO OU NADA: todas as linhas seguem as MESMAS regras do
  * `register` (conta e categoria vivas, categoria × direção, duplicidade, saldo) dentro de UMA
- * transação. Se qualquer linha falhar, a transação é desfeita: nada é gravado, nenhum saldo muda e o
+ * transação, mas em lote (`executeBatch`): conta, categoria e pratos são lidos uma vez, a duplicidade é
+ * conferida numa consulta, as linhas entram num `insertMany` e cada saldo recebe um `$inc` só. Assim o
+ * tempo não cresce por linha (500 linhas = umas poucas operações no banco, e não ~2.500).
+ * Se qualquer linha falhar, a transação é desfeita: nada é gravado, nenhum saldo muda e o
  * resultado traz o motivo de cada linha com problema (as demais voltam como `ROLLED_BACK`).
- * O pedido todo roda até o fim antes de desfazer, para a pessoa corrigir todos os erros de uma vez.
+ * O pedido todo é avaliado antes de desfazer, para a pessoa corrigir todos os erros de uma vez.
  *
  * Idempotência: a chave é reservada antes de gravar. Reenviar a mesma chave de uma importação que
  * deu certo devolve o resultado da primeira vez (`replayed: true`) sem gravar de novo; duas
@@ -76,14 +78,46 @@ export class ImportMovementsUseCase {
       await session.withTransaction(async () => {
         // O driver pode repetir o bloco em falha transitória: recomeça do zero.
         results = []
-        for (const raw of rows) results.push(await this.importRow(raw, ctx, session))
-        if (results.some((r) => r.status === 'failed')) throw new ImportRolledBack()
+        const rowNumbers = rows.map((raw) => rowNumberOf(raw))
+        const failures = new Map<number, ImportMovementRowResult>()
+        const accepted: { index: number; input: RegisterMovementInput }[] = []
+
+        for (const [index, raw] of rows.entries()) {
+          try {
+            importMovementRowSchema.parse(raw)
+            // A linha vai como veio (a data em string, p. ex.): o register faz suas próprias conversões.
+            const { row: _row, ...body } = raw as Record<string, unknown>
+            accepted.push({ index, input: body as unknown as RegisterMovementInput })
+          } catch (error) {
+            failures.set(index, this.rowFailure(rowNumbers[index], error))
+          }
+        }
+
+        // O lote todo vai junto (poucas operações no banco, não uma série por linha).
+        const batch = await this.register.executeBatch(accepted.map((a) => a.input), ctx, session)
+        if (batch.written && failures.size === 0) {
+          // Nenhuma linha foi recusada: `accepted` são todas as linhas, na mesma ordem.
+          results = batch.movements.map((movement, index) => ({ row: rowNumbers[index], status: 'created' as const, movement }))
+          return
+        }
+        if (!batch.written) {
+          for (const [position, error] of batch.errors) {
+            const index = accepted[position].index
+            failures.set(index, this.rowFailure(rowNumbers[index], error))
+          }
+        }
+
+        // Alguma linha com problema: desfaz a transação (se o lote chegou a gravar, some junto), nada
+        // fica gravado e as linhas boas voltam como desfeitas.
+        results = rows.map((_, index) => failures.get(index) ?? {
+          row: rowNumbers[index],
+          status: 'failed' as const,
+          error: { code: ROLLED_BACK_CODE, message: ROLLED_BACK_MESSAGE },
+        })
+        throw new ImportRolledBack()
       })
     } catch (error) {
       if (!(error instanceof ImportRolledBack)) throw error
-      results = results.map((r) => r.status === 'failed'
-        ? r
-        : { row: r.row, status: 'failed', error: { code: ROLLED_BACK_CODE, message: ROLLED_BACK_MESSAGE } })
     } finally {
       await session.endSession()
     }
@@ -106,24 +140,21 @@ export class ImportMovementsUseCase {
     }
   }
 
-  private async importRow (raw: unknown, ctx: RequestContext, session: ClientSession): Promise<ImportMovementRowResult> {
-    const rowNumber = Number((raw as { row?: unknown })?.row)
-    const row = Number.isInteger(rowNumber) && rowNumber >= 1 ? rowNumber : 0
-
-    try {
-      importMovementRowSchema.parse(raw)
-      // A linha vai como veio (a data em string, p. ex.): o register faz suas próprias conversões.
-      const { row: _row, ...body } = raw as Record<string, unknown>
-      const movement = await this.register.execute(body as unknown as RegisterMovementInput, ctx, session)
-      return { row, status: 'created', movement }
-    } catch (error) {
-      const rowError = toImportRowError(error)
-      // Falha de infraestrutura (ex.: a transação caiu) não é culpa da linha: sobe, e o driver
-      // repete o bloco se for transitória; senão o pedido falha inteiro e nada é gravado.
-      if (rowError.code === 'INTERNAL_ERROR') throw error
-      return { row, status: 'failed', error: rowError }
-    }
+  /**
+   * O erro de UMA linha vira o resultado dela. Falha de infraestrutura (ex.: a transação caiu) não é
+   * culpa da linha: sobe, e o driver repete o bloco se for transitória; senão o pedido falha inteiro e
+   * nada é gravado.
+   */
+  private rowFailure (row: number, error: unknown): ImportMovementRowResult {
+    const rowError = toImportRowError(error)
+    if (rowError.code === 'INTERNAL_ERROR') throw error
+    return { row, status: 'failed', error: rowError }
   }
+}
+
+function rowNumberOf (raw: unknown): number {
+  const rowNumber = Number((raw as { row?: unknown })?.row)
+  return Number.isInteger(rowNumber) && rowNumber >= 1 ? rowNumber : 0
 }
 
 export { IMPORT_MOVEMENTS_MAX_ROWS }
