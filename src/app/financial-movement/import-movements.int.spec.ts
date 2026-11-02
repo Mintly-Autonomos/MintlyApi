@@ -104,9 +104,10 @@ describe('POST /financial-movements/import (Integration)', () => {
     expect(await available(db, cashId)).toBe(before + 300)
   })
 
-  it('linha inválida, de conta inexistente ou de categoria trocada falha sozinha', async () => {
+  it('tudo ou nada: uma linha com erro desfaz o lote inteiro e diz o motivo de cada linha', async () => {
     const { auth, db, cashId, revenueCatId, expenseCatId } = await setup()
     const ok = { accountId: cashId, categoryId: revenueCatId }
+    const before = await available(db, cashId)
 
     const res = await post(auth, {
       idempotencyKey: 'arquivo-misto-12345',
@@ -119,30 +120,69 @@ describe('POST /financial-movements/import (Integration)', () => {
       ],
     })
 
-    expect(res.statusCode).toBe(201)
+    // Nada foi criado, então a resposta não é 201.
+    expect(res.statusCode).toBe(200)
     const body = res.json().payload
-    expect(body).toMatchObject({ total: 5, created: 2, failed: 3 })
+    expect(body).toMatchObject({ replayed: false, total: 5, created: 0, failed: 5 })
     const byRow = Object.fromEntries(body.results.map((r: any) => [r.row, r]))
-    expect(byRow[1].status).toBe('created')
+    expect(byRow[1]).toMatchObject({ status: 'failed', error: { code: 'ROLLED_BACK' } })
     expect(byRow[2]).toMatchObject({ status: 'failed', error: { code: 'VALIDATION_ERROR' } })
     expect(byRow[3]).toMatchObject({ status: 'failed', error: { code: 'NOT_FOUND' } })
     expect(byRow[4]).toMatchObject({ status: 'failed', error: { code: 'VALIDATION_ERROR' } })
-    expect(byRow[5].status).toBe('created')
+    expect(byRow[5]).toMatchObject({ status: 'failed', error: { code: 'ROLLED_BACK' } })
+    expect(await db.collection('financial_movements').countDocuments({})).toBe(0)
+    expect(await available(db, cashId)).toBe(before)
+  })
+
+  it('o lote máximo (500 linhas) cabe numa transação só e ajusta o saldo de uma vez', async () => {
+    const { auth, db, cashId, revenueCatId } = await setup()
+    const before = await available(db, cashId)
+
+    const res = await post(auth, {
+      idempotencyKey: 'arquivo-maximo-12345',
+      rows: Array.from({ length: 500 }, (_, i) => row(i + 1, { accountId: cashId, categoryId: revenueCatId })),
+    })
+
+    expect(res.statusCode).toBe(201)
+    expect(res.json().payload).toMatchObject({ total: 500, created: 500, failed: 0 })
+    expect(await available(db, cashId)).toBe(before + 500 * 100)
+  }, 60_000)
+
+  it('importação desfeita libera a chave: reenviar o lote corrigido grava tudo', async () => {
+    const { auth, db, cashId, revenueCatId } = await setup()
+    const ok = { accountId: cashId, categoryId: revenueCatId }
+    const key = 'arquivo-corrigido-1234'
+
+    const bad = await post(auth, { idempotencyKey: key, rows: [row(1, ok), row(2, { ...ok, date: '28/10/2026' })] })
+    expect(bad.json().payload).toMatchObject({ created: 0, failed: 2 })
+
+    const fixed = await post(auth, { idempotencyKey: key, rows: [row(1, ok), row(2, ok)] })
+    expect(fixed.statusCode).toBe(201)
+    expect(fixed.json().payload).toMatchObject({ replayed: false, created: 2, failed: 0 })
     expect(await db.collection('financial_movements').countDocuments({})).toBe(2)
   })
 
-  it('linha repetida no mesmo lote vira DUPLICATE; o resto segue', async () => {
-    const { auth, cashId, revenueCatId } = await setup()
+  it('linha repetida no mesmo lote vira DUPLICATE e desfaz o lote; com confirmDuplicate passa', async () => {
+    const { auth, db, cashId, revenueCatId } = await setup()
     const same = { accountId: cashId, categoryId: revenueCatId, title: 'Venda igual' }
+    const other = { accountId: cashId, categoryId: revenueCatId }
 
     const res = await post(auth, {
       idempotencyKey: 'arquivo-dup-123456',
-      rows: [row(1, same), row(2, same), row(3, { accountId: cashId, categoryId: revenueCatId })],
+      rows: [row(1, same), row(2, same), row(3, other)],
     })
 
     const body = res.json().payload
-    expect(body).toMatchObject({ created: 2, failed: 1 })
+    expect(body).toMatchObject({ created: 0, failed: 3 })
+    expect(body.results[0]).toMatchObject({ row: 1, error: { code: 'ROLLED_BACK' } })
     expect(body.results[1]).toMatchObject({ row: 2, status: 'failed', error: { code: 'DUPLICATE' } })
+    expect(await db.collection('financial_movements').countDocuments({})).toBe(0)
+
+    const confirmed = await post(auth, {
+      idempotencyKey: 'arquivo-dup-654321',
+      rows: [row(1, same), row(2, { ...same, confirmDuplicate: true }), row(3, other)],
+    })
+    expect(confirmed.json().payload).toMatchObject({ created: 3, failed: 0 })
   })
 
   it('reenviar a mesma chave devolve o resultado anterior sem gravar de novo', async () => {
