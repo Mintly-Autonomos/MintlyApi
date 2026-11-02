@@ -97,44 +97,63 @@ describe('/restaurants/me (Integration)', () => {
     expect((await getMe(auth, q)).statusCode).toBe(400)
   })
 
-  describe('onboarding no servidor', () => {
-    it('quem acabou de se cadastrar nasce com o onboarding pendente', async () => {
+  describe('primeiro acesso (onboarding guardado no servidor)', () => {
+    const completeFirstAccess = (auth: Record<string, string>) =>
+      app.inject({ method: 'POST', url: '/restaurants/me/first-access', headers: auth })
+
+    it('quem acabou de se cadastrar nasce com o primeiro acesso VAZIO (onboarding pendente)', async () => {
       const { auth } = await signup(freshEnv())
-      const res = await getMe(auth)
-      expect(res.json().payload.restaurant.onboardingPending).toBe(true)
+      const restaurant = (await getMe(auth)).json().payload.restaurant
+      expect(restaurant.firstAccessAt).toBeNull()
     })
 
-    it('concluir: PATCH onboardingPending=false; continua concluído nas leituras seguintes', async () => {
+    it('concluir grava a data do servidor; continua preenchida nas leituras seguintes', async () => {
       const { auth } = await signup(freshEnv())
-      const done = await patchMe(auth, { onboardingPending: false })
+      const antes = Date.now()
+      const done = await completeFirstAccess(auth)
       expect(done.statusCode).toBe(200)
-      expect(done.json().payload.onboardingPending).toBe(false)
-      expect((await getMe(auth)).json().payload.restaurant.onboardingPending).toBe(false)
+      const at = new Date(done.json().payload.firstAccessAt).getTime()
+      expect(at).toBeGreaterThanOrEqual(antes - 1000)
+      expect(at).toBeLessThanOrEqual(Date.now() + 1000)
+      expect(new Date((await getMe(auth)).json().payload.restaurant.firstAccessAt).getTime()).toBe(at)
     })
 
-    it('ninguém reabre o onboarding: onboardingPending=true é recusado e nada muda', async () => {
+    it('repetir não muda a data (idempotente) e o cliente não escolhe a data', async () => {
       const { auth } = await signup(freshEnv())
-      await patchMe(auth, { onboardingPending: false })
-      const res = await patchMe(auth, { onboardingPending: true })
-      expect(res.statusCode).toBe(400)
-      expect((await getMe(auth)).json().payload.restaurant.onboardingPending).toBe(false)
+      const first = (await completeFirstAccess(auth)).json().payload.firstAccessAt
+      const again = (await app.inject({ method: 'POST', url: '/restaurants/me/first-access', headers: auth, payload: { firstAccessAt: '2020-01-01' } })).json().payload.firstAccessAt
+      expect(again).toBe(first)
     })
 
-    it('restaurante anterior ao onboarding no servidor (sem o campo) não tem nada pendente', async () => {
+    it('o PATCH não preenche o primeiro acesso (só o servidor, ao concluir)', async () => {
+      const { auth } = await signup(freshEnv())
+      const res = await patchMe(auth, { firstAccessAt: '2026-11-02T00:00:00.000Z' })
+      expect(res.statusCode).toBe(400)
+      expect((await getMe(auth)).json().payload.restaurant.firstAccessAt).toBeNull()
+    })
+
+    it('restaurante anterior ao campo (ausente) não tem nada pendente e concluir não o altera', async () => {
       const env = freshEnv()
       const { auth, restaurantId } = await signup(env)
       await mongoConnection.getDatabase(env).collection('restaurants')
-        .updateOne({ _id: new ObjectId(restaurantId) }, { $unset: { onboardingPending: '' } })
-      const restaurant = (await getMe(auth)).json().payload.restaurant
-      expect(restaurant.onboardingPending).toBeUndefined()
+        .updateOne({ _id: new ObjectId(restaurantId) }, { $unset: { firstAccessAt: '' } })
+      const antes = (await getMe(auth)).json().payload.restaurant
+      expect(antes.firstAccessAt).toBeUndefined()
+      const depois = (await completeFirstAccess(auth)).json().payload
+      expect(depois.firstAccessAt).toBeUndefined()
     })
 
-    it('concluir o onboarding de um restaurante não mexe no do outro', async () => {
+    it('concluir o de um restaurante não mexe no do outro', async () => {
       const env = freshEnv()
       const a = await signup(env, 'a')
       const b = await signup(env, 'b')
-      await patchMe(a.auth, { onboardingPending: false })
-      expect((await getMe(b.auth)).json().payload.restaurant.onboardingPending).toBe(true)
+      await completeFirstAccess(a.auth)
+      expect((await getMe(b.auth)).json().payload.restaurant.firstAccessAt).toBeNull()
+    })
+
+    it('sem token → 401', async () => {
+      const res = await app.inject({ method: 'POST', url: '/restaurants/me/first-access', headers: { env: freshEnv() } })
+      expect(res.statusCode).toBe(401)
     })
   })
 

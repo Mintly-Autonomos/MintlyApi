@@ -4,7 +4,7 @@ import { ValidationError } from '../../../core/errors/core/validation-error'
 import { RestaurantRepository } from '../restaurant-repository'
 
 /**
- * PATCH /restaurants/me — nome, regime tributário e conclusão do onboarding (`onboardingPending: false`). O schema é estrito: audit,
+ * PATCH /restaurants/me — nome e regime tributário. O schema é estrito: audit,
  * restaurantId e qualquer outro campo são rejeitados (400 pelo error handler).
  * Sem distinção owner × member: nenhuma rota tem hoje (pendência registrada).
  */
@@ -20,10 +20,6 @@ export class UpdateRestaurantUseCase {
     }
     if ('taxRegime' in changes && changes.taxRegime == null) {
       throw new ValidationError('taxRegime inválido: use mei ou simplesNacionalAnexoI.')
-    }
-    // O onboarding só se conclui: nenhum cliente reabre (true) o que o servidor marcou como feito.
-    if ('onboardingPending' in changes && changes.onboardingPending !== false) {
-      throw new ValidationError('onboardingPending só pode ser marcado como concluído (false).')
     }
     if (Object.keys(changes).length === 0) return this.repo.findMine(ctx)
     return this.repo.updateMine(ctx, {

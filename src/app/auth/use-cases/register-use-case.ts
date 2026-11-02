@@ -87,9 +87,10 @@ export class RegisterUseCase {
 
         // ── restaurant ────────────────────────────────────────────────────────
         const restaurantInsert = await db.collection('restaurants').insertOne(
-          // onboardingPending: quem acabou de se cadastrar ainda precisa do onboarding (guardado aqui, e não no
-          // navegador, para valer em qualquer aparelho e depois de sair e entrar). Os antigos não têm o campo.
-          { name: data.restaurantName, onboardingPending: true, audit },
+          // firstAccessAt: nasce VAZIO (null) = onboarding pendente; o servidor preenche a data quando o dono
+          // conclui o onboarding. Guardado aqui, e não no navegador, para valer em qualquer aparelho e depois de
+          // sair e entrar. Restaurantes antigos não têm o campo (ausente) e não passam pelo onboarding.
+          { name: data.restaurantName, firstAccessAt: null, audit },
           { session },
         )
         const restaurantId = restaurantInsert.insertedId.toHexString()

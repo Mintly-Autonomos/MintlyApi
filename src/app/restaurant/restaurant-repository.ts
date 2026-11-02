@@ -21,6 +21,19 @@ export class RestaurantRepository {
     return doc
   }
 
+  /**
+   * Carimba o primeiro acesso (conclusão do onboarding) com a hora do servidor. Só mexe em quem tem o
+   * campo VAZIO (`null`, como o cadastro grava): repetir não muda a data e restaurante antigo (sem o
+   * campo) fica como está. Devolve o restaurante em qualquer caso.
+   */
+  async completeFirstAccess (ctx: RequestContext, now: Date): Promise<any> {
+    await this.col(ctx).updateOne(
+      { _id: this.id(ctx), firstAccessAt: { $type: 'null' } },
+      { $set: { firstAccessAt: now, 'audit.updatedAt': now, 'audit.updatedBy': ctx.userId } },
+    )
+    return this.findMine(ctx)
+  }
+
   async updateMine (ctx: RequestContext, set: Record<string, unknown>): Promise<any> {
     const doc = await this.col(ctx).findOneAndUpdate({ _id: this.id(ctx) }, { $set: set }, { returnDocument: 'after' })
     if (!doc) throw new NotFoundError(Resource.Restaurant, ctx.restaurantId)
