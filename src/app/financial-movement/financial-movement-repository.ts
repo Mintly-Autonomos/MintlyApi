@@ -1,12 +1,17 @@
 import { ClientSession, Collection, Document } from 'mongodb'
 import { MongodbCrudRepository } from '../../core/crud/mongodb-crud-repository'
 import { RequestContext } from '../../core/context/request-context'
-import { toDecimal128, decimalToNumber } from '../../core/money/money'
+import { toDecimal128, decimalToNumber, toCents } from '../../core/money/money'
 import { ensure as ensureFinancialMovementIndexes } from '../../infrastructure/db/indices/financial-movements'
 import { escapeRegex } from '../../core/util/escape-regex'
 import { FinancialMovement } from 'mintly-lib'
 
 const MONEY_FIELDS = ['grossValue', 'feeValue', 'netValue'] as const
+
+/** Chave de duplicidade (MIN-49 regra 26): conta, título, valor bruto (em centavos) e data. */
+export function duplicateKey (c: { accountId: string; title: string; grossValue: number; date: Date }): string {
+  return [c.accountId, c.title, toCents(c.grossValue), new Date(c.date).getTime()].join('|')
+}
 
 /** Dinheiro do domínio (number) -> Decimal128 (persistência). Muta uma cópia. */
 export function movementToStorage<T extends Record<string, any>> (doc: T): T {
@@ -130,5 +135,42 @@ export class FinancialMovementRepository extends MongodbCrudRepository<Financial
     )
 
     return movementFromStorage(found as any)
+  }
+
+  /**
+   * Versão em lote de `findDuplicate` (importação): UMA consulta traz as movimentações recentes das
+   * contas e títulos do lote, e o resto do critério (valor e data) é conferido em memória. Devolve as
+   * chaves (`duplicateKey`) que já existem; as demais linhas do lote não têm duplicata no banco.
+   */
+  async findDuplicateKeys (
+    criteria: { accountId: string; title: string; grossValue: number; date: Date }[],
+    ctx: RequestContext,
+    session?: ClientSession,
+  ): Promise<Set<string>> {
+    if (criteria.length === 0) return new Set()
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000)
+    const wanted = new Set(criteria.map(duplicateKey))
+
+    const recent = await this.getCollection(ctx).find(
+      {
+        restaurantId: ctx.restaurantId,
+        'account._id': { $in: [...new Set(criteria.map((c) => c.accountId))] },
+        title: { $in: [...new Set(criteria.map((c) => c.title))] },
+        'audit.createdAt': { $gte: twoMinutesAgo },
+      } as any,
+      { session },
+    ).toArray()
+
+    const found = new Set<string>()
+    for (const m of recent as any[]) {
+      const key = duplicateKey({
+        accountId: m.account?._id,
+        title: m.title,
+        grossValue: decimalToNumber(m.grossValue),
+        date: m.date,
+      })
+      if (wanted.has(key)) found.add(key)
+    }
+    return found
   }
 }

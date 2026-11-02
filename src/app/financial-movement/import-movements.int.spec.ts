@@ -242,6 +242,82 @@ describe('POST /financial-movements/import (Integration)', () => {
     expect(res.statusCode).toBe(400)
   })
 
+  it('o saldo de cada conta recebe a soma exata do lote (entradas, saídas, previstas e canceladas)', async () => {
+    const { auth, db, restaurantId, cashId, revenueCatId, expenseCatId } = await setup()
+    const cash = await db.collection('financial_accounts').findOne({ _id: new ObjectId(cashId) })
+    const { _id: _drop, ...rest } = cash!
+    const bank = await db.collection('financial_accounts').insertOne({ ...rest, name: 'Banco', isDefault: false, restaurantId })
+    const bankId = String(bank.insertedId)
+    const balances = async (id: string) => {
+      const a = await db.collection('financial_accounts').findOne({ _id: new ObjectId(id) })
+      return { available: dec(a!.availableBalance), predicted: dec(a!.predictedBalance) }
+    }
+    const cashBefore = await balances(cashId)
+    const bankBefore = await balances(bankId)
+
+    const inCash = { accountId: cashId, categoryId: revenueCatId }
+    const outCash = { accountId: cashId, categoryId: expenseCatId, direction: 'out' }
+    const outBank = { accountId: bankId, categoryId: expenseCatId, direction: 'out' }
+    const res = await post(auth, {
+      idempotencyKey: 'arquivo-saldo-12345',
+      rows: [
+        row(1, { ...inCash, grossValue: 100.1, status: 'settled' }),
+        row(2, { ...inCash, grossValue: 50.2, status: 'settled' }),
+        row(3, { ...outCash, grossValue: 30.25, status: 'settled' }),
+        row(4, { ...inCash, grossValue: 200.3, status: 'pending' }),
+        row(5, { ...inCash, grossValue: 999, status: 'cancelled' }),
+        row(6, { ...outBank, grossValue: 10.1, status: 'settled', title: 'Banco 1' }),
+        row(7, { ...outBank, grossValue: 10.1, status: 'settled', title: 'Banco 2' }),
+        row(8, { ...outBank, grossValue: 10.1, status: 'settled', title: 'Banco 3' }),
+      ],
+    })
+
+    expect(res.statusCode).toBe(201)
+    expect(res.json().payload).toMatchObject({ total: 8, created: 8, failed: 0 })
+    const cashAfter = await balances(cashId)
+    const bankAfter = await balances(bankId)
+    // Em centavos, para não discutir ruído de float: 100,10 + 50,20 - 30,25 = 120,05 | previsto 200,30.
+    expect(Math.round((cashAfter.available - cashBefore.available) * 100)).toBe(12005)
+    expect(Math.round((cashAfter.predicted - cashBefore.predicted) * 100)).toBe(20030)
+    expect(Math.round((bankAfter.available - bankBefore.available) * 100)).toBe(-3030)
+    expect(bankAfter.predicted).toBe(bankBefore.predicted)
+    expect(await db.collection('financial_movements').countDocuments({})).toBe(8)
+  })
+
+  it('linha igual a uma movimentação que já está no banco (últimos 2 min) vira DUPLICATE e nada é gravado', async () => {
+    const { auth, db, cashId, revenueCatId } = await setup()
+    const ok = { accountId: cashId, categoryId: revenueCatId }
+    const first = await post(auth, { idempotencyKey: 'arquivo-ja-existe-1', rows: [row(1, { ...ok, title: 'Já existe' })] })
+    expect(first.statusCode).toBe(201)
+
+    const second = await post(auth, {
+      idempotencyKey: 'arquivo-ja-existe-2',
+      rows: [row(1, { ...ok, title: 'Já existe' }), row(2, { ...ok, title: 'Nova' })],
+    })
+
+    const body = second.json().payload
+    expect(body).toMatchObject({ created: 0, failed: 2 })
+    expect(body.results[0]).toMatchObject({ row: 1, status: 'failed', error: { code: 'DUPLICATE' } })
+    expect(body.results[1]).toMatchObject({ row: 2, status: 'failed', error: { code: 'ROLLED_BACK' } })
+    expect(await db.collection('financial_movements').countDocuments({})).toBe(1)
+  })
+
+  it('o lote não faz consultas por linha: poucas operações no banco, não importa o tamanho', async () => {
+    const { auth, db, cashId, revenueCatId } = await setup()
+    await db.command({ profile: 2 })
+    const res = await post(auth, {
+      idempotencyKey: 'arquivo-operacoes-12',
+      rows: Array.from({ length: 200 }, (_, i) => row(i + 1, { accountId: cashId, categoryId: revenueCatId })),
+    })
+    await db.command({ profile: 0 })
+
+    expect(res.statusCode).toBe(201)
+    const ops = await db.collection('system.profile').find({ ns: /\.(financial_|menu_items)/ }).toArray()
+    // Uma leitura de conta, de categoria e de duplicidade, um insertMany e um update de saldo (+ margem).
+    // Antes eram ~5 operações por linha (mil, neste lote).
+    expect(ops.length).toBeLessThanOrEqual(8)
+  }, 60_000)
+
   it('exige autenticação', async () => {
     const res = await app.inject({
       method: 'POST',

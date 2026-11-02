@@ -34,6 +34,36 @@ export function mergeItemRequests (items: MovementItemRequest[]): MovementItemRe
   })
 }
 
+/** Prato com id que não é um ObjectId: recusado antes de qualquer consulta ao cardápio. */
+function assertValidDishIds (requested: MovementItemRequest[]): void {
+  const invalid = requested.find((i) => !ObjectId.isValid(i.menuItemId))
+  if (invalid) throw new ValidationError('Prato inválido na venda.')
+}
+
+/**
+ * Parte pura de `resolveMovementItems`: confere os pratos pedidos contra cardápio JÁ carregado
+ * (`dishesById`, só do restaurante) e devolve o que fica guardado na venda. A importação em lote usa
+ * esta função com o cardápio carregado uma vez só, em vez de consultar o banco a cada linha.
+ */
+export function resolveMovementItemsFrom (
+  items: MovementItemRequest[],
+  dishesById: ReadonlyMap<string, Record<string, any>>,
+  keepInactive?: ReadonlySet<string>,
+): StoredMovementItem[] {
+  const requested = mergeItemRequests(items)
+  if (requested.length === 0) return []
+  assertValidDishIds(requested)
+
+  return requested.map(({ menuItemId, qty }) => {
+    const dish = dishesById.get(menuItemId)
+    if (!dish) throw new ValidationError('Prato não encontrado no cardápio deste restaurante.')
+    if (dish.status !== 'active' && !keepInactive?.has(menuItemId)) {
+      throw new ValidationError(`O prato "${String(dish.name)}" está fora do cardápio.`)
+    }
+    return { menuItemId, name: String(dish.name), qty, unitPrice: Number(dish.price ?? 0) }
+  })
+}
+
 /**
  * Resolve os pratos pedidos contra o cardápio VIVO do restaurante e devolve o que fica guardado na
  * venda: nome e preço vêm do cardápio, nunca do cliente (ele não pode forjar o ranking de mais
@@ -50,9 +80,7 @@ export async function resolveMovementItems (params: {
 }): Promise<StoredMovementItem[]> {
   const requested = mergeItemRequests(params.items)
   if (requested.length === 0) return []
-
-  const invalid = requested.find((i) => !ObjectId.isValid(i.menuItemId))
-  if (invalid) throw new ValidationError('Prato inválido na venda.')
+  assertValidDishIds(requested)
 
   const docs = await params.db.collection('menu_items')
     .find(
@@ -60,14 +88,5 @@ export async function resolveMovementItems (params: {
       { session: params.session },
     )
     .toArray()
-  const byId = new Map(docs.map((d) => [String(d._id), d]))
-
-  return requested.map(({ menuItemId, qty }) => {
-    const dish = byId.get(menuItemId)
-    if (!dish) throw new ValidationError('Prato não encontrado no cardápio deste restaurante.')
-    if (dish.status !== 'active' && !params.keepInactive?.has(menuItemId)) {
-      throw new ValidationError(`O prato "${dish.name}" está fora do cardápio.`)
-    }
-    return { menuItemId, name: String(dish.name), qty, unitPrice: Number(dish.price ?? 0) }
-  })
+  return resolveMovementItemsFrom(requested, new Map(docs.map((d) => [String(d._id), d])), params.keepInactive)
 }

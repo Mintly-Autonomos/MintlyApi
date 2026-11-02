@@ -1,5 +1,5 @@
 import { Collection, ObjectId, ClientSession } from 'mongodb'
-import { toDecimal128 } from '../../core/money/money'
+import { centsToDecimal128, toCents, toDecimal128 } from '../../core/money/money'
 import { NotFoundError } from '../../core/errors/core/not-found-error'
 import { Resource } from '../../core/types/resource'
 import { BalanceImpact } from './movement-rules'
@@ -32,5 +32,40 @@ export async function applyBalanceImpact (
   )
   if (res.matchedCount === 0) {
     throw new NotFoundError(Resource.FinancialAccount, String(accountId))
+  }
+}
+
+/**
+ * Versão em lote de `applyBalanceImpact` (importação): soma os impactos de várias movimentações por
+ * conta — em centavos inteiros, sem passar por float — e faz UM `$inc` por conta, em vez de um por
+ * movimentação. O resultado no saldo é o mesmo de aplicar um a um. Mesmas garantias: escopado por
+ * `restaurantId` e falha alto se a conta não existir.
+ */
+export async function applyBalanceImpacts (
+  accounts: Collection<any>,
+  entries: { accountId: ObjectId; impact: BalanceImpact }[],
+  restaurantId: string | undefined,
+  session: ClientSession,
+  now: Date,
+): Promise<void> {
+  const perAccount = new Map<string, { accountId: ObjectId; availableBalance: number; predictedBalance: number }>()
+  for (const { accountId, impact } of entries) {
+    if (!impact.bucket) continue
+    const key = String(accountId)
+    const sums = perAccount.get(key) ?? { accountId, availableBalance: 0, predictedBalance: 0 }
+    sums[impact.bucket === 'available' ? 'availableBalance' : 'predictedBalance'] += toCents(impact.delta)
+    perAccount.set(key, sums)
+  }
+
+  for (const { accountId, availableBalance, predictedBalance } of perAccount.values()) {
+    const inc: Record<string, ReturnType<typeof centsToDecimal128>> = {}
+    if (availableBalance !== 0) inc.availableBalance = centsToDecimal128(availableBalance)
+    if (predictedBalance !== 0) inc.predictedBalance = centsToDecimal128(predictedBalance)
+    const update: Record<string, unknown> = { $set: { 'audit.updatedAt': now } }
+    if (Object.keys(inc).length > 0) update.$inc = inc
+    const res = await accounts.updateOne({ _id: accountId, restaurantId }, update, { session })
+    if (res.matchedCount === 0) {
+      throw new NotFoundError(Resource.FinancialAccount, String(accountId))
+    }
   }
 }
