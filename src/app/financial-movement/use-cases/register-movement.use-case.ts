@@ -120,6 +120,7 @@ export class RegisterMovementUseCase {
         }
         if (snapshot.feePercentApplied != null) doc.feePercentApplied = snapshot.feePercentApplied
         if (snapshot.settlementDaysApplied != null) doc.settlementDaysApplied = snapshot.settlementDaysApplied
+        if (snapshot.settlementRuleApplied != null) doc.settlementRuleApplied = snapshot.settlementRuleApplied
         if (dueDate != null) doc.dueDate = dueDate
         // À vista: o dinheiro mexeu na data do lançamento, não na hora do cadastro.
         const settledAt = resolveSettledAt({ newStatus: status, fallback: date })

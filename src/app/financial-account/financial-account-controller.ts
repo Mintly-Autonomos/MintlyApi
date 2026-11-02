@@ -10,7 +10,13 @@ import { SetDefaultAccountUseCase } from './use-cases/set-default-account.use-ca
 import { InactivateAccountUseCase } from './use-cases/inactivate-account.use-case'
 import { escapeRegex } from '../../core/util/escape-regex'
 import { StatusCodes } from 'http-status-codes'
-import { assertAccountUpdateAllowed, buildAccountChangeHistory, AccountUpdateChanges } from './account-rules'
+import {
+  assertAccountUpdateAllowed,
+  assertPlatformSettlement,
+  buildAccountChangeHistory,
+  syncLegacySettlementDays,
+  AccountUpdateChanges,
+} from './account-rules'
 
 export class FinancialAccountController extends CrudController<FinancialAccount, string> {
   constructor (
@@ -33,6 +39,12 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
     )
   }
 
+  /** POST — conta plataforma precisa ter a regra de repasse (ou o prazo antigo). */
+  async insert (item: FinancialAccount, source?: ContextSource): Promise<ResponseStructure> {
+    assertPlatformSettlement(item as any)
+    return super.insert(syncLegacySettlementDays(item as any), source)
+  }
+
   /**
    * PATCH /:id — guards de update:
    *  - `isDefault` não é editável aqui (rota própria: PATCH /:id/default).
@@ -48,7 +60,8 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
     const touchesTypeOrFee =
       changes.type !== undefined ||
       changes.feePercent !== undefined ||
-      changes.settlementDays !== undefined
+      changes.settlementDays !== undefined ||
+      changes.settlementRule !== undefined
     const touchesHistoryFields = touchesTypeOrFee || item.name !== undefined || item.status !== undefined
 
     // Só vai ao banco quando o PATCH mexe em algo que a regra ou o histórico precisam comparar.
@@ -62,13 +75,19 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
       if (touchesTypeOrFee) assertAccountUpdateAllowed(String(stored.type), changes)
     }
 
-    const response = await super.update(id, item, source)
+    const response = await super.update(id, syncLegacySettlementDays(item as any), source)
 
     // Histórico (nome, status, taxa, prazo): só depois do update validado e gravado.
     if (stored) {
       const entries = buildAccountChangeHistory(
         stored,
-        { name: item.name, status: item.status, feePercent: changes.feePercent, settlementDays: changes.settlementDays },
+        {
+          name: item.name,
+          status: item.status,
+          feePercent: changes.feePercent,
+          settlementDays: changes.settlementDays,
+          settlementRule: changes.settlementRule,
+        },
         ctx.userId ?? 'system',
       )
       if (entries.length > 0) await this.accountRepo.appendHistory(id, entries, ctx)

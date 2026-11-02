@@ -1,4 +1,14 @@
-import { FinancialAccountType, MovementDirection, MovementStatus, RecordStatus, Subcategory } from 'mintly-lib'
+import {
+  FinancialAccountType,
+  MovementDirection,
+  MovementStatus,
+  RecordStatus,
+  SettlementRule,
+  SettlementRuleKind,
+  Subcategory,
+  resolveSettlementRule,
+  settlementDueDate,
+} from 'mintly-lib'
 import { computeFeeNet } from '../../core/money/money'
 import { ValidationError } from '../../core/errors/core/validation-error'
 
@@ -13,6 +23,7 @@ export interface AccountForRules {
   type: string
   feePercent?: number
   settlementDays?: number
+  settlementRule?: SettlementRule | null
 }
 
 /** Soma `days` dias corridos a uma data (não muta a original). */
@@ -57,6 +68,8 @@ export interface MovementSnapshot {
   netValue: number
   feePercentApplied?: number
   settlementDaysApplied?: number
+  /** Regra de repasse aplicada quando NÃO é "N dias" (semana, quinzena, mês); "N dias" fica em `settlementDaysApplied`. */
+  settlementRuleApplied?: SettlementRule
   /** Vencimento calculado pela conta com prazo. Ver `dueDate` no schema da lib. */
   dueDate?: Date
 }
@@ -68,6 +81,7 @@ export interface MovementSnapshot {
 export interface AppliedFee {
   percent?: number
   settlementDays?: number
+  settlementRule?: SettlementRule | null
 }
 
 /**
@@ -98,7 +112,8 @@ export function computeSnapshot (params: {
 
   if (direction === MovementDirection.In && isPlatform) {
     const percent = fee != null ? fee.percent : account.feePercent
-    const settlementDays = fee != null ? fee.settlementDays : account.settlementDays
+    // Tudo-ou-nada: com `fee` (edição) a regra vem SÓ do congelado; sem ele, da conta viva.
+    const rule = resolveSettlementRule(fee != null ? fee : account)
 
     const { feeValue, netValue } = computeFeeNet(grossValue, percent)
     const snapshot: MovementSnapshot = {
@@ -106,16 +121,17 @@ export function computeSnapshot (params: {
       netValue,
       feePercentApplied: percent,
     }
-    if (settlementDays != null) {
-      snapshot.settlementDaysApplied = settlementDays
+    if (rule != null) {
+      // "N dias" segue gravado em `settlementDaysApplied` (como sempre); as demais regras, em `settlementRuleApplied`.
+      if (rule.kind === SettlementRuleKind.AfterDays) snapshot.settlementDaysApplied = rule.days
+      else snapshot.settlementRuleApplied = rule
 
       // Prazo ZERO é "cai na hora": registra o prazo aplicado, mas NÃO gera
-      // vencimento. Sem esta guarda o movimento nasceria `pending` com
-      // vencimento igual à data do lançamento — o oposto do que a conta de
-      // prazo zero faz hoje (`defaultStatus` exigia `settlementDays > 0`).
-      if (settlementDays > 0) {
-        snapshot.dueDate = addDays(date, settlementDays)
-      }
+      // vencimento (`settlementDueDate` devolve null). Sem isso o movimento nasceria `pending` com
+      // vencimento igual à data do lançamento — o oposto do que a conta de prazo zero faz.
+      // Semana/quinzena/mês: o primeiro dia de repasse DEPOIS do dia da venda.
+      const dueDate = settlementDueDate(rule, date)
+      if (dueDate != null) snapshot.dueDate = dueDate
     }
     return snapshot
   }

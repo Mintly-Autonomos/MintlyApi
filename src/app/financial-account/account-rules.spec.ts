@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { assertAccountUpdateAllowed, buildAccountChangeHistory } from './account-rules'
+import { assertAccountUpdateAllowed, assertPlatformSettlement, buildAccountChangeHistory, syncLegacySettlementDays } from './account-rules'
+import { ValidationError } from '../../core/errors/core/validation-error'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
 
 describe('assertAccountUpdateAllowed (P5)', () => {
@@ -63,5 +64,45 @@ describe('buildAccountChangeHistory', () => {
   it('mais de uma mudança sai na ordem nome, status, taxa, prazo', () => {
     const out = buildAccountChangeHistory({ ...stored, status: 'inactive' }, { settlementDays: 1, feePercent: 1, status: 'active', name: 'X' }, by, now)
     expect(out.map((e) => e.action)).toEqual(['update-name', 'reactivate', 'update-fee', 'update-settlement'])
+  })
+})
+
+describe('regra de repasse da conta', () => {
+  const quarta = { kind: 'weekly', weekday: 3 } as any
+
+  it('conta plataforma sem regra nem prazo é recusada na criação', () => {
+    expect(() => assertPlatformSettlement({ type: 'platform' })).toThrow(ValidationError)
+  })
+
+  it('plataforma com regra, ou só com o prazo antigo, passa', () => {
+    expect(() => assertPlatformSettlement({ type: 'platform', settlementRule: quarta })).not.toThrow()
+    expect(() => assertPlatformSettlement({ type: 'platform', settlementDays: 0 })).not.toThrow()
+  })
+
+  it('quinzenal com o mesmo dia duas vezes é recusado', () => {
+    const igual = { kind: 'biweekly', firstDay: 10, secondDay: 10 } as any
+    expect(() => assertPlatformSettlement({ type: 'platform', settlementRule: igual })).toThrow(ValidationError)
+    expect(() => assertAccountUpdateAllowed('platform', { settlementRule: igual })).toThrow(ValidationError)
+  })
+
+  it('outros tipos de conta não exigem nada, mas não aceitam regra no PATCH', () => {
+    expect(() => assertPlatformSettlement({ type: 'bank' })).not.toThrow()
+    expect(() => assertAccountUpdateAllowed('bank', { settlementRule: quarta })).toThrow(ConflictError)
+    expect(() => assertAccountUpdateAllowed('platform', { settlementRule: quarta })).not.toThrow()
+  })
+
+  it('"N dias" mantém o settlementDays antigo igual; as demais regras não mexem nele', () => {
+    expect(syncLegacySettlementDays({ settlementRule: { kind: 'afterDays', days: 7 } as any }).settlementDays).toBe(7)
+    expect(syncLegacySettlementDays({ settlementRule: quarta, settlementDays: 3 }).settlementDays).toBe(3)
+  })
+
+  it('o histórico conta a troca de regra em palavras', () => {
+    const now = new Date('2026-11-02T10:00:00.000Z')
+    const [e] = buildAccountChangeHistory({ settlementDays: 7 }, { settlementRule: quarta }, 'u1', now)
+    expect(e).toMatchObject({ action: 'update-settlement', detail: '7 dias após a venda → Toda quarta-feira' })
+  })
+
+  it('reenviar a mesma regra não suja o histórico', () => {
+    expect(buildAccountChangeHistory({ settlementRule: quarta }, { settlementRule: quarta }, 'u1')).toEqual([])
   })
 })

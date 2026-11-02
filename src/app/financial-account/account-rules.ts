@@ -1,10 +1,19 @@
-import { FinancialAccountType } from 'mintly-lib'
+import {
+  FinancialAccountType,
+  SettlementRule,
+  SettlementRuleKind,
+  describeSettlementRule,
+  resolveSettlementRule,
+  validateSettlementRule,
+} from 'mintly-lib'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
+import { ValidationError } from '../../core/errors/core/validation-error'
 
 export interface AccountUpdateChanges {
   type?: string
   feePercent?: number
   settlementDays?: number
+  settlementRule?: SettlementRule
 }
 
 /**
@@ -30,12 +39,49 @@ export function assertAccountUpdateAllowed (storedType: string, changes: Account
     )
   }
 
-  const touchesFee = changes.feePercent !== undefined || changes.settlementDays !== undefined
+  const touchesFee =
+    changes.feePercent !== undefined ||
+    changes.settlementDays !== undefined ||
+    changes.settlementRule !== undefined
   if (touchesFee && storedType !== FinancialAccountType.Platform) {
     throw new ConflictError(
-      'Somente contas do tipo plataforma têm taxa (feePercent) e prazo de liquidação (settlementDays).',
+      'Somente contas do tipo plataforma têm taxa (feePercent) e regra de repasse (settlementDays/settlementRule).',
     )
   }
+  if (changes.settlementRule !== undefined) assertSettlementRuleValid(changes.settlementRule)
+}
+
+/** A regra de repasse faz sentido (a forma já foi validada pelo schema da lib). */
+export function assertSettlementRuleValid (rule: SettlementRule): void {
+  const problem = validateSettlementRule(rule)
+  if (problem) throw new ValidationError(problem)
+}
+
+/**
+ * Criação: conta plataforma precisa dizer QUANDO a plataforma repassa (`settlementRule` ou o
+ * `settlementDays` antigo). O schema da lib tem os dois opcionais; que ao menos um exista é regra daqui.
+ */
+export function assertPlatformSettlement (input: {
+  type?: string
+  settlementDays?: number
+  settlementRule?: SettlementRule
+}): void {
+  if (input.type !== FinancialAccountType.Platform) return
+  if (resolveSettlementRule(input) === null) {
+    throw new ValidationError('Informe quando a plataforma repassa (settlementRule).')
+  }
+  if (input.settlementRule) assertSettlementRuleValid(input.settlementRule)
+}
+
+/**
+ * Mantém o `settlementDays` antigo coerente com a regra "N dias após a venda" (quem ainda lê só
+ * `settlementDays` continua certo). Nas outras regras o campo não tem sentido e fica como está.
+ */
+export function syncLegacySettlementDays<T extends { settlementRule?: SettlementRule, settlementDays?: number }> (item: T): T {
+  if (item.settlementRule?.kind === SettlementRuleKind.AfterDays) {
+    return { ...item, settlementDays: item.settlementRule.days }
+  }
+  return item
 }
 
 /** Evento gravado em `history[]` da conta (mesmo formato dos use cases de padrão/inativação). */
@@ -51,6 +97,7 @@ export interface AccountHistoryState {
   status?: string
   feePercent?: number
   settlementDays?: number
+  settlementRule?: SettlementRule
 }
 
 const fmtNumber = (n: number): string => String(n).replace('.', ',')
@@ -87,7 +134,13 @@ export function buildAccountChangeHistory (
     add('update-fee', `${fmtNumber(stored.feePercent ?? 0)}% → ${fmtNumber(changes.feePercent)}%`)
   }
 
-  if (changes.settlementDays !== undefined && changes.settlementDays !== (stored.settlementDays ?? 0)) {
+  if (changes.settlementRule !== undefined) {
+    const before = resolveSettlementRule(stored)
+    const after = changes.settlementRule
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      add('update-settlement', `${before ? describeSettlementRule(before) : 'Sem repasse'} → ${describeSettlementRule(after)}`)
+    }
+  } else if (changes.settlementDays !== undefined && changes.settlementDays !== (stored.settlementDays ?? 0)) {
     add('update-settlement', `${fmtNumber(stored.settlementDays ?? 0)} dias → ${fmtNumber(changes.settlementDays)} dias`)
   }
 
