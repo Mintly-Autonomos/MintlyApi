@@ -1,12 +1,14 @@
 import { FastifyInstance } from 'fastify'
 import { AiController } from './ai-controller'
+import { requireProTier } from './require-pro-tier'
 
 /**
- * IA do Mintly (Claude Haiku). Atrás do login e do portão de assinatura. Restaurante e usuário vêm do token e os
+ * IA do Mintly (Claude Haiku). Atrás do login e do portão de assinatura, e só para o plano Pro. Restaurante e usuário vêm do token e os
  * dados que a IA lê são montados no servidor: o corpo só diz a tela/mês ou o prato.
  */
 export async function aiRoutes (fastify: FastifyInstance) {
   const controller = new AiController()
+  fastify.addHook('preHandler', requireProTier)
 
   fastify.get('/usage', { schema: { tags: ['ai'], summary: 'Chamadas à IA usadas e restantes hoje' } }, async (request: any, reply) => controller.usage(request, reply))
 

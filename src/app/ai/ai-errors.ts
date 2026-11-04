@@ -14,3 +14,11 @@ export class AiUnavailableError extends BaseError {
     super(message, message, 'AI-0002', 503)
   }
 }
+
+/** 403: a IA faz parte do plano Pro. O front não oferece a IA no Básico; isto cobre quem chama a API direto ou trocou de plano com o app aberto. */
+export class AiProOnlyError extends BaseError {
+  constructor () {
+    const message = 'A IA do Mintly faz parte do plano Pro. Conheça o Pro na tela de assinatura.'
+    super(message, message, 'AI-0003', 403)
+  }
+}

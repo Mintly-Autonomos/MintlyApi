@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MongoMemoryReplSet } from 'mongodb-memory-server'
 import { FastifyInstance } from 'fastify'
+import { ObjectId } from 'mongodb'
 import { AI_DAILY_LIMIT, AI_MAX_PRICE_INCREASE_PERCENT } from 'mintly-lib'
 import { mongoConnection } from '../../infrastructure/db/mongodb'
 import { ensureAllIndexes } from '../../infrastructure/db/indices'
@@ -43,7 +44,8 @@ describe('IA do Mintly: rotas /ai (Integration, com a IA falsa)', () => {
     vi.restoreAllMocks()
   })
 
-  async function signup (env: string, tag = 'a') {
+  /** `tier`: a IA é do plano Pro, então as contas de teste nascem Pro; o Básico é testado à parte. */
+  async function signup (env: string, tag = 'a', tier: 'pro' | 'basic' | null = 'pro') {
     await ensureAllIndexes(env)
     const email = `dono_${tag}_${env}@teste.com`
     const res = await app.inject({
@@ -54,6 +56,10 @@ describe('IA do Mintly: rotas /ai (Integration, com a IA falsa)', () => {
     })
     expect(res.statusCode).toBe(201)
     const { accessToken, user } = res.json().payload
+    if (tier) {
+      await mongoConnection.getDatabase(env).collection('restaurants')
+        .updateOne({ _id: new ObjectId(user.restaurantId as string) }, { $set: { 'subscription.tier': tier } })
+    }
     return { env, auth: { env, authorization: `Bearer ${accessToken}` }, restaurantId: user.restaurantId as string, tag }
   }
 
@@ -67,6 +73,30 @@ describe('IA do Mintly: rotas /ai (Integration, com a IA falsa)', () => {
   }
 
   const textosOk = { texts: [{ index: 0, title: 'Falta definir seu regime', description: 'Sem o regime tributário, o imposto do resultado sai zerado. Vale configurar com seu contador.' }] }
+
+  describe('plano: a IA é do Pro', () => {
+    it.each([['basic' as const], [null]])('conta %s recebe 403 AI-0003 nas três rotas e a IA nem é chamada', async (tier) => {
+      const { auth } = await signup(freshEnv(), 'b', tier)
+
+      const respostas = await Promise.all([
+        get('/ai/usage', auth),
+        post('/ai/insights', auth, { page: 'overview' }),
+        post('/ai/price-suggestion', auth, {}),
+      ])
+
+      for (const res of respostas) {
+        expect(res.statusCode).toBe(403)
+        expect(JSON.stringify(res.json())).toContain('AI-0003')
+      }
+      expect(generator.generate).not.toHaveBeenCalled()
+    })
+
+    it('conta Pro usa a IA normalmente', async () => {
+      const { auth } = await signup(freshEnv(), 'p', 'pro')
+      const res = await get('/ai/usage', auth)
+      expect(res.statusCode).toBe(200)
+    })
+  })
 
   describe('POST /ai/insights', () => {
     it('reescreve o texto do card com os dados do restaurante e devolve o uso do dia', async () => {
@@ -258,7 +288,6 @@ describe('IA do Mintly: rotas /ai (Integration, com a IA falsa)', () => {
       const res = await post('/menu-items', a.auth, body)
       expect(res.statusCode).toBe(201)
       const id = res.json().payload._id as string
-      const { ObjectId } = await import('mongodb')
       const velho = new Date(Date.now() - diasParado * DAY_MS)
       await mongoConnection.getDatabase(a.env).collection('menu_items').updateOne({ _id: new ObjectId(id) }, { $set: { priceUpdatedAt: velho, priceReviewedAt: velho } })
       return id
