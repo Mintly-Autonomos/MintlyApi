@@ -6,6 +6,8 @@ import * as menuItems from './menu-items'
 import * as movementImports from './movement-imports'
 import * as payments from './payments'
 import * as auditLogs from './audit-logs'
+import * as aiUsage from './ai-usage'
+import * as aiCache from './ai-cache'
 
 /**
  * Registro de módulos de índice — um por collection.
@@ -16,7 +18,7 @@ import * as auditLogs from './audit-logs'
  * quando o índice já existe, o runner roda tudo a cada deploy com segurança,
  * por ambiente (o env define o banco em `getDatabase(env)`).
  */
-const modules = [financialAccounts, financialMovements, financialCategories, menuItems, movementImports, payments, auditLogs]
+const modules = [financialAccounts, financialMovements, financialCategories, menuItems, movementImports, payments, auditLogs, aiUsage, aiCache]
 
 /**
  * Garante (idempotente) todos os índices registrados no banco do `env`.
