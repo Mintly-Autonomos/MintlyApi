@@ -4,5 +4,7 @@ export enum Resource {
   FinancialAccount = 'FinancialAccount',
   FinancialCategory = 'FinancialCategory',
   FinancialMovement = 'FinancialMovement',
-  MenuItem = 'MenuItem'
+  MenuItem = 'MenuItem',
+  Member = 'Member',
+  User = 'User'
 }
