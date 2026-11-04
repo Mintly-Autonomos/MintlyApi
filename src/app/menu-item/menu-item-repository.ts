@@ -75,6 +75,15 @@ export class MenuItemRepository extends MongodbCrudRepository<MenuItem & Documen
     return result as unknown as MenuItem[]
   }
 
+  /** Todos os pratos ATIVOS do restaurante (o cardápio é pequeno: sem paginação). Read-only. */
+  async findActive (ctx: RequestContext): Promise<MenuItem[]> {
+    const result = await this.getCollection(ctx)
+      .find({ restaurantId: ctx.restaurantId, status: RecordStatus.Active } as any)
+      .sort({ priceUpdatedAt: 1 })
+      .toArray()
+    return result as unknown as MenuItem[]
+  }
+
   /** Pratos ATIVOS cuja última revisão de preço foi em `cutoff` ou antes — os mais antigos primeiro. */
   async findStale (cutoff: Date, ctx: RequestContext): Promise<MenuItem[]> {
     const result = await this.getCollection(ctx)
