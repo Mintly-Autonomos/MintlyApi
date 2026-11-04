@@ -4,6 +4,7 @@ import { ResponseBuilder } from '../../core/builders/response-builder/response-b
 import { GetRestaurantProfileQuery } from './use-cases/get-restaurant-profile.query'
 import { UpdateRestaurantUseCase } from './use-cases/update-restaurant.use-case'
 import { RestaurantRepository } from './restaurant-repository'
+import { requireOwner } from '../auth/require-owner'
 
 export class RestaurantController {
   constructor (
@@ -25,8 +26,10 @@ export class RestaurantController {
     return new ResponseBuilder().status(StatusCodes.OK).payload(result).send(reply)
   }
 
+  /** PATCH /restaurants/me — só o dono muda o nome e o regime tributário do restaurante. */
   async updateMe (request: any, reply: any) {
     const ctx = buildRequestContext(request)
+    await requireOwner(ctx)
     const result = await this.updateUseCase.execute(ctx, request.body)
     return new ResponseBuilder().status(StatusCodes.OK).payload(result).send(reply)
   }

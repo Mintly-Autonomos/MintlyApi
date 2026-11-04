@@ -12,6 +12,8 @@ import { cashFlowRoutes } from '../../app/reports/cash-flow/cash-flow-routes'
 import { resultRoutes } from '../../app/reports/result/result-routes'
 import { expensesRoutes } from '../../app/reports/expenses/expenses-routes'
 import { overviewRoutes } from '../../app/dashboard/overview-routes'
+import { userRoutes } from '../../app/user/user-routes'
+import { restaurantAccountRoutes } from '../../app/restaurant/restaurant-account-routes'
 import { restaurantRoutes } from '../../app/restaurant/restaurant-routes'
 import { healthRoutes } from '../../app/health/health-routes'
 import { authRoutes } from '../../app/auth/auth-routes'
@@ -140,6 +142,10 @@ export async function buildServer (server: FastifyInstance = Fastify({ bodyLimit
   await server.register(async (subscriptionScope: FastifyInstance) => {
     subscriptionScope.addHook('preHandler', verifyJwt)
     await subscriptionScope.register(subscriptionRoutes, { prefix: '/subscription' })
+    // Conta de quem está logado e pedido de exclusão: também sem o portão — trocar a senha, o e-mail ou pedir
+    // a exclusão precisa funcionar com a assinatura vencida.
+    await subscriptionScope.register(userRoutes, { prefix: '/users' })
+    await subscriptionScope.register(restaurantAccountRoutes, { prefix: '/restaurants' })
   })
 
   // Rotas protegidas — exigem Bearer token válido. verifyJwt lança

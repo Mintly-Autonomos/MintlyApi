@@ -6,7 +6,7 @@ import { RestaurantRepository } from '../restaurant-repository'
 /**
  * PATCH /restaurants/me — nome e regime tributário. O schema é estrito: audit,
  * restaurantId e qualquer outro campo são rejeitados (400 pelo error handler).
- * Sem distinção owner × member: nenhuma rota tem hoje (pendência registrada).
+ * Só o dono chama (a trava fica no controller, que lê o papel do banco).
  */
 export class UpdateRestaurantUseCase {
   constructor (private readonly repo: RestaurantRepository = new RestaurantRepository()) {}

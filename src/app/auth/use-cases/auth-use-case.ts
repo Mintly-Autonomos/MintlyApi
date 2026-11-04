@@ -10,10 +10,9 @@ import { logAudit } from '../../audit/audit-service'
 import { normalizeEmail } from '../normalize-email'
 import type { MintlyClaims } from '../jwt-claims'
 import { readSubscriptionState } from '../../subscription/subscription-reader'
+import { BLOCK_DURATION_MINUTES, MAX_LOGIN_ATTEMPTS } from '../login-lockout-config'
 
 const TENANT = 'mintly'
-const MAX_LOGIN_ATTEMPTS = Number(process.env.MAX_LOGIN_ATTEMPTS ?? 5)
-const BLOCK_DURATION_MINUTES = Number(process.env.BLOCK_DURATION_MINUTES ?? 15)
 
 // Hash dummy (válido) usado para equalizar o tempo do login quando o e-mail não
 // existe: rodamos o mesmo scrypt do caminho de senha errada, evitando o oráculo

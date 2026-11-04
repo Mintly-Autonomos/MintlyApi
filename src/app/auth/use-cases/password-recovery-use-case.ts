@@ -7,7 +7,7 @@ import { UnauthorizedError } from '../../../core/errors/auth/unauthorized-error'
 import { RequestContext } from '../../../core/context/request-context'
 import { normalizeEmail } from '../normalize-email'
 import { hashPassword } from '../password-hash'
-import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
+import { revokeAllSessions } from '../session-revocation'
 import {
   requestRecoverySchema,
   resetPasswordSchema,
@@ -82,20 +82,8 @@ export class PasswordRecoveryUseCase {
     const passwordHash = hashPassword(input.newPassword)
 
     await this.authRepo.updatePassword(record.userId, passwordHash, ctx)
-    await this.revokeAllSessions(record.userId, ctx)
+    await revokeAllSessions(record.userId, ctx, 'password_reset')
 
     await logAudit('password_reset', record.userId, ctx.env, user.restaurantId, {}).catch(() => null)
-  }
-
-  private async revokeAllSessions (userId: string, ctx: RequestContext): Promise<void> {
-    try {
-      const db = MongoDBConnection.getInstance().getDatabase(ctx.env)
-      await db.collection('valkyrie_refresh_tokens').updateMany(
-        { subject: userId, revokedAt: null },
-        { $set: { revokedAt: new Date(), revocationReason: 'password_reset' } },
-      )
-    } catch {
-      // Best-effort — access tokens expiram naturalmente em 15min
-    }
   }
 }

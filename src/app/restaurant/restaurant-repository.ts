@@ -34,6 +34,21 @@ export class RestaurantRepository {
     return this.findMine(ctx)
   }
 
+  /** Registra o pedido de exclusão (só o pedido: nada é apagado). */
+  async setDeletionRequested (ctx: RequestContext, now: Date): Promise<void> {
+    await this.col(ctx).updateOne(
+      { _id: this.id(ctx) },
+      { $set: { deletionRequestedAt: now, 'audit.updatedAt': now, 'audit.updatedBy': ctx.userId } },
+    )
+  }
+
+  async clearDeletionRequested (ctx: RequestContext): Promise<void> {
+    await this.col(ctx).updateOne(
+      { _id: this.id(ctx) },
+      { $unset: { deletionRequestedAt: '' }, $set: { 'audit.updatedAt': new Date(), 'audit.updatedBy': ctx.userId } },
+    )
+  }
+
   async updateMine (ctx: RequestContext, set: Record<string, unknown>): Promise<any> {
     const doc = await this.col(ctx).findOneAndUpdate({ _id: this.id(ctx) }, { $set: set }, { returnDocument: 'after' })
     if (!doc) throw new NotFoundError(Resource.Restaurant, ctx.restaurantId)
