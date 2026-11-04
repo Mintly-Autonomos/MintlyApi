@@ -30,7 +30,7 @@ describe('/menu-items (integração)', () => {
     const { payload } = res.json()
     return { token: payload.accessToken as string, restaurantId: payload.user.restaurantId as string }
   }
-  const call = (method: 'GET' | 'PATCH' | 'POST', url: string, token: string, payload?: Record<string, unknown>) =>
+  const call = (method: 'GET' | 'PATCH' | 'POST' | 'DELETE', url: string, token: string, payload?: Record<string, unknown>) =>
     server.inject({ method, url, headers: { env: ENV, authorization: `Bearer ${token}` }, payload })
 
   const create = async (token: string, name: string, price = 38, category?: string) => {
@@ -214,6 +214,39 @@ describe('/menu-items (integração)', () => {
       expect((await call('PATCH', `/menu-items/${item._id}/price`, a.token, { price: -5 })).statusCode).toBe(400)
       expect((await call('PATCH', `/menu-items/${item._id}/price`, a.token, {})).statusCode).toBe(400)
       expect((await get(a.token, item._id)).price).toBe(30)
+    })
+  })
+
+  describe('DELETE /menu-items/:id (excluir de vez)', () => {
+    it('apaga o prato (ativo ou inativo), some da lista e registra a auditoria', async () => {
+      const ativo = await create(a.token, 'Prato Para Excluir', 30)
+      const inativo = await create(a.token, 'Prato Inativo Para Excluir', 30)
+      expect((await call('PATCH', `/menu-items/${inativo._id}/inactivate`, a.token)).statusCode).toBe(200)
+
+      for (const item of [ativo, inativo]) {
+        const res = await call('DELETE', `/menu-items/${item._id}`, a.token)
+        expect(res.statusCode).toBe(200)
+        expect(res.json().payload.message).toMatch(/exclu/i)
+      }
+      const nomes = ((await call('GET', '/menu-items?size=100', a.token)).json().payload as { name: string }[]).map((x) => x.name)
+      expect(nomes).not.toContain('Prato Para Excluir')
+      expect(nomes).not.toContain('Prato Inativo Para Excluir')
+
+      const log = await mongoConnection.getDatabase(ENV).collection('audit_logs').findOne({ event: 'menu_item_deleted', 'data.menuItemId': ativo._id })
+      expect(log).toMatchObject({ restaurantId: a.restaurantId, data: { name: 'Prato Para Excluir', price: 30 } })
+    })
+
+    it('excluir duas vezes → 404 na segunda; id malformado → 404', async () => {
+      const item = await create(a.token, 'Prato Excluido Duas Vezes', 30)
+      expect((await call('DELETE', `/menu-items/${item._id}`, a.token)).statusCode).toBe(200)
+      expect((await call('DELETE', `/menu-items/${item._id}`, a.token)).statusCode).toBe(404)
+      expect((await call('DELETE', '/menu-items/nao-e-um-id', a.token)).statusCode).toBe(404)
+    })
+
+    it('B não exclui o prato de A (404) e o prato continua lá', async () => {
+      const item = await create(a.token, 'Prato Que B Nao Apaga', 30)
+      expect((await call('DELETE', `/menu-items/${item._id}`, b.token)).statusCode).toBe(404)
+      expect((await get(a.token, item._id)).name).toBe('Prato Que B Nao Apaga')
     })
   })
 

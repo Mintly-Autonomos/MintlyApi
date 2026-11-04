@@ -49,6 +49,7 @@ export function resolveMovementItemsFrom (
   items: MovementItemRequest[],
   dishesById: ReadonlyMap<string, Record<string, any>>,
   keepInactive?: ReadonlySet<string>,
+  keptItems?: ReadonlyMap<string, StoredMovementItem>,
 ): StoredMovementItem[] {
   const requested = mergeItemRequests(items)
   if (requested.length === 0) return []
@@ -56,6 +57,9 @@ export function resolveMovementItemsFrom (
 
   return requested.map(({ menuItemId, qty }) => {
     const dish = dishesById.get(menuItemId)
+    // Prato excluído do cardápio depois da venda: a venda guarda a cópia (nome e preço do dia) e a mantém.
+    const kept = keptItems?.get(menuItemId)
+    if (!dish && kept) return { menuItemId, name: kept.name, qty, unitPrice: kept.unitPrice }
     if (!dish) throw new ValidationError('Prato não encontrado no cardápio deste restaurante.')
     if (dish.status !== 'active' && !keepInactive?.has(menuItemId)) {
       throw new ValidationError(`O prato "${String(dish.name)}" está fora do cardápio.`)
@@ -77,6 +81,8 @@ export async function resolveMovementItems (params: {
   items: MovementItemRequest[]
   session?: ClientSession
   keepInactive?: ReadonlySet<string>
+  /** O que a venda editada já guardava: prato que foi excluído do cardápio continua nela com esta cópia. */
+  keptItems?: ReadonlyArray<StoredMovementItem>
 }): Promise<StoredMovementItem[]> {
   const requested = mergeItemRequests(params.items)
   if (requested.length === 0) return []
@@ -88,5 +94,5 @@ export async function resolveMovementItems (params: {
       { session: params.session },
     )
     .toArray()
-  return resolveMovementItemsFrom(requested, new Map(docs.map((d) => [String(d._id), d])), params.keepInactive)
+  return resolveMovementItemsFrom(requested, new Map(docs.map((d) => [String(d._id), d])), params.keepInactive, new Map((params.keptItems ?? []).map((i) => [String(i.menuItemId), i])))
 }
