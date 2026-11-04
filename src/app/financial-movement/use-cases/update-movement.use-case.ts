@@ -241,6 +241,7 @@ export class UpdateMovementUseCase {
             items: changes.items,
             session,
             keepInactive: new Set<string>((mov.items ?? []).map((i: any) => String(i.menuItemId))),
+            keptItems: mov.items ?? [],
           })
           if (resolved.length > 0) newDoc.items = resolved
         } else if (mov.items?.length) {

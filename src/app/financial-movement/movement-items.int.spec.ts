@@ -166,6 +166,32 @@ describe('Pratos vendidos na movimentação (Integration)', () => {
       expect(limpou.json().payload.items).toBeUndefined()
     })
 
+    it('um prato EXCLUÍDO depois da venda continua nela (com o nome e o preço do dia) e a venda segue editável', async () => {
+      const s = await setup()
+      const arroz = await s.dish('Arroz', 12.5)
+      const batata = await s.dish('Batata', 18)
+      const id = (await register(s.auth, s, { items: [{ menuItemId: arroz, qty: 1 }, { menuItemId: batata, qty: 1 }] })).json().payload._id
+      await s.db.collection('menu_items').deleteOne({ _id: new ObjectId(arroz) })
+
+      const res = await patch(s, id, { items: [{ menuItemId: arroz, qty: 3 }, { menuItemId: batata, qty: 2 }] })
+      expect(res.statusCode).toBe(200)
+      expect(res.json().payload.items).toEqual([
+        { menuItemId: arroz, name: 'Arroz', qty: 3, unitPrice: 12.5 },
+        { menuItemId: batata, name: 'Batata', qty: 2, unitPrice: 18 },
+      ])
+    })
+
+    it('um prato excluído que NÃO estava na venda continua sendo recusado', async () => {
+      const s = await setup()
+      const arroz = await s.dish('Arroz', 12.5)
+      const fantasma = await s.dish('Fantasma', 9)
+      const id = (await register(s.auth, s, { items: [{ menuItemId: arroz, qty: 1 }] })).json().payload._id
+      await s.db.collection('menu_items').deleteOne({ _id: new ObjectId(fantasma) })
+
+      const res = await patch(s, id, { items: [{ menuItemId: arroz, qty: 1 }, { menuItemId: fantasma, qty: 1 }] })
+      expect(res.statusCode).toBe(400)
+    })
+
     it('um prato que já estava na venda e saiu do cardápio depois pode continuar nela', async () => {
       const s = await setup()
       const arroz = await s.dish('Arroz', 12.5)

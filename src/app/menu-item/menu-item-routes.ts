@@ -28,5 +28,6 @@ export async function menuItemRoutes (fastify: FastifyInstance) {
   fastify.patch('/:id/inactivate', async (request: any, reply) => controller.inactivate(request, reply))
   fastify.patch('/:id/reactivate', async (request: any, reply) => controller.reactivate(request, reply))
 
-  // NOTA: DELETE e GET /:id não existem de propósito — só inativação, como categorias e contas.
+  // Excluir de vez (além de inativar). GET /:id não existe de propósito.
+  fastify.delete('/:id', async (request: any, reply) => controller.remove(request, reply))
 }

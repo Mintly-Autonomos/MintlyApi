@@ -15,6 +15,7 @@ import { NotFoundError } from '../../core/errors/core/not-found-error'
 import { Resource } from '../../core/types/resource'
 import { escapeRegex } from '../../core/util/escape-regex'
 import { daysSince, staleCutoff } from './menu-item-rules'
+import { logAudit } from '../audit/audit-service'
 
 export class MenuItemController extends CrudController<MenuItem, string> {
   constructor (private readonly repo: MenuItemRepository) {
@@ -82,6 +83,19 @@ export class MenuItemController extends CrudController<MenuItem, string> {
 
   async reactivate (request: any, reply: any) {
     return await this.setStatus(request, reply, RecordStatus.Active, 'Prato reativado com sucesso.')
+  }
+
+  /**
+   * Exclui o prato de vez (não tem volta; para só tirar do cardápio existe a inativação). As vendas já registradas
+   * guardam o nome e o preço do prato (cópia do dia da venda), então continuam como estavam e seguem editáveis.
+   */
+  async remove (request: any, reply: any) {
+    const { id } = request.params
+    const ctx = buildRequestContext(request)
+    const current = await this.loadOwn(id, request)
+    if (!(await this.repo.deleteOwn(id, ctx))) throw new NotFoundError(Resource.MenuItem, id)
+    await logAudit('menu_item_deleted', ctx.userId ?? '', ctx.env, ctx.restaurantId, { menuItemId: id, name: current.name, price: current.price }).catch(() => null)
+    return new ResponseBuilder().status(StatusCodes.OK).payload({ message: 'Prato excluído com sucesso.' }).send(reply)
   }
 
   private async setStatus (request: any, reply: any, status: RecordStatus, message: string) {

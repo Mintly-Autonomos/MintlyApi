@@ -18,6 +18,7 @@ export type AuditEvent =
   | 'member_created'
   | 'member_updated'
   | 'members_deactivated_by_plan'
+  | 'menu_item_deleted'
   | 'deletion_requested'
   | 'deletion_cancelled'
 

@@ -88,6 +88,13 @@ export class MenuItemRepository extends MongodbCrudRepository<MenuItem & Documen
     return result as unknown as MenuItem[]
   }
 
+  /** Exclui o prato de vez, escopado por restaurante. Devolve se algo foi apagado. */
+  async deleteOwn (id: string, ctx: RequestContext): Promise<boolean> {
+    if (!ObjectId.isValid(id)) return false
+    const result = await this.getCollection(ctx).deleteOne({ _id: new ObjectId(id), restaurantId: ctx.restaurantId } as any)
+    return result.deletedCount === 1
+  }
+
   /**
    * Aplica um `$set` (preço, datas de revisão ou status) numa única escrita escopada por
    * restaurante, renovando a auditoria. O chamador decide o que entra no `$set` — por exemplo,
