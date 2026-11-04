@@ -3,7 +3,9 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server'
 import { FastifyInstance } from 'fastify'
 import { mongoConnection } from '../../infrastructure/db/mongodb'
 import { buildServer } from '../../infrastructure/server/build-server'
-import { MAX_MEMBERS } from './members/member.use-cases'
+import { ObjectId } from 'mongodb'
+import { SUBSCRIPTION_MEMBER_LIMIT } from 'mintly-lib'
+import { MAX_MEMBER_LOGINS } from './members/member-limits'
 
 let envCounter = 0
 const freshEnv = () => `int_members_${++envCounter}`
@@ -110,15 +112,98 @@ describe('funcionários, trava de dono e pedido de exclusão (Integration)', () 
       expect((await call('POST', '/restaurants/me/members', auth, { ...ok, restaurantId: 'outro' })).statusCode).toBe(400)
     })
 
-    it(`limite de ${MAX_MEMBERS} funcionários por restaurante`, async () => {
+    const addMember = (auth: Record<string, string>, env: string, i: number) =>
+      call('POST', '/restaurants/me/members', auth, { name: `Func ${i}`, email: `f${i}_${env}@teste.com`, password: MEMBER_PASSWORD })
+    const setTier = (env: string, restaurantId: string, tier: string | null) =>
+      mongoConnection.getDatabase(env).collection('restaurants').updateOne(
+        { _id: new ObjectId(restaurantId) },
+        tier ? { $set: { 'subscription.tier': tier } } : { $unset: { 'subscription.tier': '' } },
+      )
+
+    it(`plano Básico (ou sem tipo gravado): até ${SUBSCRIPTION_MEMBER_LIMIT.basic} funcionários ativos; o próximo leva 400 com a mensagem do plano`, async () => {
       const env = freshEnv()
       const { auth } = await signup(env)
-      for (let i = 0; i < MAX_MEMBERS; i++) {
-        const res = await call('POST', '/restaurants/me/members', auth, { name: `Func ${i}`, email: `f${i}_${env}@teste.com`, password: MEMBER_PASSWORD })
-        expect(res.statusCode).toBe(201)
-      }
-      const extra = await call('POST', '/restaurants/me/members', auth, { name: 'Um a mais', email: `extra_${env}@teste.com`, password: MEMBER_PASSWORD })
+      for (let i = 0; i < SUBSCRIPTION_MEMBER_LIMIT.basic; i++) expect((await addMember(auth, env, i)).statusCode).toBe(201)
+      const extra = await addMember(auth, env, 99)
       expect(extra.statusCode).toBe(400)
+      expect(extra.json().message).toMatch(/Básico.*até 5 funcionários ativos.*Pro.*20/)
+      expect((await call('GET', '/restaurants/me/members', auth)).json().payload).toHaveLength(5)
+    })
+
+    it(`plano Pro: até ${SUBSCRIPTION_MEMBER_LIMIT.pro} funcionários ativos`, async () => {
+      const env = freshEnv()
+      const { auth, restaurantId } = await signup(env)
+      await setTier(env, restaurantId, 'pro')
+      for (let i = 0; i < SUBSCRIPTION_MEMBER_LIMIT.pro; i++) expect((await addMember(auth, env, i)).statusCode).toBe(201)
+      const extra = await addMember(auth, env, 99)
+      expect(extra.statusCode).toBe(400)
+      expect(extra.json().message).toMatch(/Pro.*até 20 funcionários ativos/)
+      expect(extra.json().message).not.toMatch(/mude para/)
+    }, 60_000)
+
+    it('inativar libera a vaga; reativar com o plano cheio é recusado (e nada muda)', async () => {
+      const env = freshEnv()
+      const { auth } = await signup(env)
+      const ids: string[] = []
+      for (let i = 0; i < SUBSCRIPTION_MEMBER_LIMIT.basic; i++) ids.push((await addMember(auth, env, i)).json().payload._id)
+
+      expect((await call('PATCH', `/restaurants/me/members/${ids[0]}`, auth, { status: 'inactive' })).statusCode).toBe(200)
+      expect((await addMember(auth, env, 50)).statusCode).toBe(201) // ocupou a vaga liberada
+
+      const back = await call('PATCH', `/restaurants/me/members/${ids[0]}`, auth, { status: 'active', password: 'NovaSenha77' })
+      expect(back.statusCode).toBe(400)
+      const list = (await call('GET', '/restaurants/me/members', auth)).json().payload as { _id: string, status: string }[]
+      expect(list.find((m) => m._id === ids[0])?.status).toBe('inactive')
+      expect(list.filter((m) => m.status === 'active')).toHaveLength(SUBSCRIPTION_MEMBER_LIMIT.basic)
+    })
+
+    it('editar quem já está ativo (senha, "ativar" de novo) não gasta vaga, mesmo com o plano cheio', async () => {
+      const env = freshEnv()
+      const { auth } = await signup(env)
+      const first = await addMember(auth, env, 0)
+      for (let i = 1; i < SUBSCRIPTION_MEMBER_LIMIT.basic; i++) await addMember(auth, env, i)
+      const id = first.json().payload._id
+      expect((await call('PATCH', `/restaurants/me/members/${id}`, auth, { password: 'NovaSenha77' })).statusCode).toBe(200)
+      expect((await call('PATCH', `/restaurants/me/members/${id}`, auth, { status: 'active' })).statusCode).toBe(200)
+    })
+
+    it('rebaixar para o Básico com mais ativos que o limite: ninguém é desligado, mas não entra nem volta mais ninguém', async () => {
+      const env = freshEnv()
+      const { auth, restaurantId } = await signup(env)
+      await setTier(env, restaurantId, 'pro')
+      const ids: string[] = []
+      for (let i = 0; i < 7; i++) ids.push((await addMember(auth, env, i)).json().payload._id)
+      await setTier(env, restaurantId, 'basic')
+
+      const list = (await call('GET', '/restaurants/me/members', auth)).json().payload as { status: string }[]
+      expect(list.filter((m) => m.status === 'active')).toHaveLength(7)
+      expect((await addMember(auth, env, 99)).statusCode).toBe(400)
+
+      // inativa 2 (sobram 5 ativos = o limite): continua cheio; só depois de inativar mais um abre vaga
+      for (const id of ids.slice(0, 2)) await call('PATCH', `/restaurants/me/members/${id}`, auth, { status: 'inactive' })
+      expect((await addMember(auth, env, 99)).statusCode).toBe(400)
+      await call('PATCH', `/restaurants/me/members/${ids[2]}`, auth, { status: 'inactive' })
+      expect((await addMember(auth, env, 99)).statusCode).toBe(201)
+    }, 60_000)
+
+    it(`teto geral de ${MAX_MEMBER_LOGINS} logins (ativos ou não): evita criar logins em massa`, async () => {
+      const env = freshEnv()
+      const { auth, restaurantId } = await signup(env)
+      await setTier(env, restaurantId, 'pro')
+      const now = new Date()
+      await mongoConnection.getDatabase(env).collection('users').insertMany(
+        Array.from({ length: MAX_MEMBER_LOGINS }, (_, i) => ({
+          email: `velho${i}_${env}@teste.com`,
+          role: 'member',
+          status: 'inactive',
+          restaurantId,
+          person: { _id: `p${i}`, name: `Velho ${i}` },
+          audit: { createdAt: now, updatedAt: now },
+        })),
+      )
+      const res = await addMember(auth, env, 1)
+      expect(res.statusCode).toBe(400)
+      expect(res.json().message).toContain(String(MAX_MEMBER_LOGINS))
     })
   })
 

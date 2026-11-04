@@ -17,6 +17,7 @@ export type AuditEvent =
   | 'password_confirmation_failed'
   | 'member_created'
   | 'member_updated'
+  | 'members_deactivated_by_plan'
   | 'deletion_requested'
   | 'deletion_cancelled'
 

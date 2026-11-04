@@ -504,6 +504,96 @@ describe('Assinatura (Integration)', () => {
       expect(await getTier(env, restaurantId)).toBe('basic')
     })
 
+    describe('queda de plano e funcionários (Pro 20 -> Básico 5)', () => {
+      const MEMBER_PASSWORD = 'Func12345'
+      const memberEmail = (env: string, i: number) => `func${i}_${env}@teste.com`
+      const addMember = (auth: Record<string, string>, env: string, i: number) =>
+        app.inject({ method: 'POST', url: '/restaurants/me/members', headers: auth, payload: { name: `Func ${i}`, email: memberEmail(env, i), password: MEMBER_PASSWORD } })
+      const members = async (auth: Record<string, string>) =>
+        (await app.inject({ method: 'GET', url: '/restaurants/me/members', headers: auth })).json().payload as { _id: string, name: string, status: string }[]
+      const memberLogin = async (env: string, i: number) => {
+        const res = await app.inject({ method: 'POST', url: '/auth/login', headers: { env }, payload: { email: memberEmail(env, i), password: MEMBER_PASSWORD } })
+        expect(res.statusCode).toBe(200)
+        return res.json().payload.refreshToken as string
+      }
+      const refresh = (env: string, refreshToken: string) =>
+        app.inject({ method: 'POST', url: '/auth/refresh', headers: { env }, payload: { refreshToken } })
+
+      it('20 ativos no Pro e cai para o Básico: ficam os 5 mais antigos, os 15 mais recentes são inativados e perdem a sessão', async () => {
+        const { env, restaurantId, auth } = await signup()
+        await pay(auth, 1, 'pro')
+        for (let i = 0; i < 20; i++) expect((await addMember(auth, env, i)).statusCode).toBe(201)
+        const mantido = await memberLogin(env, 0)
+        const cortado = await memberLogin(env, 19)
+
+        await pay(auth, 1, 'basic')
+        expect(await getTier(env, restaurantId)).toBe('basic')
+
+        const lista = await members(auth)
+        const ativos = lista.filter((m) => m.status === 'active').map((m) => m.name).sort()
+        const inativos = lista.filter((m) => m.status === 'inactive')
+        expect(ativos).toEqual(['Func 0', 'Func 1', 'Func 2', 'Func 3', 'Func 4'])
+        expect(inativos).toHaveLength(15)
+        expect(lista).toHaveLength(20) // ninguém é excluído
+
+        expect((await refresh(env, cortado)).statusCode).toBe(401)
+        expect((await refresh(env, mantido)).statusCode).toBe(200)
+        const audit = await db(env).collection('audit_logs').findOne({ event: 'members_deactivated_by_plan' })
+        expect(audit?.data).toMatchObject({ limit: 5, tier: 'basic' })
+        expect((audit?.data as { memberIds: string[] }).memberIds).toHaveLength(15)
+      }, 120_000)
+
+      it('o dono reativa quem quiser quando há vaga; com o Básico cheio a reativação é recusada', async () => {
+        const { env, auth } = await signup()
+        await pay(auth, 1, 'pro')
+        for (let i = 0; i < 7; i++) await addMember(auth, env, i)
+        await pay(auth, 1, 'basic') // Func 5 e Func 6 saem
+
+        const lista = await members(auth)
+        const porNome = (n: string) => lista.find((m) => m.name === n)!._id
+        expect(lista.filter((m) => m.status === 'inactive').map((m) => m.name).sort()).toEqual(['Func 5', 'Func 6'])
+
+        const cheio = await app.inject({ method: 'PATCH', url: `/restaurants/me/members/${porNome('Func 6')}`, headers: auth, payload: { status: 'active' } })
+        expect(cheio.statusCode).toBe(400)
+        expect(cheio.json().message).toMatch(/Básico.*até 5 funcionários ativos/)
+
+        // o dono libera uma vaga inativando outro e escolhe quem volta
+        expect((await app.inject({ method: 'PATCH', url: `/restaurants/me/members/${porNome('Func 0')}`, headers: auth, payload: { status: 'inactive' } })).statusCode).toBe(200)
+        const volta = await app.inject({ method: 'PATCH', url: `/restaurants/me/members/${porNome('Func 6')}`, headers: auth, payload: { status: 'active' } })
+        expect(volta.statusCode).toBe(200)
+        expect(volta.json().payload.status).toBe('active')
+      }, 120_000)
+
+      it('quem já estava inativo continua inativo e não conta vaga: 4 ativos + 3 inativos no Pro, cai para o Básico, ninguém muda', async () => {
+        const { env, auth } = await signup()
+        await pay(auth, 1, 'pro')
+        for (let i = 0; i < 7; i++) await addMember(auth, env, i)
+        const lista = await members(auth)
+        for (const m of lista.filter((x) => ['Func 4', 'Func 5', 'Func 6'].includes(x.name))) {
+          await app.inject({ method: 'PATCH', url: `/restaurants/me/members/${m._id}`, headers: auth, payload: { status: 'inactive' } })
+        }
+        await pay(auth, 1, 'basic')
+        const depois = await members(auth)
+        expect(depois.filter((m) => m.status === 'active')).toHaveLength(4)
+        expect(await db(env).collection('audit_logs').findOne({ event: 'members_deactivated_by_plan' })).toBeNull()
+      }, 120_000)
+
+      it('subir de plano (Básico -> Pro) não inativa ninguém', async () => {
+        const { env, auth } = await signup()
+        await pay(auth, 1, 'basic')
+        for (let i = 0; i < 5; i++) await addMember(auth, env, i)
+        await pay(auth, 1, 'pro')
+        expect((await members(auth)).filter((m) => m.status === 'active')).toHaveLength(5)
+        expect((await addMember(auth, env, 5)).statusCode).toBe(201) // e agora cabem mais
+      }, 120_000)
+
+      it('o tipo de cada plano informa as vagas em GET /subscription', async () => {
+        const { auth } = await signup()
+        const state = await overview(auth)
+        expect(state.tiers.map((t: { tier: string, memberLimit: number }) => [t.tier, t.memberLimit])).toEqual([['basic', 5], ['pro', 20]])
+      })
+    })
+
     it('trocar de tipo com a assinatura vencida: conta de hoje (como qualquer pagamento vencido)', async () => {
       const { env, restaurantId, auth } = await signup()
       await setEndsAt(env, restaurantId, new Date(Date.now() - DAY))

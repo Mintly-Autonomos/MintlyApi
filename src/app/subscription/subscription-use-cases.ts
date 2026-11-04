@@ -25,6 +25,7 @@ import { readRecurring, readSubscriptionState } from './subscription-reader'
 import { decodeReference } from './payment-reference'
 
 import { assertValidEnv } from '../environment/env-allowlist'
+import { enforceMemberLimit } from '../restaurant/members/member-limit-enforcement'
 
 /** 502: o provedor de pagamento não respondeu como esperado. A pessoa pode tentar de novo. */
 export class PaymentProviderError extends BaseError {
@@ -268,6 +269,14 @@ export class ConfirmPaymentUseCase {
       if (previousPreapprovalId && provider.cancelRecurring) {
         await provider.cancelRecurring(previousPreapprovalId, env).catch((error: Error) => {
           console.error(`Não foi possível cancelar a renovação anterior (${previousPreapprovalId}):`, error.message)
+        })
+      }
+      // O plano pode ter caído (Pro -> Básico): quem passa das vagas do novo plano é inativado (os mais recentes
+      // primeiro). Fora da transação e sem derrubar o pagamento, que já foi aceito.
+      // (cast: o TS não enxerga a atribuição de `outcome` dentro do callback da transação)
+      if ((outcome as ConfirmResult).result === 'applied') {
+        await enforceMemberLimit(env, payment.restaurantId, payment.tier ?? DEFAULT_SUBSCRIPTION_TIER, payment.userId ?? 'system').catch((error: Error) => {
+          console.error(`Não foi possível ajustar os funcionários ao novo plano (restaurante ${payment.restaurantId}):`, error.message)
         })
       }
       return outcome

@@ -1,6 +1,7 @@
-import { memberCreateRequestSchema, memberUpdateRequestSchema, MemberStatus } from 'mintly-lib'
+import { memberCreateRequestSchema, memberUpdateRequestSchema, MemberStatus, UserStatus } from 'mintly-lib'
 import type { RestaurantMember } from 'mintly-lib'
 import { RequestContext } from '../../../core/context/request-context'
+import { requireTenant } from '../../../core/context/require-tenant'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ValidationError } from '../../../core/errors/core/validation-error'
 import { Resource } from '../../../core/types/resource'
@@ -10,10 +11,18 @@ import { normalizeEmail } from '../../auth/normalize-email'
 import { hashPassword } from '../../auth/password-hash'
 import { requireOwner } from '../../auth/require-owner'
 import { revokeAllSessions } from '../../auth/session-revocation'
+import { readSubscriptionRecord } from '../../subscription/subscription-reader'
+import { MAX_MEMBER_LOGINS, memberLimitError, memberLimitForTier } from './member-limits'
 import { MemberRepository, toMember } from './member-repository'
 
-/** Teto de funcionários por restaurante: segura abuso (criar logins em massa) sem atrapalhar um negócio real. */
-export const MAX_MEMBERS = 10
+/**
+ * Garante que há vaga no plano do restaurante para mais um funcionário ATIVO (criar ou reativar). O plano vem
+ * do restaurante do token (`subscription.tier`); o limite é por plano, em `member-limits.ts`.
+ */
+async function assertSeatAvailable (members: MemberRepository, ctx: RequestContext): Promise<void> {
+  const { tier } = await readSubscriptionRecord(ctx.env, requireTenant(ctx).restaurantId)
+  if (await members.countActive(ctx) >= memberLimitForTier(tier)) throw memberLimitError(tier)
+}
 
 /** GET /restaurants/me/members — só o dono. */
 export class ListMembersQuery {
@@ -41,9 +50,10 @@ export class CreateMemberUseCase {
     const name = input.name.trim()
     if (name.length < 2) throw new ValidationError('O nome deve ter pelo menos 2 caracteres.')
 
-    if (await this.members.count(ctx) >= MAX_MEMBERS) {
-      throw new ValidationError(`Um restaurante pode ter até ${MAX_MEMBERS} funcionários.`)
+    if (await this.members.count(ctx) >= MAX_MEMBER_LOGINS) {
+      throw new ValidationError(`Um restaurante pode ter até ${MAX_MEMBER_LOGINS} logins de funcionário, ativos ou não.`)
     }
+    await assertSeatAvailable(this.members, ctx)
 
     const member = await this.members.create(ctx, {
       name,
@@ -72,6 +82,11 @@ export class UpdateMemberUseCase {
     const member = await this.members.find(id, ctx)
     if (!member) throw new NotFoundError(Resource.Member, id)
     const memberId = String(member._id)
+
+    // Reativar também ocupa uma vaga do plano (conferido antes de mudar qualquer coisa).
+    if (changes.status === MemberStatus.Active && member.status !== UserStatus.Active) {
+      await assertSeatAvailable(this.members, ctx)
+    }
 
     const fields: string[] = []
     let endSessions = false

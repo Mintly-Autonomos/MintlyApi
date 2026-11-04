@@ -36,6 +36,11 @@ export class MemberRepository {
     return this.db(ctx).collection('users').countDocuments(this.filter(ctx))
   }
 
+  /** Funcionários com acesso (os inativados não ocupam vaga do plano). */
+  async countActive (ctx: RequestContext): Promise<number> {
+    return this.db(ctx).collection('users').countDocuments({ ...this.filter(ctx), status: UserStatus.Active })
+  }
+
   /** Só acha funcionário DESTE restaurante: o id de outro restaurante, ou o do dono, não existe aqui. */
   async find (id: string, ctx: RequestContext): Promise<Document | null> {
     if (!ObjectId.isValid(id)) return null
