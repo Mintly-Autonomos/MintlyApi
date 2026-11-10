@@ -80,6 +80,16 @@ jobs:
       MP_SANDBOX: ${{ vars.MP_SANDBOX }}
       # Chave do endpoint de presente de 1 dia (POST /admin/subscription-gift). Opcional: sem ela a rota responde 404.
       ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+      # IA do Mintly. AI_PROVIDER = claude (padrão, se vazio) ou gemini. Em cada provedor o endereço e o modelo são
+      # opcionais; a chave do provedor escolhido é obrigatória (sem ela a IA fica desligada e as rotas /ai dão 503).
+      AI_PROVIDER: ${{ vars.AI_PROVIDER }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_BASE_URL: ${{ vars.ANTHROPIC_BASE_URL }}
+      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_BASE_URL: ${{ vars.GEMINI_BASE_URL }}
+      GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+      GEMINI_THINKING_LEVEL: ${{ vars.GEMINI_THINKING_LEVEL }}
       # Allowlist do CORS (P4): CSV com as origens do MintlyWeb. SEM ela a
       # allowlist nasce vazia e o servidor NEGA toda origem de navegador — o
       # front perde a API. Por isso é REQUIRED no sync abaixo: falhar o deploy
@@ -155,11 +165,21 @@ jobs:
           REQUIRED="$REQUIRED MONGO_ENV API_URL GMAIL_USER GMAIL_APP_PASSWORD EMAIL_FROM FRONTEND_URL"
           REQUIRED="$REQUIRED CORS_ORIGINS PAYMENT_PROVIDER"
           OPTIONAL="MONGODB_TLS MP_ACCESS_TOKEN MP_WEBHOOK_SECRET MP_SANDBOX ADMIN_API_KEY"
+          OPTIONAL="$OPTIONAL AI_PROVIDER ANTHROPIC_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_MODEL"
+          OPTIONAL="$OPTIONAL GEMINI_API_KEY GEMINI_BASE_URL GEMINI_MODEL GEMINI_THINKING_LEVEL"
 
           # Provedor real sem credencial = ninguém consegue pagar: falhar o deploy é melhor.
           if [ "${PAYMENT_PROVIDER:-}" = "mercadopago" ] && [ -z "${MP_ACCESS_TOKEN:-}" ]; then
             echo "::error::PAYMENT_PROVIDER=mercadopago exige o secret MP_ACCESS_TOKEN."
             exit 1
+          fi
+
+          # IA: escolher um provedor sem a chave dele não derruba a API (a IA só fica desligada), mas é quase sempre engano.
+          if [ "${AI_PROVIDER:-}" = "gemini" ] && [ -z "${GEMINI_API_KEY:-}" ]; then
+            echo "::warning::AI_PROVIDER=gemini sem o secret GEMINI_API_KEY: a IA ficará desligada (503)."
+          fi
+          if [ "${AI_PROVIDER:-claude}" = "claude" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::warning::IA no Claude sem o secret ANTHROPIC_API_KEY: a IA ficará desligada (503)."
           fi
 
           MISSING=""
