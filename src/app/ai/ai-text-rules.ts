@@ -10,13 +10,29 @@ const FORBIDDEN_MARKS = /[<>`*#[\]{}|\\]|https?:|www\./i
 const EMOJI = /\p{Extended_Pictographic}/u
 
 /**
+ * Deixa o texto só com símbolos básicos do teclado, mesmo que a IA escorregue: "42 por cento" vira "42%", travessões
+ * viram hífen e aspas curvas, reticências em um caractere e espaços especiais viram os comuns.
+ */
+export function simplifySymbols (text: string): string {
+  return text
+    .replace(/(\d+(?:[.,]\d+)?)\s*(?:por\s?cento|porcento)\b/gi, '$1%')
+    .replace(/\s*[\u2012-\u2015\u2212]\s*/g, ' - ')
+    .replace(/[\u2018\u2019\u201A\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u2033]/g, '"')
+    .replace(/\u2026/g, '...')
+    .replace(/[\u00A0\u2007\u202F\u200B]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
  * Texto da IA pronto para a tela: só texto simples, em uma linha. Devolve `null` quando não serve (não é texto,
  * vazio, com HTML/markdown/link/emoji) e o chamador cai no texto pronto. A tela mostra como texto puro (nunca
  * como HTML), então isto é um cinto a mais, não a única defesa.
  */
 export function cleanAiText (raw: unknown): string | null {
   if (typeof raw !== 'string') return null
-  const text = raw.replace(/\s+/g, ' ').trim()
+  const text = simplifySymbols(raw.replace(/\s+/g, ' ').trim())
   if (text === '' || FORBIDDEN_MARKS.test(text) || EMOJI.test(text)) return null
   return text
 }

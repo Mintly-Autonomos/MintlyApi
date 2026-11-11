@@ -6,7 +6,7 @@ import { RequestContext } from '../../core/context/request-context'
 import { requireTenant } from '../../core/context/require-tenant'
 import { OverviewQuery } from '../dashboard/use-cases/overview.query'
 import { AiUnavailableError } from './ai-errors'
-import { AI_INSIGHT_TITLE_MAX_WORDS, AI_SYSTEM_PROMPT, INSIGHTS_SCHEMA, buildInsightsPrompt } from './ai-prompts'
+import { AI_INSIGHT_TITLE_MAX_WORDS, AI_PROMPT_VERSION, AI_SYSTEM_PROMPT, INSIGHTS_SCHEMA, buildInsightsPrompt } from './ai-prompts'
 import { AiRepository } from './ai-repository'
 import { cleanAiText, countWords, roundMoney, sanitizeFact, stableHash } from './ai-text-rules'
 import { TextGenerator, getTextGenerator } from './text-generator'
@@ -44,7 +44,7 @@ export class AiInsightsUseCase {
     if (report.insights.length === 0) return { page, insights: [], cached: false, ...(await this.repo.usage(ctx, now)) }
 
     const facts = await this.buildFacts(ctx, report)
-    const hash = stableHash(facts)
+    const hash = stableHash({ v: AI_PROMPT_VERSION, facts })
 
     const cached = await this.repo.cacheGet<AiInsightText[]>(ctx, `insights-${page}`, hash, now)
     if (cached) return { page, insights: cached, cached: true, ...(await this.repo.usage(ctx, now)) }
