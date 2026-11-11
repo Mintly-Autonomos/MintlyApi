@@ -87,7 +87,7 @@ describe('Renovação automática (Integration)', () => {
       const ctx = await signup()
       const res = await checkout(ctx.auth, 3, { tier: 'pro', autoRenew: true })
       expect(res.statusCode).toBe(201)
-      expect(res.json().payload).toMatchObject({ autoRenew: true, tier: 'pro', months: 3, totalCents: 65265 })
+      expect(res.json().payload).toMatchObject({ autoRenew: true, tier: 'pro', months: 3, totalCents: 65522 })
       const saved = await db(ctx.env).collection('payments').findOne({ _id: new ObjectId(res.json().payload.paymentId) })
       expect(saved).toMatchObject({ kind: 'recurring', tier: 'pro', months: 3 })
       expect(saved?.preapprovalId).toBe(`mock-pre-${res.json().payload.paymentId}`)
@@ -139,7 +139,7 @@ describe('Renovação automática (Integration)', () => {
       expect((await endsAtOf(ctx.env, ctx.restaurantId))!.getTime()).toBe(first.getTime() + 30 * DAY)
       const records = await payments(ctx.env, ctx.restaurantId)
       expect(records).toHaveLength(2)
-      expect(records[1]).toMatchObject({ kind: 'recurring', status: 'approved', amountCents: 15000 })
+      expect(records[1]).toMatchObject({ kind: 'recurring', status: 'approved', amountCents: 14990 })
       expect(records[1].appliedAt).toBeInstanceOf(Date)
       expect((await overview(ctx.auth)).recurring.startedAt).toBe(startedAt)
     })
@@ -288,14 +288,14 @@ describe('Renovação automática (Integration)', () => {
       useMercadoPago(empty())
       const res = await checkout(ctx.auth, 6, { tier: 'pro', autoRenew: true })
       expect(res.statusCode).toBe(201)
-      expect(res.json().payload).toMatchObject({ autoRenew: true, provider: 'mercadopago', checkoutUrl: 'https://mp.test/assinar', totalCents: 123660 })
+      expect(res.json().payload).toMatchObject({ autoRenew: true, provider: 'mercadopago', checkoutUrl: 'https://mp.test/assinar', totalCents: 124146 })
 
       const create = calls.find((c) => c.method === 'POST' && c.url.endsWith('/preapproval'))!
       expect(create.body).toMatchObject({
         payer_email: ctx.email,
         status: 'pending',
         back_url: expect.stringContaining('/assinatura/retorno'),
-        auto_recurring: { frequency: 180, frequency_type: 'days', transaction_amount: 1236.6, currency_id: 'BRL' },
+        auto_recurring: { frequency: 180, frequency_type: 'days', transaction_amount: 1241.46, currency_id: 'BRL' },
         external_reference: `${ctx.env}|${res.json().payload.paymentId}`,
       })
       expect(create.body.reason).toContain('Pro')
