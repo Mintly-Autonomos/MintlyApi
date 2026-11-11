@@ -17,7 +17,7 @@ export function simplifySymbols (text: string): string {
   return text
     .replace(/(\d+(?:[.,]\d+)?)\s*(?:por\s?cento|porcento)\b/gi, '$1%')
     .replace(/\s*[\u2012-\u2015\u2212]\s*/g, ' - ')
-    .replace(/[\u2018\u2019\u201A\u2032]/g, "'")
+    .replace(/[\u2018\u2019\u201A\u2032]/g, '\'')
     .replace(/[\u201C\u201D\u201E\u2033]/g, '"')
     .replace(/\u2026/g, '...')
     .replace(/[\u00A0\u2007\u202F\u200B]/g, ' ')
