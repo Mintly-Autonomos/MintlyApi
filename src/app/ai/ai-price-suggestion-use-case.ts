@@ -7,7 +7,7 @@ import { Resource } from '../../core/types/resource'
 import { MenuItemRepository } from '../menu-item/menu-item-repository'
 import { daysSince } from '../menu-item/menu-item-rules'
 import { AiUnavailableError } from './ai-errors'
-import { AI_SYSTEM_PROMPT, PRICE_SCHEMA, buildPricePrompt } from './ai-prompts'
+import { AI_PROMPT_VERSION, AI_SYSTEM_PROMPT, PRICE_SCHEMA, buildPricePrompt } from './ai-prompts'
 import { AiRepository } from './ai-repository'
 import { cleanAiText, countWords, roundMoney, sanitizeFact, stableHash, trimToWords } from './ai-text-rules'
 import { TextGenerator, getTextGenerator } from './text-generator'
@@ -54,7 +54,7 @@ export class AiPriceSuggestionUseCase {
     const id = String((dish as { _id?: unknown })._id)
     const days = daysSince(dish.priceUpdatedAt, now)
     const facts = this.buildFacts(dish, dishes, days, now)
-    const hash = stableHash(facts)
+    const hash = stableHash({ v: AI_PROMPT_VERSION, facts })
 
     const cached = await this.repo.cacheGet<PriceResult>(ctx, 'price-suggestion', hash, now)
     if (cached) return { ...cached, cached: true, ...(await this.repo.usage(ctx, now)) }
