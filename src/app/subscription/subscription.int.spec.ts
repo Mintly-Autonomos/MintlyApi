@@ -193,21 +193,21 @@ describe('Assinatura (Integration)', () => {
       const state = await overview(auth)
       expect(state.provider).toBe('mock')
       expect(state.tiers.map((t: any) => [t.tier, t.label, t.monthlyCents])).toEqual([
-        ['basic', 'Básico', 15000],
-        ['pro', 'Pro', 22900],
+        ['basic', 'Básico', 14990],
+        ['pro', 'Pro', 22990],
       ])
       const plans = (tier: string) => state.tiers.find((t: any) => t.tier === tier).plans.map((p: any) => [p.months, p.totalCents, p.discountPercent])
       expect(plans('basic')).toEqual([
-        [1, 15000, 0],
-        [3, 42750, 5],
-        [6, 81000, 10],
-        [12, 153000, 15],
+        [1, 14990, 0],
+        [3, 42722, 5],
+        [6, 80946, 10],
+        [12, 152898, 15],
       ])
       expect(plans('pro')).toEqual([
-        [1, 22900, 0],
-        [3, 65265, 5],
-        [6, 123660, 10],
-        [12, 233580, 15],
+        [1, 22990, 0],
+        [3, 65522, 5],
+        [6, 124146, 10],
+        [12, 234498, 15],
       ])
     })
 
@@ -233,7 +233,7 @@ describe('Assinatura (Integration)', () => {
       expect(res.statusCode).toBe(401)
     })
 
-    it.each([[1, 15000], [3, 42750], [6, 81000], [12, 153000]])('plano de %i meses cobra %i centavos e abre um pagamento pendente', async (months, cents) => {
+    it.each([[1, 14990], [3, 42722], [6, 80946], [12, 152898]])('plano de %i meses cobra %i centavos e abre um pagamento pendente', async (months, cents) => {
       const { env, restaurantId, auth } = await signup()
       const res = await checkout(auth, months)
       expect(res.statusCode).toBe(201)
@@ -251,7 +251,7 @@ describe('Assinatura (Integration)', () => {
       const res = await checkout(auth, 12, { amountCents: 1, totalCents: 1, price: 0.01 })
       expect(res.statusCode).toBe(201)
       const saved = await db(env).collection('payments').findOne({ _id: new ObjectId(res.json().payload.paymentId) })
-      expect(saved?.amountCents).toBe(153000)
+      expect(saved?.amountCents).toBe(152898)
     })
 
     it('criar a cobrança não dá acesso nenhum', async () => {
@@ -417,7 +417,7 @@ describe('Assinatura (Integration)', () => {
       return paymentId as string
     }
 
-    it.each([['basic', 1, 15000], ['pro', 1, 22900], ['pro', 3, 65265], ['pro', 6, 123660], ['pro', 12, 233580]])(
+    it.each([['basic', 1, 14990], ['pro', 1, 22990], ['pro', 3, 65522], ['pro', 6, 124146], ['pro', 12, 234498]])(
       'tipo %s por %i mês(es) cobra %i centavos e o pagamento guarda o tipo',
       async (tier, months, cents) => {
         const { env, auth } = await signup()
@@ -432,7 +432,7 @@ describe('Assinatura (Integration)', () => {
     it('sem informar o tipo, é Básico', async () => {
       const { env, auth } = await signup()
       const res = await checkout(auth, 1)
-      expect(res.json().payload).toMatchObject({ tier: 'basic', totalCents: 15000 })
+      expect(res.json().payload).toMatchObject({ tier: 'basic', totalCents: 14990 })
       const saved = await db(env).collection('payments').findOne({ _id: new ObjectId(res.json().payload.paymentId) })
       expect(saved?.tier).toBe('basic')
     })
@@ -628,7 +628,7 @@ describe('Assinatura (Integration)', () => {
       // estorno do pagamento Básico (já substituído): o tempo dele nem existia mais na assinatura
       await db(env).collection('payments').updateOne({ _id: new ObjectId(first) }, { $set: { providerPaymentId: 'x1' } })
       const { ConfirmPaymentUseCase } = await import('./subscription-use-cases')
-      const provider = { name: 'mock' as const, getPayment: async () => ({ id: 'x1', status: 'refunded' as const, amountCents: 15000, externalReference: first }), createCheckout: async () => { throw new Error('x') } }
+      const provider = { name: 'mock' as const, getPayment: async () => ({ id: 'x1', status: 'refunded' as const, amountCents: 14990, externalReference: first }), createCheckout: async () => { throw new Error('x') } }
       const out = await new ConfirmPaymentUseCase().execute('x1', env, provider as any)
 
       expect(out.result).toBe('revoked')
@@ -810,7 +810,7 @@ describe('Assinatura (Integration)', () => {
     it('o checkout cria a preferência no Mercado Pago e devolve o link de pagamento', async () => {
       const calls = useMercadoPago({})
       const { body } = await openPayment(3)
-      expect(body).toMatchObject({ provider: 'mercadopago', checkoutUrl: 'https://mp.test/pagar', totalCents: 42750 })
+      expect(body).toMatchObject({ provider: 'mercadopago', checkoutUrl: 'https://mp.test/pagar', totalCents: 42722 })
       expect(calls).toEqual(['POST https://api.mercadopago.com/checkout/preferences'])
     })
 
@@ -839,16 +839,16 @@ describe('Assinatura (Integration)', () => {
       expect(res.statusCode).toBe(201)
 
       expect(bodies).toHaveLength(1)
-      expect(bodies[0].items[0]).toMatchObject({ id: 'mintly-pro-6m', title: 'Assinatura Mintly Pro — 6 meses', unit_price: 1236.6 })
+      expect(bodies[0].items[0]).toMatchObject({ id: 'mintly-pro-6m', title: 'Assinatura Mintly Pro — 6 meses', unit_price: 1241.46 })
       expect(bodies[0].items[0].description).toBe('Assinatura Mintly Pro por 6 meses (180 dias)')
       expect(bodies[0].metadata).toEqual({ tier: 'pro', months: 6, days: 180, payment_id: res.json().payload.paymentId })
     })
 
     it('o tipo que vale é o do NOSSO registro: um aviso de Pro pago como Básico não vira Pro', async () => {
       useMercadoPago({})
-      const ctx = await openPayment(1) // Básico, R$ 150
+      const ctx = await openPayment(1) // Básico, R$ 149,90
       // o valor pago bate com o Básico; o Mercado Pago não decide o tipo
-      useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
+      useMercadoPago({ 900001: approved(ctx.paymentId, 14990) })
       await signedWebhook(ctx.env, '900001')
       const doc = await db(ctx.env).collection('restaurants').findOne({ _id: new ObjectId(ctx.restaurantId) })
       expect(doc?.subscription?.tier).toBe('basic')
@@ -857,7 +857,7 @@ describe('Assinatura (Integration)', () => {
     it('aviso de pagamento aprovado libera o acesso pelo período pago', async () => {
       useMercadoPago({})
       const ctx = await openPayment(3)
-      useMercadoPago({ 900001: approved(ctx.paymentId, 42750) })
+      useMercadoPago({ 900001: approved(ctx.paymentId, 42722) })
 
       const res = await signedWebhook(ctx.env, '900001')
       expect(res.statusCode).toBe(200)
@@ -876,7 +876,7 @@ describe('Assinatura (Integration)', () => {
     it('o mesmo aviso repetido (o Mercado Pago reenvia) NÃO soma de novo', async () => {
       useMercadoPago({})
       const ctx = await openPayment(1)
-      useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
+      useMercadoPago({ 900001: approved(ctx.paymentId, 14990) })
 
       await signedWebhook(ctx.env, '900001')
       const first = await getEndsAt(ctx.env, ctx.restaurantId)
@@ -889,7 +889,7 @@ describe('Assinatura (Integration)', () => {
     it('dois avisos SIMULTÂNEOS do mesmo pagamento somam uma vez só', async () => {
       useMercadoPago({})
       const ctx = await openPayment(1)
-      useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
+      useMercadoPago({ 900001: approved(ctx.paymentId, 14990) })
 
       const results = await Promise.all([signedWebhook(ctx.env, '900001'), signedWebhook(ctx.env, '900001'), signedWebhook(ctx.env, '900001')])
       expect(results.map((r) => r.statusCode)).toEqual([200, 200, 200])
@@ -904,7 +904,7 @@ describe('Assinatura (Integration)', () => {
       const ctx = await openPayment(1)
       const current = new Date(Date.now() + 10 * DAY)
       await setEndsAt(ctx.env, ctx.restaurantId, current)
-      useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
+      useMercadoPago({ 900001: approved(ctx.paymentId, 14990) })
 
       await signedWebhook(ctx.env, '900001')
       expect((await getEndsAt(ctx.env, ctx.restaurantId))!.toISOString()).toBe(addDays(current, 30).toISOString())
@@ -913,7 +913,7 @@ describe('Assinatura (Integration)', () => {
     it('valor diferente do que cobramos NÃO libera nada', async () => {
       useMercadoPago({})
       const ctx = await openPayment(12)
-      useMercadoPago({ 900001: approved(ctx.paymentId, 15000) }) // pagou 150 num plano de 1.530
+      useMercadoPago({ 900001: approved(ctx.paymentId, 14990) }) // pagou 150 num plano de 1.530
 
       const res = await signedWebhook(ctx.env, '900001')
       expect(res.statusCode).toBe(200)
@@ -923,12 +923,12 @@ describe('Assinatura (Integration)', () => {
     it('pagamento recusado ou pendente NÃO libera; recusado é registrado', async () => {
       useMercadoPago({})
       const ctx = await openPayment(1)
-      useMercadoPago({ 900001: { ...approved(ctx.paymentId, 15000), status: 'rejected' } })
+      useMercadoPago({ 900001: { ...approved(ctx.paymentId, 14990), status: 'rejected' } })
       await signedWebhook(ctx.env, '900001')
       expect(await getEndsAt(ctx.env, ctx.restaurantId)).toBeNull()
       expect((await db(ctx.env).collection('payments').findOne({ _id: new ObjectId(ctx.paymentId) }))?.status).toBe('rejected')
 
-      useMercadoPago({ 900002: { ...approved(ctx.paymentId, 15000, '900002'), status: 'in_process' } })
+      useMercadoPago({ 900002: { ...approved(ctx.paymentId, 14990, '900002'), status: 'in_process' } })
       await signedWebhook(ctx.env, '900002')
       expect(await getEndsAt(ctx.env, ctx.restaurantId)).toBeNull()
     })
@@ -937,8 +937,8 @@ describe('Assinatura (Integration)', () => {
       useMercadoPago({})
       const ctx = await openPayment(1)
       useMercadoPago({
-        900001: { ...approved(ctx.paymentId, 15000, '900001'), status: 'rejected' },
-        900002: approved(ctx.paymentId, 15000, '900002'),
+        900001: { ...approved(ctx.paymentId, 14990, '900001'), status: 'rejected' },
+        900002: approved(ctx.paymentId, 14990, '900002'),
       })
       await signedWebhook(ctx.env, '900001')
       expect(await getEndsAt(ctx.env, ctx.restaurantId)).toBeNull()
@@ -952,11 +952,11 @@ describe('Assinatura (Integration)', () => {
       it('estorno desconta os meses que o pagamento deu e a conta volta a ser barrada (402)', async () => {
         useMercadoPago({})
         const ctx = await openPayment(1)
-        useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
+        useMercadoPago({ 900001: approved(ctx.paymentId, 14990) })
         await signedWebhook(ctx.env, '900001')
         expect((await app.inject({ method: 'GET', url: '/financial-accounts', headers: ctx.auth })).statusCode).toBe(200)
 
-        useMercadoPago({ 900001: refunded(ctx.paymentId, 15000) })
+        useMercadoPago({ 900001: refunded(ctx.paymentId, 14990) })
         const res = await signedWebhook(ctx.env, '900001')
 
         expect(res.statusCode).toBe(200)
@@ -971,10 +971,10 @@ describe('Assinatura (Integration)', () => {
       it('chargeback (charged_back) também desconta', async () => {
         useMercadoPago({})
         const ctx = await openPayment(3)
-        useMercadoPago({ 900001: approved(ctx.paymentId, 42750) })
+        useMercadoPago({ 900001: approved(ctx.paymentId, 42722) })
         await signedWebhook(ctx.env, '900001')
 
-        useMercadoPago({ 900001: { ...approved(ctx.paymentId, 42750), status: 'charged_back' } })
+        useMercadoPago({ 900001: { ...approved(ctx.paymentId, 42722), status: 'charged_back' } })
         await signedWebhook(ctx.env, '900001')
         expect((await app.inject({ method: 'GET', url: '/financial-accounts', headers: ctx.auth })).statusCode).toBe(402)
       })
@@ -984,10 +984,10 @@ describe('Assinatura (Integration)', () => {
         const ctx = await openPayment(1)
         const base = new Date(Date.now() + 60 * DAY)
         await setEndsAt(ctx.env, ctx.restaurantId, base)
-        useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
+        useMercadoPago({ 900001: approved(ctx.paymentId, 14990) })
         await signedWebhook(ctx.env, '900001') // base + 1 mês
 
-        useMercadoPago({ 900001: refunded(ctx.paymentId, 15000) })
+        useMercadoPago({ 900001: refunded(ctx.paymentId, 14990) })
         await Promise.all([signedWebhook(ctx.env, '900001'), signedWebhook(ctx.env, '900001'), signedWebhook(ctx.env, '900001')])
         await signedWebhook(ctx.env, '900001')
 
@@ -997,17 +997,17 @@ describe('Assinatura (Integration)', () => {
       it('estornar UM pagamento não tira o que outro pagamento deu: continua com acesso', async () => {
         useMercadoPago({})
         const first = await openPayment(1)
-        useMercadoPago({ 900001: approved(first.paymentId, 15000) })
+        useMercadoPago({ 900001: approved(first.paymentId, 14990) })
         await signedWebhook(first.env, '900001')
         const afterFirst = (await getEndsAt(first.env, first.restaurantId))!
 
         const second = await checkout(first.auth, 3)
         const secondId = second.json().payload.paymentId as string
-        useMercadoPago({ 900001: approved(first.paymentId, 15000), 900002: approved(secondId, 42750, '900002') })
+        useMercadoPago({ 900001: approved(first.paymentId, 14990), 900002: approved(secondId, 42722, '900002') })
         await signedWebhook(first.env, '900002')
         expect((await getEndsAt(first.env, first.restaurantId))!.toISOString()).toBe(addDays(afterFirst, 90).toISOString())
 
-        useMercadoPago({ 900001: refunded(first.paymentId, 15000), 900002: approved(secondId, 42750, '900002') })
+        useMercadoPago({ 900001: refunded(first.paymentId, 14990), 900002: approved(secondId, 42722, '900002') })
         await signedWebhook(first.env, '900001')
 
         const grantedByFirst = (await db(first.env).collection('payments').findOne({ _id: new ObjectId(first.paymentId) }))!.grantedMs as number
@@ -1020,11 +1020,11 @@ describe('Assinatura (Integration)', () => {
         const ctx = await openPayment(3)
         const base = new Date(Date.now() + 10 * DAY)
         await setEndsAt(ctx.env, ctx.restaurantId, base)
-        useMercadoPago({ 900001: approved(ctx.paymentId, 42750) })
+        useMercadoPago({ 900001: approved(ctx.paymentId, 42722) })
         await signedWebhook(ctx.env, '900001')
         await db(ctx.env).collection('payments').updateOne({ _id: new ObjectId(ctx.paymentId) }, { $unset: { grantedMs: '' } })
 
-        useMercadoPago({ 900001: refunded(ctx.paymentId, 42750) })
+        useMercadoPago({ 900001: refunded(ctx.paymentId, 42722) })
         await signedWebhook(ctx.env, '900001')
         expect((await getEndsAt(ctx.env, ctx.restaurantId))!.toISOString()).toBe(base.toISOString())
       })
@@ -1032,12 +1032,12 @@ describe('Assinatura (Integration)', () => {
       it('estorno de uma tentativa que nunca liberou nada não mexe na assinatura', async () => {
         useMercadoPago({})
         const ctx = await openPayment(1)
-        useMercadoPago({ 900001: approved(ctx.paymentId, 15000, '900001') })
+        useMercadoPago({ 900001: approved(ctx.paymentId, 14990, '900001') })
         await signedWebhook(ctx.env, '900001')
         const granted = await getEndsAt(ctx.env, ctx.restaurantId)
 
         // outro id no provedor, apontando para a mesma cobrança, que veio estornado: não é o que liberou o acesso
-        useMercadoPago({ 900009: refunded(ctx.paymentId, 15000, '900009') })
+        useMercadoPago({ 900009: refunded(ctx.paymentId, 14990, '900009') })
         await signedWebhook(ctx.env, '900009')
 
         expect((await getEndsAt(ctx.env, ctx.restaurantId))!.getTime()).toBe(granted!.getTime())
@@ -1046,14 +1046,14 @@ describe('Assinatura (Integration)', () => {
       it('pagamento estornado ANTES de o aviso de aprovação chegar nunca libera acesso', async () => {
         useMercadoPago({})
         const ctx = await openPayment(1)
-        useMercadoPago({ 900001: refunded(ctx.paymentId, 15000) })
+        useMercadoPago({ 900001: refunded(ctx.paymentId, 14990) })
         await signedWebhook(ctx.env, '900001')
         expect(await getEndsAt(ctx.env, ctx.restaurantId)).toBeNull()
       })
     })
 
     it('pagamento que não é nosso (referência desconhecida) é ignorado com 200', async () => {
-      useMercadoPago({ 900001: approved(new ObjectId().toHexString(), 15000) })
+      useMercadoPago({ 900001: approved(new ObjectId().toHexString(), 14990) })
       const { env, restaurantId } = await signup()
       const res = await signedWebhook(env, '900001')
       expect(res.statusCode).toBe(200)
@@ -1064,7 +1064,7 @@ describe('Assinatura (Integration)', () => {
       useMercadoPago({})
       const ctx = await openPayment(1)
       const other = await signup()
-      useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
+      useMercadoPago({ 900001: approved(ctx.paymentId, 14990) })
 
       await signedWebhook(other.env, '900001') // mesmo pagamento do MP, apontando para o ambiente errado
       expect(await getEndsAt(ctx.env, ctx.restaurantId)).toBeNull()
@@ -1074,7 +1074,7 @@ describe('Assinatura (Integration)', () => {
     it('assinatura do aviso errada → 401 e nem consulta o Mercado Pago', async () => {
       const calls = useMercadoPago({})
       const ctx = await openPayment(1)
-      useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
+      useMercadoPago({ 900001: approved(ctx.paymentId, 14990) })
       const before = calls.length
 
       const res = await signedWebhook(ctx.env, '900001', { secret: 'outro-segredo' })
@@ -1125,7 +1125,7 @@ describe('Assinatura (Integration)', () => {
       useMercadoPago({})
       const ctx = await openPayment(1)
       delete process.env.MP_WEBHOOK_SECRET
-      useMercadoPago({ 900001: approved(ctx.paymentId, 15000) })
+      useMercadoPago({ 900001: approved(ctx.paymentId, 14990) })
       delete process.env.MP_WEBHOOK_SECRET
 
       const res = await app.inject({ method: 'POST', url: `/webhooks/mercadopago?env=${ctx.env}&data.id=900001&type=payment`, payload: {} })
