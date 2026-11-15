@@ -186,10 +186,14 @@ export function buildDueItems (movements: CashFlowMovement[], today: string, hor
   // repasse — senão a lista vira um extrato de pedidos e as contas somem no meio.
   const payouts = new Map<string, DueItem>()
   for (const m of movements) {
-    if (m.dueDate == null || !inWindow(m)) continue
+    // Pendente sem vencimento informado (boleto lançado só com a data, como na importação) vence na data do
+    // lançamento: entra na lista e nas abas "A pagar"/"Vencidos". Liquidado sem vencimento é à vista, não é
+    // vencimento, e fica de fora.
+    if (!inWindow(m)) continue
+    if (m.dueDate == null && !isPending(m)) continue
     const settled = isSettled(m)
     if (m.direction === MovementDirection.In && m.account?.type === FinancialAccountType.Platform) {
-      const day = settled ? cashDay(m, today) : toLocalDay(m.dueDate)
+      const day = settled ? cashDay(m, today) : toLocalDay(m.dueDate ?? m.date)
       const id = `payout:${m.account._id}:${day}:${m.status}`
       const group = payouts.get(id)
       if (group) {
@@ -220,7 +224,7 @@ export function buildDueItems (movements: CashFlowMovement[], today: string, hor
       category: m.category,
       direction: m.direction,
       amount: cashAmount(m),
-      dueDate: toLocalDay(m.dueDate),
+      dueDate: toLocalDay(m.dueDate ?? m.date),
       status: m.status as DueItem['status'],
       overdue: isOverdue(m, today),
       kind: 'movement',

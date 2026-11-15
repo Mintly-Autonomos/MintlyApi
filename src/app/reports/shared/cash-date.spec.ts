@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MovementDirection, MovementStatus } from 'mintly-lib'
+import { FinancialAccountType, MovementDirection, MovementStatus } from 'mintly-lib'
 import { CashFlowMovement, cashAmount, cashDay, isOverdue } from './cash-date'
 
 const TODAY = '2026-10-12'
@@ -64,8 +64,16 @@ describe('isOverdue', () => {
     expect(isOverdue(mov({ dueDate: at(TODAY) }), TODAY)).toBe(false)
   })
 
-  it('liquidada nunca está vencida; sem vencimento também não', () => {
+  it('liquidada nunca está vencida', () => {
     expect(isOverdue(mov({ status: MovementStatus.Settled, dueDate: at('2026-10-01') }), TODAY)).toBe(false)
-    expect(isOverdue(mov({ date: at('2026-10-01') }), TODAY)).toBe(false)
+  })
+
+  it('pendente sem vencimento informado vence na data do lançamento (boleto importado só com a data)', () => {
+    expect(isOverdue(mov({ date: at('2026-10-01') }), TODAY)).toBe(true)
+    expect(isOverdue(mov({ date: at(TODAY) }), TODAY)).toBe(false)
+  })
+
+  it('repasse de plataforma (iFood, maquininha) nunca fica em atraso: cai sozinho', () => {
+    expect(isOverdue(mov({ direction: MovementDirection.In, account: { _id: 'p', name: 'iFood', type: FinancialAccountType.Platform }, dueDate: at('2026-05-01') }), TODAY)).toBe(false)
   })
 })
