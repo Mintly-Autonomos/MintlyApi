@@ -70,6 +70,21 @@ describe('/restaurants/me (Integration)', () => {
     expect(lastMonth).toMatchObject({ referenceMonth: addMonths(month, -1), rbt12: 348_000, bracket: { index: 2 } })
   })
 
+  it('PATCH troca o regime para o Anexo II: GET usa a tabela da indústria (alíquota maior na mesma faixa)', async () => {
+    const env = freshEnv()
+    const { auth, restaurantId } = await signup(env)
+    await mongoConnection.getDatabase(env).collection('financial_movements').insertMany(taxScenarioMovements(month, scenarioRefs(restaurantId)))
+
+    await patchMe(auth, { taxRegime: 'simplesNacionalAnexoI' })
+    const anexoI = (await getMe(auth)).json().payload.tax
+
+    const patched = await patchMe(auth, { taxRegime: 'simplesNacionalAnexoII' })
+    expect(patched.statusCode).toBe(200)
+    const anexoII = (await getMe(auth)).json().payload.tax
+    expect(anexoII).toMatchObject({ regime: 'simplesNacionalAnexoII', rbt12: anexoI.rbt12, bracket: { index: 3 } })
+    expect(anexoII.effectiveRate).toBeGreaterThan(anexoI.effectiveRate)
+  })
+
   it('PATCH troca o nome e atualiza o audit', async () => {
     const { auth } = await signup(freshEnv())
     const res = await patchMe(auth, { name: 'Cantina Nova' })

@@ -71,12 +71,13 @@ export class ExpensesRepository {
   /** Todas as categorias do restaurante (inativa também pode ter lançamento antigo). */
   async categories (ctx: RequestContext): Promise<Map<string, ExpenseCategoryInfo>> {
     const docs = await this.db(ctx).collection('financial_categories')
-      .find({ restaurantId: ctx.restaurantId }, { projection: { name: 1, dreGroup: 1, behavior: 1, subcategories: 1 } })
+      .find({ restaurantId: ctx.restaurantId }, { projection: { name: 1, dreGroup: 1, behavior: 1, operationalNature: 1, subcategories: 1 } })
       .toArray()
     return new Map(docs.map((d) => [String(d._id), {
       name: d.name,
       behavior: d.behavior,
       dreGroup: d.dreGroup,
+      operationalNature: d.operationalNature,
       subcategories: (d.subcategories ?? []).map((s: any) => ({ _id: s._id, name: s.name })),
     }]))
   }

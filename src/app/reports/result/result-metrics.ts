@@ -1,4 +1,4 @@
-import { CategoryBehavior, DreGroup, OpexItem, ResultBreakEven, ResultInsight, ResultLineKey, ResultLines, ResultReport, TaxRegime } from 'mintly-lib'
+import { CategoryBehavior, DreGroup, OperationalNature, OpexItem, ResultBreakEven, ResultInsight, ResultLineKey, ResultLines, ResultReport, TaxRegime } from 'mintly-lib'
 import { fromCents, toCents } from '../../../core/money/money'
 import { buildTaxProfile } from '../../tax/tax-rules'
 import { addMonths } from '../shared/period'
@@ -31,6 +31,8 @@ export interface CategoryInfo {
   name: string
   dreGroup?: DreGroup
   behavior: CategoryBehavior
+  /** "Não operacional": fica fora da receita e das despesas (linhas próprias depois do resultado). */
+  operationalNature?: OperationalNature
 }
 
 /** Imposto de um mês: alíquota (Simples) ou valor fixo (MEI); os dois null = sem regime. */
@@ -55,7 +57,12 @@ export interface MonthAggregate {
   opexCategories: Map<string, CategoryAmount>
   fixed: number
   variable: number
+  /** Entradas e saídas de categorias "Não operacional" (empréstimo, aporte, equipamento...). */
+  nonOperatingIncome: number
+  nonOperatingExpenses: number
 }
+
+const isNonOperating = (category: CategoryInfo | undefined) => category?.operationalNature === OperationalNature.NonOperational
 
 const effectiveBehavior = (b: CategoryBehavior) => (b === CategoryBehavior.Mixed ? MIXED_BEHAVIOR_AS : b)
 
@@ -63,13 +70,20 @@ const effectiveBehavior = (b: CategoryBehavior) => (b === CategoryBehavior.Mixed
  * Soma um mês: entradas viram receita bruta e taxa de plataforma; saídas são
  * classificadas pela categoria atual — `cmv`, `labor`, `tax` (fora do DRE) ou
  * `opex` (inclusive sem grupo). Categoria que não existe mais vira opex com o
- * nome do lançamento e conta como fixa (leitura conservadora).
+ * nome do lançamento e conta como fixa (leitura conservadora). Categoria "Não
+ * operacional" (nos dois sentidos) não é venda nem custo: vai só para
+ * `nonOperatingIncome`/`nonOperatingExpenses`.
  */
 export function aggregateMonth (rows: MonthlyTotalRow[], month: string, categories: Map<string, CategoryInfo>): MonthAggregate {
-  const agg: MonthAggregate = { grossRevenue: 0, platformFee: 0, cmv: 0, opexCategories: new Map(), fixed: 0, variable: 0 }
+  const agg: MonthAggregate = { grossRevenue: 0, platformFee: 0, cmv: 0, opexCategories: new Map(), fixed: 0, variable: 0, nonOperatingIncome: 0, nonOperatingExpenses: 0 }
 
   for (const r of rows) {
     if (r.month !== month) continue
+    if (isNonOperating(categories.get(r.categoryId))) {
+      if (r.direction === 'in') agg.nonOperatingIncome += toCents(r.gross)
+      else agg.nonOperatingExpenses += toCents(r.gross)
+      continue
+    }
     if (r.direction === 'in') {
       agg.grossRevenue += toCents(r.gross)
       agg.platformFee += toCents(r.fee)
@@ -141,6 +155,9 @@ export function buildLines (agg: MonthAggregate, tax: MonthTax): ResultLines {
     operatingExpenses: fromCents(opex),
     netProfit: fromCents(netProfit),
     netMargin: agg.grossRevenue > 0 ? netProfit / agg.grossRevenue : null,
+    nonOperatingIncome: fromCents(agg.nonOperatingIncome),
+    nonOperatingExpenses: fromCents(agg.nonOperatingExpenses),
+    resultAfterNonOperating: fromCents(netProfit + agg.nonOperatingIncome - agg.nonOperatingExpenses),
   }
 }
 
@@ -150,7 +167,7 @@ export function relativeDelta (current: number, previous: number): number | null
   return (current - previous) / Math.abs(previous)
 }
 
-const LINE_KEYS: ResultLineKey[] = ['grossRevenue', 'taxes', 'netRevenue', 'cmv', 'grossMargin', 'operatingExpenses', 'netProfit']
+const LINE_KEYS: ResultLineKey[] = ['grossRevenue', 'taxes', 'netRevenue', 'cmv', 'grossMargin', 'operatingExpenses', 'netProfit', 'nonOperatingIncome', 'nonOperatingExpenses', 'resultAfterNonOperating']
 
 export function buildDeltas (current: ResultLines, previous: ResultLines): Record<ResultLineKey, number | null> {
   return Object.fromEntries(LINE_KEYS.map((k) => [k, relativeDelta(current[k], previous[k])])) as Record<ResultLineKey, number | null>

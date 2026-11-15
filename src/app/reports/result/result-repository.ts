@@ -3,6 +3,7 @@ import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connec
 import { RequestContext } from '../../../core/context/request-context'
 import { decimalToNumber } from '../../../core/money/money'
 import { REPORT_TIME_ZONE, addMonths, startOfLocalMonth } from '../shared/period'
+import { excludeCategories, nonOperatingCategoryIds } from '../shared/non-operating'
 import { CategoryInfo, MonthlyTotalRow } from './result-metrics'
 import { sumUntilDay } from '../shared/until-day'
 
@@ -55,15 +56,16 @@ export class ResultRepository {
   /** Todas as categorias do restaurante (inativa também pode ter lançamento antigo). */
   async categories (ctx: RequestContext): Promise<Map<string, CategoryInfo>> {
     const docs = await this.db(ctx).collection('financial_categories')
-      .find({ restaurantId: ctx.restaurantId }, { projection: { name: 1, dreGroup: 1, behavior: 1 } })
+      .find({ restaurantId: ctx.restaurantId }, { projection: { name: 1, dreGroup: 1, behavior: 1, operationalNature: 1 } })
       .toArray()
-    return new Map(docs.map((d) => [String(d._id), { id: String(d._id), name: d.name, dreGroup: d.dreGroup, behavior: d.behavior }]))
+    return new Map(docs.map((d) => [String(d._id), { id: String(d._id), name: d.name, dreGroup: d.dreGroup, behavior: d.behavior, operationalNature: d.operationalNature }]))
   }
 
-  /** Receita bruta por dia (AAAA-MM-DD) do mês. */
+  /** Receita bruta por dia (AAAA-MM-DD) do mês. Sem as entradas "Não operacional" (empréstimo, aporte...). */
   async dailyRevenue (ctx: RequestContext, month: string): Promise<Map<string, number>> {
+    const nonOperating = await nonOperatingCategoryIds(this.db(ctx), ctx.restaurantId)
     const rows = await this.db(ctx).collection('financial_movements').aggregate([
-      { $match: { restaurantId: ctx.restaurantId, direction: MovementDirection.In, status: { $ne: MovementStatus.Cancelled }, date: this.monthRange(month, month) } },
+      { $match: { restaurantId: ctx.restaurantId, direction: MovementDirection.In, status: { $ne: MovementStatus.Cancelled }, date: this.monthRange(month, month), ...excludeCategories(nonOperating) } },
       { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$date', timezone: REPORT_TIME_ZONE } }, total: { $sum: '$grossValue' } } },
     ]).toArray()
     return new Map(rows.map((r) => [String(r._id), decimalToNumber(r.total)]))

@@ -1,4 +1,4 @@
-import { CategoryBehavior, DreGroup, ExpenseAnomaly, ExpenseItem, ExpenseItemKind, ExpenseSubitem, ExpensesReport, FinancialAccountType, MovementChannel } from 'mintly-lib'
+import { CategoryBehavior, DreGroup, ExpenseAnomaly, OperationalNature, ExpenseItem, ExpenseItemKind, ExpenseSubitem, ExpensesReport, FinancialAccountType, MovementChannel } from 'mintly-lib'
 import { fromCents, toCents } from '../../../core/money/money'
 import { ValidationError } from '../../../core/errors/core/validation-error'
 import { addMonths } from '../shared/period'
@@ -42,6 +42,8 @@ export interface ExpenseCategoryInfo {
   name: string
   behavior: CategoryBehavior
   dreGroup?: DreGroup
+  /** "Não operacional" (empréstimo, aporte, equipamento...): fora da receita e dos custos desta tela. */
+  operationalNature?: OperationalNature
   /** Nomes atuais das subcategorias (fatia 7). */
   subcategories?: { _id: string; name: string }[]
 }
@@ -115,6 +117,8 @@ function bucketize (input: ExpensesInput) {
   }
 
   for (const r of input.rows) {
+    // Não operacional não é venda nem custo da operação (fica no Resultado, em linha própria).
+    if (input.categories.get(r.categoryId)?.operationalNature === OperationalNature.NonOperational) continue
     const channel = effectiveChannel({ direction: r.direction, account: { type: r.accountType }, channel: r.channel })
     const passes = input.channel == null || channel === input.channel
     const b = buckets.get(r.month) ?? emptyBucket()

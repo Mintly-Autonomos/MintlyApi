@@ -110,6 +110,58 @@ describe('GET /reports/result (Integration)', () => {
     expect(r.insights).toContainEqual({ kind: 'taxRegimeNotConfigured', severity: 'info' })
   })
 
+  it('empréstimo e equipamento (Não operacional) ficam fora da receita, dos custos e do RBT12, e aparecem em linha própria', async () => {
+    const env = freshEnv()
+    const { auth, restaurantId } = await signup(env)
+    const db = mongoConnection.getDatabase(env)
+    const now = new Date()
+    const category = async (name: string, type: 'revenue' | 'expense', operationalNature: string) => String((await db.collection('financial_categories').insertOne({
+      restaurantId, name, type, behavior: 'fixed', dreGroup: type === 'expense' ? 'opex' : undefined, operationalNature, status: 'active', isSystem: false, audit: { createdAt: now, updatedAt: now },
+    })).insertedId)
+    const vendas = await category('Vendas', 'revenue', 'operational')
+    const emprestimo = await category('Empréstimos recebidos', 'revenue', 'nonOperational')
+    const aluguel = await category('Aluguel do ponto', 'expense', 'operational')
+    const equipamento = await category('Equipamentos', 'expense', 'nonOperational')
+    const mov = (direction: 'in' | 'out', categoryId: string, name: string, value: number) => ({
+      restaurantId,
+      title: name,
+      direction,
+      status: 'settled',
+      statusSource: 'auto',
+      date: new Date(startOfLocalMonth(M).getTime() + 10 * 86_400_000 + 12 * 3_600_000),
+      grossValue: toDecimal128(value),
+      feeValue: toDecimal128(0),
+      netValue: toDecimal128(value),
+      account: { _id: 'a', name: 'Caixa', type: 'cash' },
+      category: { _id: categoryId, name, type: direction === 'in' ? 'revenue' : 'expense' },
+      paymentMethod: 'pix',
+      origin: 'manual',
+      history: [],
+      audit: { createdAt: now, updatedAt: now },
+    })
+    await db.collection('financial_movements').insertMany([
+      mov('in', vendas, 'Vendas', 26_795),
+      mov('in', emprestimo, 'Empréstimos recebidos', 15_000),
+      mov('out', aluguel, 'Aluguel do ponto', 4_200),
+      mov('out', equipamento, 'Equipamentos', 3_850),
+    ])
+
+    const r = (await get(auth)).json().payload
+    expect(r.current).toMatchObject({
+      grossRevenue: 26_795,
+      operatingExpenses: 4_200,
+      netProfit: 22_595,
+      nonOperatingIncome: 15_000,
+      nonOperatingExpenses: 3_850,
+      resultAfterNonOperating: 22_595 + 15_000 - 3_850,
+    })
+    expect(r.operatingExpenseItems.map((i: any) => i.name)).toEqual(['Aluguel do ponto'])
+
+    const custos = (await app.inject({ method: 'GET', url: `/reports/expenses?month=${M}`, headers: auth })).json().payload
+    expect(custos.revenue.current).toBe(26_795)
+    expect(custos.total.current).toBe(4_200)
+  })
+
   it('lançamento do dia 1º cadastrado pelo app (AAAA-MM-DD) conta no próprio mês, não no anterior', async () => {
     const env = freshEnv()
     const { auth, restaurantId } = await signup(env)
