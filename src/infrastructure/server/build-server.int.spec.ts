@@ -111,6 +111,9 @@ describe('build-server CORS (integração, P4)', () => {
     })
     expect(response.statusCode).toBe(204)
     expect(response.headers['access-control-allow-origin']).toBe('https://app.mintly.com.br')
+    // pedido com credenciais (navegador/extensão) não é recusado; o preflight fica em cache por 10 min
+    expect(response.headers['access-control-allow-credentials']).toBe('true')
+    expect(response.headers['access-control-max-age']).toBe('600')
   })
 
   it('requisição sem Origin (curl, cron) funciona normalmente', async () => {
