@@ -162,6 +162,42 @@ describe('GET /reports/result (Integration)', () => {
     expect(custos.total.current).toBe(4_200)
   })
 
+  it('lançamento do dia 1º cadastrado pelo app (AAAA-MM-DD) conta no próprio mês, não no anterior', async () => {
+    const env = freshEnv()
+    const { auth, restaurantId } = await signup(env)
+    const db = mongoConnection.getDatabase(env)
+    const cash = await db.collection('financial_accounts').findOne({ restaurantId, isDefault: true })
+    const category = await db.collection('financial_categories').insertOne({
+      restaurantId,
+      name: 'Vendas do dia',
+      type: 'revenue',
+      behavior: 'variable',
+      operationalNature: 'operational',
+      status: 'active',
+      isSystem: false,
+      audit: { createdAt: new Date(), updatedAt: new Date() },
+    })
+    const lancar = (date: string, grossValue: number) => app.inject({
+      method: 'POST',
+      url: '/financial-movements',
+      headers: auth,
+      payload: { direction: 'in', title: 'Fechamento', grossValue, date, paymentMethod: 'cash', accountId: String(cash!._id), categoryId: String(category.insertedId) },
+    })
+    const ultimoDiaAnterior = toLocalDay(new Date(startOfLocalMonth(M).getTime() - 12 * 3_600_000))
+
+    expect((await lancar(`${M}-01`, 700)).statusCode).toBe(201) // dia 1º do mês M
+    expect((await lancar(ultimoDiaAnterior, 300)).statusCode).toBe(201) // último dia do mês anterior
+
+    const atual = (await get(auth)).json().payload
+    const anterior = (await get(auth, `?month=${addMonths(M, -1)}`)).json().payload
+    expect(atual.current.grossRevenue).toBe(700)
+    expect(anterior.current.grossRevenue).toBe(300)
+
+    const gravado = await db.collection('financial_movements').findOne({ restaurantId, grossValue: { $exists: true }, title: 'Fechamento', 'audit.createdAt': { $exists: true } }, { sort: { _id: 1 } })
+    expect(toLocalDay(gravado!.date)).toBe(`${M}-01`)
+    expect((gravado!.date as Date).toISOString()).toBe(`${M}-01T15:00:00.000Z`)
+  })
+
   it('dois restaurantes no mesmo ambiente não se misturam', async () => {
     const env = freshEnv()
     const a = await signup(env, 'a')

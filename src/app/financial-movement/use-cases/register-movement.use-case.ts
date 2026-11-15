@@ -9,6 +9,7 @@ import { FinancialMovementRepository, movementToStorage, movementFromStorage, du
 import { computeSnapshot, defaultStatus, balanceImpact, resolveDueDate, resolveSettledAt, resolveMovementSubcategory, BalanceImpact } from '../movement-rules'
 import { applyBalanceImpact, applyBalanceImpacts } from '../movement-balance'
 import { MovementItemRequest, StoredMovementItem, resolveMovementItems, resolveMovementItemsFrom } from '../movement-items'
+import { toBusinessDate } from '../../reports/shared/period'
 
 export interface RegisterMovementInput {
   direction: MovementDirection
@@ -69,8 +70,8 @@ async function draftMovement (
   category: any,
   resolveItems: (items: MovementItemRequest[]) => Promise<StoredMovementItem[]> | StoredMovementItem[],
 ): Promise<MovementDraft> {
-  // 3. Cálculos de domínio.
-  const date = new Date(input.date)
+  // 3. Cálculos de domínio. O dia do lançamento é gravado como meio-dia em São Paulo (ver `toBusinessDate`).
+  const date = toBusinessDate(input.date)
   const snapshot = computeSnapshot({
     direction: input.direction,
     grossValue: input.grossValue,
@@ -80,7 +81,7 @@ async function draftMovement (
   // M1 — vencimento: o informado pelo dono manda; senão vale o calculado
   // pela conta com prazo. Sem nenhum dos dois, é à vista.
   const dueDate = resolveDueDate({
-    informed: input.dueDate != null ? new Date(input.dueDate) : undefined,
+    informed: input.dueDate != null ? toBusinessDate(input.dueDate) : undefined,
     computed: snapshot.dueDate,
     storedWasComputed: false,
   })

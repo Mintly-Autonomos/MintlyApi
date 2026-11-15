@@ -7,7 +7,7 @@ import { buildServer } from '../../../infrastructure/server/build-server'
 import { FinancialAccountRepository } from '../../financial-account/financial-account-repository'
 import { FinancialMovementRepository } from '../financial-movement-repository'
 import { SettleDueMovementsUseCase } from './settle-due-movements.use-case'
-import { addDaysToDay, toLocalDay } from '../../reports/shared/period'
+import { addDaysToDay, toBusinessDate, toLocalDay } from '../../reports/shared/period'
 
 const DAY = 24 * 60 * 60 * 1000
 let envCounter = 0
@@ -78,7 +78,7 @@ describe('settledAt — quando o dinheiro mexeu (Integration)', () => {
 
     const doc = await stored(s.db, res.json().payload._id)
     expect(doc.status).toBe('settled')
-    expect(doc.settledAt.toISOString()).toBe(date.toISOString())
+    expect(doc.settledAt.toISOString()).toBe(toBusinessDate(date).toISOString()) // à vista: o pagamento é o próprio dia do lançamento
   })
 
   it('registro com vencimento nasce pendente e sem settledAt', async () => {
@@ -179,7 +179,7 @@ describe('settledAt — quando o dinheiro mexeu (Integration)', () => {
     expect(res.statusCode).toBe(200)
     const doc = await stored(s.db, id)
     expect(doc.status).toBe('settled')
-    expect(doc.settledAt.toISOString()).toBe(date.toISOString())
+    expect(doc.settledAt.toISOString()).toBe(toBusinessDate(date).toISOString()) // à vista: o pagamento é o próprio dia do lançamento
   })
 
   it('edição de campo inócuo em liquidada preserva o settledAt', async () => {
@@ -190,7 +190,7 @@ describe('settledAt — quando o dinheiro mexeu (Integration)', () => {
 
     await app.inject({ method: 'PATCH', url: `/financial-movements/${id}`, headers: s.auth, payload: { title: 'Gás de cozinha' } })
 
-    expect((await stored(s.db, id)).settledAt.toISOString()).toBe(date.toISOString())
+    expect((await stored(s.db, id)).settledAt.toISOString()).toBe(toBusinessDate(date).toISOString()) // à vista: o pagamento é o próprio dia do lançamento
   })
   // Revisão final — achado 1: o front manda "AAAA-MM-DD" (seletor de data). Lido
   // como meia-noite UTC, cairia às 21h do dia ANTERIOR em São Paulo.
@@ -230,7 +230,7 @@ describe('settledAt — quando o dinheiro mexeu (Integration)', () => {
     const res = await app.inject({ method: 'PATCH', url: `/financial-movements/${id}`, headers: s.auth, payload: { date: newDate.toISOString() } })
 
     expect(res.statusCode).toBe(200)
-    expect((await stored(s.db, id)).settledAt.toISOString()).toBe(newDate.toISOString())
+    expect((await stored(s.db, id)).settledAt.toISOString()).toBe(toBusinessDate(newDate).toISOString())
   })
 
   it('editar a data não sobrescreve um settledAt informado pelo dono', async () => {

@@ -152,7 +152,7 @@ describe('UpdateMovementUseCase', () => {
   it('com date nova aplica a data informada', async () => {
     const { movements } = wire()
     await useCase.execute(MOV_ID, { date: '2026-07-01T00:00:00.000Z' }, CTX)
-    expect(storedDoc(movements).date).toEqual(new Date('2026-07-01T00:00:00.000Z'))
+    expect(storedDoc(movements).date).toEqual(new Date('2026-07-01T15:00:00.000Z')) // o dia informado, ao meio-dia em São Paulo
   })
 
   it('grossValue informado sobrescreve o valor', async () => {
@@ -529,7 +529,7 @@ describe('UpdateMovementUseCase', () => {
       const updated = await useCase.execute(MOV_ID, { dueDate: '2026-09-22T00:00:00.000Z' }, CTX)
 
       expect(updated.status).toBe('pending')
-      expect(storedDoc(movements).dueDate).toEqual(new Date('2026-09-22T00:00:00.000Z'))
+      expect(storedDoc(movements).dueDate).toEqual(new Date('2026-09-22T15:00:00.000Z'))
     })
 
     it('limpar o vencimento (null) liquida o lançamento', async () => {

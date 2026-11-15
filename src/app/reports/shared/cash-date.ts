@@ -1,4 +1,4 @@
-import { MovementDirection, MovementStatus } from 'mintly-lib'
+import { FinancialAccountType, MovementDirection, MovementStatus } from 'mintly-lib'
 import { toLocalDay } from './period'
 
 /**
@@ -40,7 +40,13 @@ export function cashAmount (m: CashFlowMovement): number {
   return m.direction === MovementDirection.In ? m.netValue : m.grossValue
 }
 
-/** Vencida = pendente COM vencimento antes de hoje. Vencer hoje ainda não é atraso. */
+/**
+ * Vencida = pendente cujo vencimento (ou, sem vencimento, a data do lançamento) já passou. Vencer hoje ainda não
+ * é atraso. Repasse de plataforma (iFood, maquininha) não fica "em atraso": ele cai sozinho, e marcar como
+ * atrasado só gera alarme falso.
+ */
 export function isOverdue (m: CashFlowMovement, today: string): boolean {
-  return m.status === MovementStatus.Pending && m.dueDate != null && toLocalDay(m.dueDate) < today
+  if (m.status !== MovementStatus.Pending) return false
+  if (m.direction === MovementDirection.In && m.account?.type === FinancialAccountType.Platform) return false
+  return toLocalDay(m.dueDate ?? m.date) < today
 }

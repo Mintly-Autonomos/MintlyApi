@@ -42,6 +42,12 @@ export async function buildServer (server: FastifyInstance = Fastify({ bodyLimit
     origin: (origin, callback) => {
       callback(null, isOriginAllowed(origin))
     },
+    // O app manda o token no cabeçalho, sem cookie; mesmo assim, navegador ou extensão que faça a chamada com
+    // credenciais recusava a resposta sem este cabeçalho e a Visão Geral ficava em branco (relatório de testes).
+    // Só vale para as origens da lista acima.
+    credentials: true,
+    // O navegador guarda a resposta do preflight por 10 min: menos uma ida e volta antes de cada chamada.
+    maxAge: 600,
   })
 
   // Documentação (Swagger) só fora de produção: em prod, /documentation exporia

@@ -225,6 +225,20 @@ describe('buildDueItems', () => {
   })
 })
 
+describe('buildDueItems — contas a pagar lançadas sem vencimento (relatório Sweetie Bel)', () => {
+  it('boleto pendente só com a data entra na lista, vence na data e aparece como vencido se ela passou', () => {
+    const items = buildDueItems([
+      mov({ title: 'Laticínios', date: at('2026-10-09') }),
+      mov({ title: 'DAS', date: at('2026-10-20') }),
+      mov({ title: 'À vista', status: MovementStatus.Settled, date: at('2026-10-11'), settledAt: at('2026-10-11') }),
+    ], TODAY, 30)
+    expect(items.map((i) => [i.title, i.dueDate, i.overdue])).toEqual([
+      ['Laticínios', '2026-10-09', true],
+      ['DAS', '2026-10-20', false],
+    ])
+  })
+})
+
 describe('buildDueItems — ajuste A5: repasses de plataforma agrupados', () => {
   const ifood = { _id: 'acc-ifood', name: 'iFood', type: 'platform' }
   const rappi = { _id: 'acc-rappi', name: 'Rappi', type: 'platform' }
@@ -256,7 +270,7 @@ describe('buildDueItems — ajuste A5: repasses de plataforma agrupados', () => 
     ], TODAY, 30)
 
     expect(items.map((i) => [i.id, i.amount, i.status, i.overdue, i.settledAt ?? null])).toEqual([
-      ['payout:acc-ifood:2026-10-04:pending', 10, 'pending', true, null],
+      ['payout:acc-ifood:2026-10-04:pending', 10, 'pending', false, null], // repasse cai sozinho: não fica em atraso
       ['payout:acc-ifood:2026-10-09:settled', 50, 'settled', false, '2026-10-09'],
     ])
   })
