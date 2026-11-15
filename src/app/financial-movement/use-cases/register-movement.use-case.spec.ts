@@ -199,8 +199,8 @@ describe('RegisterMovementUseCase', () => {
       )
 
       expect(created.status).toBe('pending')
-      expect(created.dueDate).toEqual(new Date('2026-07-19T00:00:00.000Z'))
-      expect(storedDoc(movements).dueDate).toEqual(new Date('2026-07-19T00:00:00.000Z'))
+      expect(created.dueDate).toEqual(new Date('2026-07-19T15:00:00.000Z')) // o dia informado, ao meio-dia em São Paulo
+      expect(storedDoc(movements).dueDate).toEqual(new Date('2026-07-19T15:00:00.000Z'))
     })
 
     it('saída com vencimento JÁ PASSADO nasce pendente (vencida, não paga)', async () => {
@@ -241,7 +241,7 @@ describe('RegisterMovementUseCase', () => {
       const { movements } = wire({ account: makeAccount({ type: 'platform', feePercent: 10, settlementDays: 30 }) })
       await useCase.execute(makeInput({ dueDate: '2026-07-05T00:00:00.000Z' }), CTX)
 
-      expect(storedDoc(movements).dueDate).toEqual(new Date('2026-07-05T00:00:00.000Z'))
+      expect(storedDoc(movements).dueDate).toEqual(new Date('2026-07-05T15:00:00.000Z'))
     })
   })
 })

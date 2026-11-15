@@ -70,6 +70,34 @@ export function startOfLocalDay (day: string): Date {
   return new Date(Date.UTC(y, m - 1, d) - offsetMinutes(day) * 60 * 1000)
 }
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+const HALF_DAY_MS = 12 * 60 * 60 * 1000
+
+/**
+ * Data de negócio (o dia de um lançamento: `date`, `dueDate`) como ela deve ser gravada: o MEIO-DIA em São
+ * Paulo daquele dia. É o mesmo jeito que os relatórios leem o mês (`startOfLocalMonth`): com meio-dia não há
+ * como o dia escorregar para o mês ou o dia vizinho.
+ *
+ * - `AAAA-MM-DD` (o que um seletor de data manda) ou meia-noite UTC exata (o mesmo texto depois do
+ *   `new Date`/`coerce`) = aquele dia. Sem isto, o dia 1º gravado como 00:00 UTC é 21h do dia anterior em
+ *   São Paulo e caía no mês anterior.
+ * - Qualquer outro instante = o dia local dele.
+ * - Inválido volta como está (a validação de quem chama recusa).
+ */
+export function toBusinessDate (value: string | Date): Date {
+  let day: string
+  if (typeof value === 'string' && DATE_ONLY.test(value)) {
+    day = value
+  } else {
+    const instant = value instanceof Date ? value : new Date(value)
+    if (Number.isNaN(instant.getTime())) return instant
+    const utcMidnight = instant.getUTCHours() === 0 && instant.getUTCMinutes() === 0 &&
+      instant.getUTCSeconds() === 0 && instant.getUTCMilliseconds() === 0
+    day = utcMidnight ? instant.toISOString().slice(0, 10) : toLocalDay(instant)
+  }
+  return new Date(startOfLocalDay(day).getTime() + HALF_DAY_MS)
+}
+
 /** Mês civil local (`AAAA-MM`) de um instante — o mês da competência. */
 export function toLocalMonth (instant: Date): string {
   return toLocalDay(instant).slice(0, 7)
