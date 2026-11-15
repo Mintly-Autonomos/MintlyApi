@@ -1,5 +1,5 @@
 import {
-  CashFlowReport, DreGroup, ExpensesReport, HealthLabel, HealthPillar, HealthPillarKey,
+  CashFlowReport, DreGroup, ExpensesReport, HealthCap, HealthCapReason, HealthLabel, HealthPillar, HealthPillarKey,
   OverviewInsight, OverviewReport, ResultReport,
 } from 'mintly-lib'
 import { fromCents, toCents } from '../../core/money/money'
@@ -22,6 +22,16 @@ export const PILLAR_RANGES: Record<HealthPillarKey, { zero: number; full: number
   revenueTrend: { zero: -0.20, full: 0 },
 }
 export const HEALTH_BANDS = { risk: 40, attention: 70 }
+/**
+ * Trava da nota (relatório Sweetie Bel, S2.3): prejuízo ou conta vencida não convivem com
+ * "saudável" (teto no topo de "atenção"); caixa negativo não sai de "risco".
+ */
+export const HEALTH_CAPS: Record<HealthCapReason, number> = {
+  loss: HEALTH_BANDS.attention - 1,
+  overduePayables: HEALTH_BANDS.attention - 1,
+  negativeCash: HEALTH_BANDS.risk - 1,
+}
+const CAP_ORDER: HealthCapReason[] = ['negativeCash', 'loss', 'overduePayables']
 export const OVERVIEW_HORIZON = 30
 export const MAX_INSIGHTS = 4
 /** Ajuste A4: com menos pilares que isso, a nota não diz muito — sem nota (palpite N5). */
@@ -49,6 +59,13 @@ export function healthScore (pillars: HealthPillar[]): number | null {
   if (scored.length < MIN_PILLARS) return null
   const weight = scored.reduce((a, p) => a + p.weight, 0)
   return Math.round(scored.reduce((a, p) => a + p.weight * p.score!, 0) / weight)
+}
+
+/** Teto pelos motivos presentes (null = nada trava). Ordem: o mais grave primeiro. */
+export function healthCap (flags: Record<HealthCapReason, boolean>): HealthCap | null {
+  const reasons = CAP_ORDER.filter((r) => flags[r])
+  if (reasons.length === 0) return null
+  return { maxScore: Math.min(...reasons.map((r) => HEALTH_CAPS[r])), reasons }
 }
 
 export function healthLabel (score: number | null): HealthLabel {
@@ -155,7 +172,15 @@ export function computeOverview (input: OverviewInput): OverviewReport {
       revenueTrend: revenueTrend(result.current.grossRevenue, result.history, month),
     }
   const pillars: HealthPillar[] = PILLAR_ORDER.map((key) => ({ key, weight: HEALTH_WEIGHTS[key], score: pillarScore(key, values[key]), value: values[key] }))
-  const score = healthScore(pillars)
+  // Trava: prejuízo no mês-base; conta vencida e caixa negativo só valem hoje (mês atual).
+  const basisProfit = window ? (basisPoint?.netProfit ?? null) : result.current.netProfit
+  const cap = healthCap({
+    loss: basisProfit != null && basisProfit < 0,
+    overduePayables: window != null && cashFlow.overdue.payable > 0,
+    negativeCash: window != null && cashFlow.cashToday < 0,
+  })
+  const rawScore = healthScore(pillars)
+  const score = rawScore != null && cap ? Math.min(rawScore, cap.maxScore) : rawScore
 
   const expenseByMonth = new Map(expenses.history.map((h) => [h.month, h.total]))
 
@@ -173,7 +198,7 @@ export function computeOverview (input: OverviewInput): OverviewReport {
       cmv: { pct: expenses.cmv.pctOfRevenue, previousPct: cmvPrev, deltaPoints: points(expenses.cmv.pctOfRevenue, cmvPrev), target: expenses.cmv.target },
       primeCost: { pct: expenses.primeCost.pctOfRevenue, previousPct: primePrev, deltaPoints: points(expenses.primeCost.pctOfRevenue, primePrev), targetMax: expenses.primeCost.targetMax },
     },
-    health: { score, label: healthLabel(score), basisMonth, pillars, bands: HEALTH_BANDS },
+    health: { score, cap, label: healthLabel(score), basisMonth, pillars, bands: HEALTH_BANDS },
     insights: buildInsights(input, basis),
     revenueVsExpense,
     profitWaterfall: {

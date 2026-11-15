@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HealthPillar } from 'mintly-lib'
-import { computeOverview, healthLabel, healthScore, pillarScore, revenueTrend, runwayDays } from './overview-metrics'
+import { computeOverview, healthCap, healthLabel, healthScore, pillarScore, revenueTrend, runwayDays } from './overview-metrics'
 import { OVERVIEW_MONTH, overviewScenario } from './overview-scenario'
 
 describe('pillarScore (linear, limitado a 0..100)', () => {
@@ -183,6 +183,77 @@ describe('computeOverview — bordas', () => {
     const r = computeOverview(input)
     expect(r.cards.projection.runwayDays).toBe(0)
     expect(r.health.pillars.find((pl) => pl.key === 'runway')!.score).toBe(0)
+  })
+})
+
+describe('trava da nota da saúde (S2.3)', () => {
+  const current = () => {
+    const input = overviewScenario()
+    input.today = new Date('2026-07-10T15:00:00Z')
+    return input
+  }
+
+  it('healthCap: sem motivo → null; o teto é o menor e o mais grave vem primeiro', () => {
+    expect(healthCap({ loss: false, overduePayables: false, negativeCash: false })).toBeNull()
+    expect(healthCap({ loss: true, overduePayables: true, negativeCash: false })).toEqual({ maxScore: 69, reasons: ['loss', 'overduePayables'] })
+    expect(healthCap({ loss: true, overduePayables: false, negativeCash: true })).toEqual({ maxScore: 39, reasons: ['negativeCash', 'loss'] })
+  })
+
+  it('cenário sem problema: sem trava, nota cheia', () => {
+    expect(computeOverview(current()).health).toMatchObject({ score: 82, cap: null, label: 'healthy' })
+  })
+
+  it('conta a pagar vencida hoje: nota limitada a 69 (atenção)', () => {
+    const input = current()
+    ;(input.cashFlow as any).overdue = { count: 2, receivable: 0, payable: 1_200 }
+    expect(computeOverview(input).health).toMatchObject({ score: 69, label: 'attention', cap: { maxScore: 69, reasons: ['overduePayables'] } })
+  })
+
+  it('só valor a receber vencido não trava', () => {
+    const input = current()
+    ;(input.cashFlow as any).overdue = { count: 1, receivable: 500, payable: 0 }
+    expect(computeOverview(input).health.cap).toBeNull()
+  })
+
+  it('caixa negativo hoje: nota limitada a 39 (risco)', () => {
+    const input = current()
+    ;(input.cashFlow as any).cashToday = -2_000
+    const h = computeOverview(input).health
+    expect(h).toMatchObject({ label: 'risk', cap: { maxScore: 39, reasons: ['negativeCash'] } })
+    expect(h.score).toBeLessThanOrEqual(39)
+  })
+
+  it('mês-base (junho) no prejuízo: trava em 69 mesmo com os outros pilares bons', () => {
+    const input = current()
+    ;(input.result as any).history = input.result.history.map((h) => (h.month === '2026-06' ? { ...h, netProfit: -800, netMargin: -800 / h.grossRevenue } : h))
+    expect(computeOverview(input).health).toMatchObject({ label: 'attention', cap: { reasons: ['loss'] } })
+    expect(computeOverview(input).health.score).toBeLessThanOrEqual(69)
+  })
+
+  it('mês atual no prejuízo pela metade (compras antes das vendas) não trava: a base é o mês fechado', () => {
+    const input = current()
+    ;(input.result as any).current = { ...input.result.current, netProfit: -6_000 }
+    expect(computeOverview(input).health.cap).toBeNull()
+  })
+
+  it('mês passado: só o prejuízo daquele mês trava; vencidos e caixa de hoje não contam', () => {
+    const input = overviewScenario()
+    ;(input.cashFlow as any).cashToday = -2_000
+    ;(input.cashFlow as any).overdue = { count: 1, receivable: 0, payable: 900 }
+    expect(computeOverview(input).health.cap).toBeNull()
+    ;(input.result as any).current = { ...input.result.current, netProfit: -100 }
+    expect(computeOverview(input).health.cap).toEqual({ maxScore: 69, reasons: ['loss'] })
+  })
+
+  it('sem nota (sem dados), a trava não inventa nota', () => {
+    const input = current()
+    ;(input.cashFlow as any).cashToday = -10
+    ;(input.result as any).history = []
+    ;(input.expenses as any).items = []
+    ;(input.cashFlow as any).safetyThreshold = { value: 0, days: 7, avgDailyOutflow: 0 }
+    const h = computeOverview(input).health
+    expect(h.score).toBeNull()
+    expect(h.label).toBe('noData')
   })
 })
 
