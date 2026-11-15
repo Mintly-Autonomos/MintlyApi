@@ -210,10 +210,35 @@ describe('GET /reports/result (Integration)', () => {
     expect(rb.operatingExpenseItems).toEqual([])
   })
 
-  it.each(['?month=2026-13', '?month=2026-1', 'FUTURE'])('GET %s → 400', async (q) => {
+  it.each(['?month=2026-13', '?month=2026-1', 'FUTURE', '?historyMonths=7', '?historyMonths=abc'])('GET %s → 400', async (q) => {
     const { auth } = await signup(freshEnv())
-    const query = q === 'FUTURE' ? `?month=${addMonths(M, 2)}` : q
+    // Mais de 12 meses à frente do mês corrente (até 12 o Resultado aceita: U.4).
+    const query = q === 'FUTURE' ? `?month=${addMonths(toLocalMonth(new Date()), 13)}` : q
     expect((await get(auth, query)).statusCode).toBe(400)
+  })
+
+  it('U.4 — mês futuro mostra o já lançado; historyMonths=12 devolve 12 meses', async () => {
+    const env = freshEnv()
+    const { auth } = await signup(env)
+    const futuro = addMonths(toLocalMonth(new Date()), 2)
+    const res = await get(auth, `?month=${futuro}&historyMonths=12`)
+    expect(res.statusCode).toBe(200)
+    const r = res.json().payload
+    expect(r.referenceMonth).toBe(futuro)
+    expect(r.history).toHaveLength(12)
+    expect(r.history[11].month).toBe(futuro)
+    expect(r.comparison).toEqual({ kind: 'fullMonth', untilDay: null })
+    expect(r.previousYear).toBeNull()
+  })
+
+  it('U.4 — previousYear: o cenário do mês M visto 12 meses depois', async () => {
+    const env = freshEnv()
+    const { auth, restaurantId } = await signup(env)
+    await plant(env, restaurantId)
+    const daqui = addMonths(M, 12)
+    if (daqui > addMonths(toLocalMonth(new Date()), 12)) return
+    const r = (await get(auth, `?month=${daqui}`)).json().payload
+    expect(r.previousYear).toMatchObject({ month: M, lines: { grossRevenue: 58_400, netProfit: 6_372 } })
   })
 
   it('sem month: mês corrente; sem token → 401', async () => {

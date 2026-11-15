@@ -121,12 +121,18 @@ export function startOfLocalMonth (month: string): Date {
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
 
-/** `?month=AAAA-MM` dos relatórios e do /restaurants/me: padrão o mês corrente; futuro não existe. */
-export function parseReferenceMonth (value: string | undefined, now: Date): string {
+/**
+ * `?month=AAAA-MM` dos relatórios e do /restaurants/me: padrão o mês corrente; futuro não existe —
+ * exceto onde `maxFutureMonths` deixa (o Resultado mostra o já lançado em meses futuros, U.4).
+ */
+export function parseReferenceMonth (value: string | undefined, now: Date, opts: { maxFutureMonths?: number } = {}): string {
   const current = toLocalMonth(now)
   if (value == null) return current
   if (!MONTH.test(value)) throw new ValidationError('month inválido: use AAAA-MM.')
-  if (value > current) throw new ValidationError('month não pode estar no futuro.')
+  const max = opts.maxFutureMonths ?? 0
+  if (value > addMonths(current, max)) {
+    throw new ValidationError(max === 0 ? 'month não pode estar no futuro.' : `month pode ir no máximo ${max} meses à frente.`)
+  }
   return value
 }
 

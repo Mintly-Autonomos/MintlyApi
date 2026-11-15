@@ -12,6 +12,8 @@ import { addMonths } from '../shared/period'
 /** N8 decidida na fatia 4: despesa mista conta como fixa no ponto de equilíbrio. */
 export const MIXED_BEHAVIOR_AS: CategoryBehavior.Fixed | CategoryBehavior.Variable = CategoryBehavior.Fixed
 export const HISTORY_MONTHS = 6
+/** O Resultado aceita até 12 meses à frente (só o já lançado com competência no mês; U.4). */
+export const MAX_FUTURE_MONTHS = 12
 export const PLATFORM_FEE_NAME = 'Taxa de plataforma'
 
 export interface MonthlyTotalRow {
@@ -275,14 +277,18 @@ export interface ResultInput {
   dailyRevenue: Map<string, number>
   /** Ajuste A1: no mês atual, o dia de hoje (SP) — a comparação usa os mesmos dias. */
   untilDay?: number | null
+  /** Meses do `history` (6 ou 12; padrão 6). As linhas `rows` precisam cobrir também o mês −12. */
+  historyMonths?: number
 }
 
 const NO_TAX: MonthTax = { effectiveRate: null, fixedAmount: null }
 
 /** O relatório inteiro a partir das somas, das categorias e do imposto de cada mês. */
 export function computeResult (input: ResultInput): ResultReport {
-  const months = Array.from({ length: HISTORY_MONTHS }, (_, i) => addMonths(input.referenceMonth, i - (HISTORY_MONTHS - 1)))
+  const n = input.historyMonths ?? HISTORY_MONTHS
+  const months = Array.from({ length: n }, (_, i) => addMonths(input.referenceMonth, i - (n - 1)))
   const previousMonth = addMonths(input.referenceMonth, -1)
+  const previousYearMonth = addMonths(input.referenceMonth, -12)
   const aggs = new Map(months.map((m) => [m, aggregateMonth(input.rows, m, input.categories)]))
   const linesOf = (m: string) => buildLines(aggs.get(m)!, input.taxByMonth.get(m) ?? NO_TAX)
 
@@ -298,6 +304,9 @@ export function computeResult (input: ResultInput): ResultReport {
   // está no mês (e aparece em `current`), mas não entra na variação.
   const currentCmp = untilDay == null ? current : buildLines(aggregateMonth(comparisonRows, input.referenceMonth, input.categories), input.taxByMonth.get(input.referenceMonth) ?? NO_TAX)
   const items = buildOpexItems(currentAgg, previousAgg)
+  // U.4: mesmo mês do ano anterior, com o mesmo corte de dias do mês anterior no mês em andamento.
+  const previousYearAgg = aggregateMonth(comparisonRows, previousYearMonth, input.categories)
+  const previousYearLines = buildLines(previousYearAgg, input.taxByMonth.get(previousYearMonth) ?? NO_TAX)
   const tax = input.taxByMonth.get(input.referenceMonth) ?? NO_TAX
 
   return {
@@ -319,5 +328,8 @@ export function computeResult (input: ResultInput): ResultReport {
     }),
     insights: buildInsights({ regime: input.regime, current: currentCmp, previous, previousHasActivity: hasActivity(previousAgg), items }),
     comparison: untilDay == null ? { kind: 'fullMonth', untilDay: null } : { kind: 'samePeriod', untilDay },
+    previousYear: hasActivity(previousYearAgg)
+      ? { month: previousYearMonth, lines: previousYearLines, deltas: buildDeltas(currentCmp, previousYearLines) }
+      : null,
   }
 }

@@ -1,11 +1,20 @@
-import { ResultReport, TaxRegime } from 'mintly-lib'
+import { ResultHistoryMonths, ResultReport, TaxRegime } from 'mintly-lib'
+import { ValidationError } from '../../../../core/errors/core/validation-error'
 import { RequestContext } from '../../../../core/context/request-context'
 import { addMonths, comparisonUntilDay, parseReferenceMonth } from '../../shared/period'
 import { RestaurantRepository } from '../../../restaurant/restaurant-repository'
 import { TaxRepository } from '../../../tax/tax-repository'
 import { TaxSettingsRepository } from '../../../tax/tax-settings-repository'
 import { ResultRepository } from '../result-repository'
-import { HISTORY_MONTHS, computeResult, monthTax } from '../result-metrics'
+import { HISTORY_MONTHS, MAX_FUTURE_MONTHS, computeResult, monthTax } from '../result-metrics'
+
+/** `?historyMonths=6|12` (padrão 6). */
+export function parseHistoryMonths (value: unknown): ResultHistoryMonths {
+  if (value == null || value === '') return HISTORY_MONTHS
+  const n = Number(value)
+  if (n === 6 || n === 12) return n
+  throw new ValidationError('historyMonths inválido: use 6 ou 12.')
+}
 
 /**
  * Resultado (DRE): resolve o mês, lê o regime, soma por mês × categoria, calcula o
@@ -20,12 +29,14 @@ export class ResultQuery {
     private readonly clock: () => Date = () => new Date(),
   ) {}
 
-  async execute (ctx: RequestContext, month?: string): Promise<ResultReport> {
+  async execute (ctx: RequestContext, month?: string, opts: { historyMonths?: unknown } = {}): Promise<ResultReport> {
     const now = this.clock()
-    const referenceMonth = parseReferenceMonth(month, now)
+    const referenceMonth = parseReferenceMonth(month, now, { maxFutureMonths: MAX_FUTURE_MONTHS })
+    const historyMonths = parseHistoryMonths(opts.historyMonths)
     const untilDay = comparisonUntilDay(referenceMonth, now)
-    const from = addMonths(referenceMonth, -(HISTORY_MONTHS - 1))
-    const months = Array.from({ length: HISTORY_MONTHS }, (_, i) => addMonths(from, i))
+    // Do mesmo mês do ano anterior (U.4) até o mês de referência: cobre o histórico de 6 ou 12 meses.
+    const from = addMonths(referenceMonth, -12)
+    const months = Array.from({ length: 13 }, (_, i) => addMonths(from, i))
 
     const restaurant = await this.restaurants.findMine(ctx)
     const regime: TaxRegime | null = restaurant.taxRegime ?? null
@@ -43,6 +54,6 @@ export class ResultQuery {
 
     const taxByMonth = new Map(months.map((m) => [m, monthTax({ regime, month: m, firstMonth, revenueByMonth, meiMonthlyDas: dasByMonth.get(m) ?? null })]))
 
-    return computeResult({ referenceMonth, regime, rows, categories, taxByMonth, meiMonthlyDas: dasByMonth.get(referenceMonth) ?? null, dailyRevenue, untilDay })
+    return computeResult({ referenceMonth, regime, rows, categories, taxByMonth, meiMonthlyDas: dasByMonth.get(referenceMonth) ?? null, dailyRevenue, untilDay, historyMonths })
   }
 }
