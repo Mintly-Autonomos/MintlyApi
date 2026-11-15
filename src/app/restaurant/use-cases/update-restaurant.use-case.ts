@@ -19,7 +19,7 @@ export class UpdateRestaurantUseCase {
       throw new ValidationError('name não pode ser vazio.')
     }
     if ('taxRegime' in changes && changes.taxRegime == null) {
-      throw new ValidationError('taxRegime inválido: use mei ou simplesNacionalAnexoI.')
+      throw new ValidationError('taxRegime inválido: use mei, simplesNacionalAnexoI ou simplesNacionalAnexoII.')
     }
     if (Object.keys(changes).length === 0) return this.repo.findMine(ctx)
     return this.repo.updateMine(ctx, {
