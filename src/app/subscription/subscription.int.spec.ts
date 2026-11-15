@@ -18,7 +18,7 @@ const SIGNUP_BASE = {
   termsAccepted: true,
 }
 const DAY = 24 * 60 * 60 * 1000
-/** Dias de cada plano (dias fixos): 1 mês = 30, 3 = 90, 6 = 180, 12 = 360. */
+/** Dias de cada plano (dias fixos): 1 mês = 30, 3 = 90, 6 = 180, 12 = 365 (o anual é um ano de verdade). */
 const addDays = addDaysTo
 const WEBHOOK_SECRET = 'segredo-do-webhook'
 
@@ -280,13 +280,13 @@ describe('Assinatura (Integration)', () => {
       expect(await overview(auth)).toMatchObject({ status: 'active' })
     })
 
-    it('o plano de 12 meses libera 360 dias', async () => {
+    it('o plano de 12 meses libera 365 dias', async () => {
       const { env, restaurantId, auth } = await signup()
       const { paymentId } = (await checkout(auth, 12)).json().payload
       await decide(auth, paymentId, 'approved')
       const endsAt = await getEndsAt(env, restaurantId)
-      expect(endsAt!.getTime()).toBeGreaterThan(Date.now() + 359 * DAY)
-      expect(endsAt!.getTime()).toBeLessThan(Date.now() + 361 * DAY)
+      expect(endsAt!.getTime()).toBeGreaterThan(Date.now() + 364 * DAY)
+      expect(endsAt!.getTime()).toBeLessThan(Date.now() + 366 * DAY)
     })
 
     it('o login depois de pagar já devolve assinatura ativa', async () => {
@@ -442,7 +442,7 @@ describe('Assinatura (Integration)', () => {
       expect((await checkout(auth, 1, { tier })).statusCode).toBe(400)
     })
 
-    it.each([['basic', 1, 30], ['basic', 3, 90], ['basic', 6, 180], ['basic', 12, 360], ['pro', 1, 30], ['pro', 12, 360]])(
+    it.each([['basic', 1, 30], ['basic', 3, 90], ['basic', 6, 180], ['basic', 12, 365], ['pro', 1, 30], ['pro', 12, 365]])(
       'dias fixos: %s por %i mês(es) libera EXATAMENTE %i dias, não meses de calendário',
       async (tier, months, days) => {
         const { env, restaurantId, auth } = await signup()
@@ -455,10 +455,10 @@ describe('Assinatura (Integration)', () => {
       },
     )
 
-    it('GET /subscription informa os dias de cada plano (30, 90, 180, 360) nos dois tipos', async () => {
+    it('GET /subscription informa os dias de cada plano (30, 90, 180, 365) nos dois tipos', async () => {
       const { auth } = await signup()
       const state = await overview(auth)
-      for (const t of state.tiers) expect(t.plans.map((p: any) => p.days)).toEqual([30, 90, 180, 360])
+      for (const t of state.tiers) expect(t.plans.map((p: any) => p.days)).toEqual([30, 90, 180, 365])
     })
 
     it('aprovar o Pro grava o tipo no restaurante e libera o acesso', async () => {

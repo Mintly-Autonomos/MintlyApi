@@ -12,7 +12,7 @@ export interface CheckoutInput {
   /** Tipo e duração comprados: vão junto na cobrança (metadados) para o pagamento "saber" qual plano é. */
   tier: SubscriptionTier
   months: SubscriptionPlanMonths
-  /** Dias de acesso do plano (30, 90, 180 ou 360). */
+  /** Dias de acesso do plano (30, 90, 180 ou 365). */
   days: number
   amountCents: number
   payerEmail?: string
