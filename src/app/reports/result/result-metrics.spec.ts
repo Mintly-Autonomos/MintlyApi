@@ -362,3 +362,46 @@ describe('computeResult', () => {
     expect(report.previous.grossRevenue).toBe(60_000)
   })
 })
+
+describe('U.4 — histórico de 12 meses e mesmo mês do ano anterior', () => {
+  const base = { regime: null, categories: CATS, taxByMonth: new Map(), meiMonthlyDas: null, dailyRevenue: new Map() }
+
+  it('historyMonths 12: 12 pontos, do mês −11 ao mês de referência; padrão continua 6', () => {
+    const doze = computeResult({ ...base, referenceMonth: M, rows: [], historyMonths: 12 })
+    expect(doze.history.map((h) => h.month)).toEqual(['2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07'])
+    expect(computeResult({ ...base, referenceMonth: M, rows: [] }).history).toHaveLength(6)
+  })
+
+  it('previousYear: linhas do mesmo mês do ano anterior e a variação sobre ele', () => {
+    const report = computeResult({
+      ...base,
+      referenceMonth: M,
+      rows: [
+        row({ direction: 'in', categoryId: 'ven', gross: 30_000 }),
+        row({ month: '2025-07', direction: 'in', categoryId: 'ven', gross: 20_000 }),
+        row({ month: '2025-07', categoryId: 'cmv', gross: 8_000 }),
+      ],
+    })
+    expect(report.previousYear).toMatchObject({ month: '2025-07', lines: { grossRevenue: 20_000, cmv: 8_000 } })
+    expect(report.previousYear!.deltas.grossRevenue).toBeCloseTo(0.5, 10)
+  })
+
+  it('sem lançamento no mesmo mês do ano anterior → null', () => {
+    const report = computeResult({ ...base, referenceMonth: M, rows: [row({ direction: 'in', categoryId: 'ven', gross: 30_000 })] })
+    expect(report.previousYear).toBeNull()
+  })
+
+  it('mês em andamento: compara os mesmos dias do ano anterior', () => {
+    const report = computeResult({
+      ...base,
+      referenceMonth: M,
+      untilDay: 10,
+      rows: [
+        row({ direction: 'in', categoryId: 'ven', gross: 30_000, grossUntil: 12_000 }),
+        row({ month: '2025-07', direction: 'in', categoryId: 'ven', gross: 40_000, grossUntil: 10_000 }),
+      ],
+    })
+    expect(report.previousYear!.lines.grossRevenue).toBe(10_000)
+    expect(report.previousYear!.deltas.grossRevenue).toBeCloseTo(0.2, 10)
+  })
+})

@@ -78,6 +78,12 @@ describe('parseReferenceMonth', () => {
   it('mês futuro → 400', () => {
     expect(() => parseReferenceMonth('2026-11', NOW)).toThrow(ValidationError)
   })
+
+  it('com maxFutureMonths: aceita até N meses à frente e recusa depois (Resultado, U.4)', () => {
+    expect(parseReferenceMonth('2026-11', NOW, { maxFutureMonths: 12 })).toBe('2026-11')
+    expect(parseReferenceMonth('2027-10', NOW, { maxFutureMonths: 12 })).toBe('2027-10')
+    expect(() => parseReferenceMonth('2027-11', NOW, { maxFutureMonths: 12 })).toThrow('no máximo 12 meses')
+  })
 })
 
 describe('comparisonUntilDay (ajuste A1)', () => {

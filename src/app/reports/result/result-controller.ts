@@ -9,7 +9,8 @@ export class ResultController {
   /** GET /reports/result?month=AAAA-MM */
   async get (request: any, reply: any) {
     const ctx = buildRequestContext(request)
-    const report = await this.query.execute(ctx, (request.query ?? {}).month)
+    const q = request.query ?? {}
+    const report = await this.query.execute(ctx, q.month, { historyMonths: q.historyMonths })
     return new ResponseBuilder().status(StatusCodes.OK).payload(report).send(reply)
   }
 }
