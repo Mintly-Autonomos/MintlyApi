@@ -9,6 +9,7 @@ import { computeSnapshot, balanceImpact, defaultStatus, resolveDueDate, shouldRe
 import { applyBalanceImpact } from '../movement-balance'
 import { movementToStorage, movementFromStorage } from '../financial-movement-repository'
 import { MovementItemRequest, resolveMovementItems } from '../movement-items'
+import { toBusinessDate } from '../../reports/shared/period'
 
 export interface UpdateMovementInput {
   title?: string
@@ -105,7 +106,8 @@ export class UpdateMovementUseCase {
         const channel = changes.channel !== undefined ? changes.channel : mov.channel
 
         const newGross = changes.grossValue ?? num(mov.grossValue)
-        const newDate = changes.date ? new Date(changes.date) : new Date(mov.date)
+        // Dia novo informado: meio-dia em São Paulo, como no cadastro (ver `toBusinessDate`).
+        const newDate = changes.date ? toBusinessDate(changes.date) : new Date(mov.date)
 
         // P3 — snapshot congelado: a edição reaproveita a taxa/prazo gravados no
         // movimento, para que editar um campo inócuo (ex.: título) não re-precifique
@@ -152,7 +154,7 @@ export class UpdateMovementUseCase {
         // dono é do lançamento e sobrevive a qualquer troca de conta.
         const newDueDate = resolveDueDate({
           informed: 'dueDate' in changes
-            ? (changes.dueDate == null ? null : new Date(changes.dueDate))
+            ? (changes.dueDate == null ? null : toBusinessDate(changes.dueDate))
             : undefined,
           computed: snapshot.dueDate,
           stored: mov.dueDate != null ? new Date(mov.dueDate) : undefined,
