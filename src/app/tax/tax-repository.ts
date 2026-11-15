@@ -3,11 +3,13 @@ import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connectio
 import { RequestContext } from '../../core/context/request-context'
 import { decimalToNumber } from '../../core/money/money'
 import { REPORT_TIME_ZONE, addMonths, startOfLocalMonth, toLocalMonth } from '../reports/shared/period'
+import { excludeCategories, nonOperatingCategoryIds } from '../reports/shared/non-operating'
 
 /**
  * Receita por competência para o RBT12 (MIN-23, sem `daily_sales`): Σ grossValue
  * das ENTRADAS não canceladas, agrupada por mês civil em São Paulo. Pendentes
- * contam — faturamento é competência. Escopado por restaurantId.
+ * contam — faturamento é competência. Entradas "Não operacional" (empréstimo,
+ * aporte, saldo inicial) não são faturamento e ficam fora. Escopado por restaurantId.
  */
 export class TaxRepository {
   private movements (ctx: RequestContext) {
@@ -16,6 +18,7 @@ export class TaxRepository {
 
   /** Receita de cada mês em [from, to] (inclusivo). Mês sem receita não aparece. */
   async revenueByMonth (ctx: RequestContext, w: { from: string; to: string }): Promise<Map<string, number>> {
+    const nonOperating = await nonOperatingCategoryIds(MongoDBConnection.getInstance().getDatabase(ctx.env), ctx.restaurantId)
     const rows = await this.movements(ctx).aggregate([
       {
         $match: {
@@ -23,6 +26,7 @@ export class TaxRepository {
           direction: MovementDirection.In,
           status: { $ne: MovementStatus.Cancelled },
           date: { $gte: startOfLocalMonth(w.from), $lt: startOfLocalMonth(addMonths(w.to, 1)) },
+          ...excludeCategories(nonOperating),
         },
       },
       { $group: { _id: { $dateToString: { format: '%Y-%m', date: '$date', timezone: REPORT_TIME_ZONE } }, total: { $sum: '$grossValue' } } },

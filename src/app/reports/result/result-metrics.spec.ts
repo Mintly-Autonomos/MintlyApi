@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CategoryBehavior, DreGroup, TaxRegime } from 'mintly-lib'
+import { CategoryBehavior, DreGroup, OperationalNature, TaxRegime } from 'mintly-lib'
 import { CategoryInfo, MonthlyTotalRow, aggregateMonth, buildBreakEven, buildDeltas, buildInsights, buildLines, buildOpexItems, computeResult, hasActivity, monthTax, relativeDelta } from './result-metrics'
 
 const M = '2026-07'
@@ -98,6 +98,9 @@ describe('buildLines', () => {
       operatingExpenses: 27_500,
       netProfit: 6_372,
       netMargin: 6_372 / 58_400,
+      nonOperatingIncome: 0,
+      nonOperatingExpenses: 0,
+      resultAfterNonOperating: 6_372,
     })
   })
 
@@ -119,11 +122,51 @@ describe('variações', () => {
     expect(relativeDelta(10, 0)).toBeNull()
   })
 
-  it('buildDeltas cobre as sete linhas e ignora a margem', () => {
-    const lines = (v: number) => ({ grossRevenue: v, taxes: v, netRevenue: v, cmv: v, grossMargin: v, operatingExpenses: v, netProfit: v, netMargin: 0.1 })
+  it('buildDeltas cobre as linhas (inclusive as do não operacional) e ignora a margem', () => {
+    const lines = (v: number) => ({ grossRevenue: v, taxes: v, netRevenue: v, cmv: v, grossMargin: v, operatingExpenses: v, netProfit: v, netMargin: 0.1, nonOperatingIncome: v, nonOperatingExpenses: v, resultAfterNonOperating: v })
     const deltas = buildDeltas(lines(120), lines(100))
-    expect(Object.keys(deltas)).toEqual(['grossRevenue', 'taxes', 'netRevenue', 'cmv', 'grossMargin', 'operatingExpenses', 'netProfit'])
+    expect(Object.keys(deltas)).toEqual(['grossRevenue', 'taxes', 'netRevenue', 'cmv', 'grossMargin', 'operatingExpenses', 'netProfit', 'nonOperatingIncome', 'nonOperatingExpenses', 'resultAfterNonOperating'])
     for (const v of Object.values(deltas)) expect(v).toBeCloseTo(0.2, 10)
+  })
+})
+
+describe('não operacional (empréstimo, aporte, equipamento)', () => {
+  const NON_OP: [string, CategoryInfo][] = [
+    ['emprestimo', { id: 'emprestimo', name: 'Empréstimos recebidos', behavior: CategoryBehavior.Fixed, operationalNature: OperationalNature.NonOperational }],
+    ['aporte', { id: 'aporte', name: 'Aporte da sócia', behavior: CategoryBehavior.Fixed, operationalNature: OperationalNature.NonOperational }],
+    ['equip', { id: 'equip', name: 'Equipamentos', behavior: CategoryBehavior.Variable, dreGroup: DreGroup.Opex, operationalNature: OperationalNature.NonOperational }],
+    ['vendas', { id: 'vendas', name: 'Vendas', behavior: CategoryBehavior.Variable, operationalNature: OperationalNature.Operational }],
+    ['aluguel', { id: 'aluguel', name: 'Aluguel', behavior: CategoryBehavior.Fixed, dreGroup: DreGroup.Opex }],
+  ]
+  const cats = new Map(NON_OP)
+  const row = (direction: 'in' | 'out', categoryId: string, gross: number): MonthlyTotalRow => ({ month: M, direction, categoryId, categoryName: categoryId, gross, fee: 0 })
+  // o caso de setembro do relatório: vendas de 26.795, empréstimo de 15 mil e aporte de 3 mil, conserto de 3.850
+  const rows = [row('in', 'vendas', 26_795), row('in', 'emprestimo', 15_000), row('in', 'aporte', 3_000), row('out', 'aluguel', 4_200), row('out', 'equip', 3_850)]
+
+  it('não entra na receita nem nas despesas (e não mexe nos fixos/variáveis do ponto de equilíbrio)', () => {
+    const agg = aggregateMonth(rows, M, cats)
+    expect(agg.grossRevenue).toBe(2_679_500)
+    expect([...agg.opexCategories.keys()]).toEqual(['aluguel'])
+    expect(agg.fixed).toBe(420_000)
+    expect(agg.variable).toBe(0)
+    expect(agg.nonOperatingIncome).toBe(1_800_000)
+    expect(agg.nonOperatingExpenses).toBe(385_000)
+  })
+
+  it('aparece em linhas próprias depois do resultado operacional', () => {
+    const lines = buildLines(aggregateMonth(rows, M, cats), { effectiveRate: null, fixedAmount: null })
+    expect(lines).toMatchObject({
+      grossRevenue: 26_795,
+      operatingExpenses: 4_200,
+      netProfit: 22_595,
+      nonOperatingIncome: 18_000,
+      nonOperatingExpenses: 3_850,
+      resultAfterNonOperating: 22_595 + 18_000 - 3_850,
+    })
+  })
+
+  it('mês só com não operacional (ex.: o saldo inicial) não conta como mês com atividade', () => {
+    expect(hasActivity(aggregateMonth([row('in', 'aporte', 18_500)], M, cats))).toBe(false)
   })
 })
 

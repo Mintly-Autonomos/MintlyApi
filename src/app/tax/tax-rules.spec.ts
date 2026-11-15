@@ -1,7 +1,45 @@
 import { describe, expect, it } from 'vitest'
 import { TaxRegime } from 'mintly-lib'
-import { SIMPLES_ANEXO_I, bracketFor, buildTaxProfile, computeRbt12, effectiveRate, meiCap, saleTax } from './tax-rules'
+import { SIMPLES_ANEXO_I, SIMPLES_ANEXO_II, bracketFor, buildTaxProfile, computeRbt12, effectiveRate, meiCap, saleTax } from './tax-rules'
 import { addMonths } from '../reports/shared/period'
+
+describe('Anexo II (indústria: confeitaria e padaria com produção própria)', () => {
+  it('a tabela é a da LC 155/2016', () => {
+    expect(SIMPLES_ANEXO_II.map((b) => [b.index, b.upTo, b.nominalRate, b.deduction])).toEqual([
+      [1, 180_000, 0.045, 0],
+      [2, 360_000, 0.078, 5_940],
+      [3, 720_000, 0.10, 13_860],
+      [4, 1_800_000, 0.112, 22_500],
+      [5, 3_600_000, 0.147, 85_500],
+      [6, 4_800_000, 0.30, 720_000],
+    ])
+  })
+
+  it('alíquota efetiva do caso do relatório: RBT12 R$ 434.371 → 6,81%', () => {
+    const rate = effectiveRate(434_371, TaxRegime.SimplesNacionalAnexoII)
+    expect(rate).toBeCloseTo((434_371 * 0.10 - 13_860) / 434_371, 12)
+    expect(Math.round(rate * 10_000) / 100).toBe(6.81)
+    // no Anexo I a mesma receita dá 6,31%
+    expect(Math.round(effectiveRate(434_371, TaxRegime.SimplesNacionalAnexoI) * 10_000) / 100).toBe(6.31)
+    expect(Math.round(effectiveRate(434_371) * 10_000) / 100).toBe(6.31)
+  })
+
+  it('sem venda (RBT12 0) usa a nominal da faixa 1 do anexo', () => {
+    expect(effectiveRate(0, TaxRegime.SimplesNacionalAnexoII)).toBe(0.045)
+    expect(effectiveRate(0)).toBe(0.04)
+  })
+
+  it('o perfil e o imposto da venda usam o anexo do regime', () => {
+    const revenueByMonth = new Map(Array.from({ length: 12 }, (_, i) => [addMonths('2026-10', -(i + 1)), 36_197.58]))
+    const profile = buildTaxProfile({ regime: TaxRegime.SimplesNacionalAnexoII, referenceMonth: '2026-10', firstMonth: '2025-01', revenueByMonth, meiMonthlyDas: null })
+    expect(profile.bracket?.index).toBe(3)
+    expect(profile.bracket?.nominalRate).toBe(0.10)
+    expect(profile.effectiveRate).toBeCloseTo(effectiveRate(profile.rbt12, TaxRegime.SimplesNacionalAnexoII), 12)
+    const tax = saleTax(46_242, TaxRegime.SimplesNacionalAnexoII, { rbt12: 434_371, meiMonthlyDas: null })
+    expect(tax).toMatchObject({ kind: 'variable' })
+    expect(tax.kind === 'variable' && Math.round(tax.tax)).toBe(3_149) // R$ 46.242 × 6,81% (o DAS de outubro do relatório)
+  })
+})
 
 describe('bracketFor — Anexo I, limites inclusivos', () => {
   it('180.000,00 é faixa 1; 180.000,01 é faixa 2', () => {

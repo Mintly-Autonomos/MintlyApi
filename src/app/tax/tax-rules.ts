@@ -17,6 +17,24 @@ export const SIMPLES_ANEXO_I: readonly TaxBracket[] = [
   { index: 6, upTo: 4_800_000, nominalRate: 0.19, deduction: 378_000 },
 ]
 
+/**
+ * Anexo II (Indústria) do Simples Nacional — LC 123, com a redação da LC 155/2016 (vigente em 2026). É o anexo
+ * de quem fabrica o que vende (confeitaria, padaria e outros com produção própria).
+ */
+export const SIMPLES_ANEXO_II: readonly TaxBracket[] = [
+  { index: 1, upTo: 180_000, nominalRate: 0.045, deduction: 0 },
+  { index: 2, upTo: 360_000, nominalRate: 0.078, deduction: 5_940 },
+  { index: 3, upTo: 720_000, nominalRate: 0.10, deduction: 13_860 },
+  { index: 4, upTo: 1_800_000, nominalRate: 0.112, deduction: 22_500 },
+  { index: 5, upTo: 3_600_000, nominalRate: 0.147, deduction: 85_500 },
+  { index: 6, upTo: 4_800_000, nominalRate: 0.30, deduction: 720_000 },
+]
+
+/** Tabela do anexo do regime (Simples). Qualquer outro valor usa o Anexo I, como antes. */
+export function simplesTable (regime: TaxRegime | null = TaxRegime.SimplesNacionalAnexoI): readonly TaxBracket[] {
+  return regime === TaxRegime.SimplesNacionalAnexoII ? SIMPLES_ANEXO_II : SIMPLES_ANEXO_I
+}
+
 /** Acima disto a empresa sai do Simples (insight `simplesLimitExceeded`). */
 export const SIMPLES_LIMIT = 4_800_000
 /** Teto anual do MEI e o mensal usado no ano de início (proporcional). */
@@ -25,15 +43,16 @@ export const MEI_MONTHLY_LIMIT = 6_750
 /** Alerta de proximidade do teto do MEI (MIN-23: "a partir de 80%"). */
 export const MEI_CAP_WARNING_PCT = 0.8
 
-/** Faixa do RBT12 — limite superior inclusivo; acima do limite do Simples, faixa 6. */
-export function bracketFor (rbt12: number): TaxBracket {
-  return SIMPLES_ANEXO_I.find((b) => rbt12 <= b.upTo) ?? SIMPLES_ANEXO_I[SIMPLES_ANEXO_I.length - 1]
+/** Faixa do RBT12 — limite superior inclusivo; acima do limite do Simples, faixa 6. Anexo do regime (padrão: I). */
+export function bracketFor (rbt12: number, regime?: TaxRegime | null): TaxBracket {
+  const table = simplesTable(regime ?? undefined)
+  return table.find((b) => rbt12 <= b.upTo) ?? table[table.length - 1]
 }
 
-/** MIN-23 `calcAliquotaEfetiva`. RBT12 0 (sem venda) → nominal da faixa 1. */
-export function effectiveRate (rbt12: number): number {
-  if (rbt12 <= 0) return SIMPLES_ANEXO_I[0].nominalRate
-  const b = bracketFor(rbt12)
+/** MIN-23 `calcAliquotaEfetiva`. RBT12 0 (sem venda) → nominal da faixa 1. Anexo do regime (padrão: I). */
+export function effectiveRate (rbt12: number, regime?: TaxRegime | null): number {
+  if (rbt12 <= 0) return simplesTable(regime ?? undefined)[0].nominalRate
+  const b = bracketFor(rbt12, regime)
   return (rbt12 * b.nominalRate - b.deduction) / rbt12
 }
 
@@ -48,7 +67,7 @@ export type SaleTax =
  */
 export function saleTax (value: number, regime: TaxRegime, p: { rbt12: number; meiMonthlyDas: number | null }): SaleTax {
   if (regime === TaxRegime.Mei) return { kind: 'fixed', monthlyDas: p.meiMonthlyDas }
-  const rate = effectiveRate(p.rbt12)
+  const rate = effectiveRate(p.rbt12, regime)
   return { kind: 'variable', effectiveRate: rate, tax: fromCents(Math.round(toCents(value) * rate)) }
 }
 
@@ -134,13 +153,13 @@ export function buildTaxProfile (p: {
     return profile
   }
 
-  const bracket = bracketFor(current.rbt12)
-  profile.effectiveRate = effectiveRate(current.rbt12)
+  const bracket = bracketFor(current.rbt12, p.regime)
+  profile.effectiveRate = effectiveRate(current.rbt12, p.regime)
   profile.bracket = { ...bracket }
 
   if (current.monthsOfHistory >= 1) {
     const previous = computeRbt12({ ...p, referenceMonth: addMonths(p.referenceMonth, -1) })
-    const previousBracket = bracketFor(previous.rbt12)
+    const previousBracket = bracketFor(previous.rbt12, p.regime)
     profile.previousBracketIndex = previousBracket.index
     if (previousBracket.index !== bracket.index) {
       const insight: TaxInsight = {
@@ -148,7 +167,7 @@ export function buildTaxProfile (p: {
         severity: 'warning',
         fromBracket: previousBracket.index,
         toBracket: bracket.index,
-        fromRate: effectiveRate(previous.rbt12),
+        fromRate: effectiveRate(previous.rbt12, p.regime),
         toRate: profile.effectiveRate,
         rbt12: current.rbt12,
       }
