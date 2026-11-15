@@ -7,6 +7,7 @@ import { ChangeMovementStatusUseCase } from './use-cases/change-movement-status.
 import { UpdateMovementUseCase, UpdateMovementInput } from './use-cases/update-movement.use-case'
 import { RecomputeBalancesUseCase } from './use-cases/recompute-balances.use-case'
 import { ImportMovementsUseCase, ImportMovementsInput } from './use-cases/import-movements.use-case'
+import { TransferUseCase } from './use-cases/transfer.use-case'
 import { attachAuditNames } from '../../core/audit/audit-names'
 
 export class FinancialMovementController {
@@ -17,7 +18,15 @@ export class FinancialMovementController {
     private readonly updateUseCase: UpdateMovementUseCase,
     private readonly recomputeUseCase: RecomputeBalancesUseCase,
     private readonly importUseCase: ImportMovementsUseCase,
+    private readonly transferUseCase: TransferUseCase = new TransferUseCase(),
   ) {}
+
+  /** POST /financial-movements/transfers — transferência entre contas (os dois lançamentos). */
+  async transfer (request: any, reply: any) {
+    const ctx = buildRequestContext(request)
+    const result = await this.transferUseCase.execute(request.body, ctx)
+    return new ResponseBuilder().status(StatusCodes.CREATED).payload(result).send(reply)
+  }
 
   /** POST /financial-movements — registra entrada/saída (transacional). */
   async register (request: any, reply: any) {

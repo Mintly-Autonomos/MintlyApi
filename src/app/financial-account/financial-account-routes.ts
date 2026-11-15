@@ -43,6 +43,12 @@ export async function financialAccountRoutes (fastify: FastifyInstance) {
     return controller.inactivate(request, reply)
   })
 
+  // PUT /financial-accounts/:id/opening-balance — saldo inicial da conta (S3.2). body: { amount, date }
+  // Substitui o anterior (não duplica); amount 0 remove. Fica fora do lucro, dos custos e do Fluxo de caixa.
+  fastify.put('/:id/opening-balance', async (request: any, reply) => {
+    return controller.openingBalance(request, reply)
+  })
+
   // NOTA: a rota DELETE /:id foi REMOVIDA de propósito.
   // A história fala em INATIVAÇÃO (soft delete com guards de saldo/única-ativa/padrão
   // e preservação do history[] para auditoria), não em deleção física. O delete da base

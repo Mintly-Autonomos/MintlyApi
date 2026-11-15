@@ -35,6 +35,8 @@ export interface CategoryInfo {
   behavior: CategoryBehavior
   /** "Não operacional": fica fora da receita e das despesas (linhas próprias depois do resultado). */
   operationalNature?: OperationalNature
+  /** Categoria do sistema (transferência entre contas, saldo inicial): fora do DRE inteiro (S3.2). */
+  systemKey?: string
 }
 
 /** Imposto de um mês: alíquota (Simples) ou valor fixo (MEI); os dois null = sem regime. */
@@ -81,6 +83,8 @@ export function aggregateMonth (rows: MonthlyTotalRow[], month: string, categori
 
   for (const r of rows) {
     if (r.month !== month) continue
+    // Transferência entre contas e saldo inicial não são resultado nenhum: nem operacional, nem não operacional.
+    if (categories.get(r.categoryId)?.systemKey) continue
     if (isNonOperating(categories.get(r.categoryId))) {
       if (r.direction === 'in') agg.nonOperatingIncome += toCents(r.gross)
       else agg.nonOperatingExpenses += toCents(r.gross)
