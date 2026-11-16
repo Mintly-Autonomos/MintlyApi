@@ -15,12 +15,16 @@ export const HISTORY_MONTHS = 6
 /** O Resultado aceita até 12 meses à frente (só o já lançado com competência no mês; U.4). */
 export const MAX_FUTURE_MONTHS = 12
 export const PLATFORM_FEE_NAME = 'Taxa de plataforma'
+/** S3.3: taxa das contas plataforma do tipo maquininha, em linha própria. */
+export const CARD_FEE_NAME = 'Taxa da maquininha'
 
 export interface MonthlyTotalRow {
   month: string
   direction: 'in' | 'out'
   categoryId: string
   categoryName: string
+  /** S3.3: entrada numa conta maquininha (a taxa vai para `cardFee`). */
+  cardMachine?: boolean
   gross: number
   fee: number
   /** Ajuste A1: soma até o dia de corte (mesmo período); ausente = mês cheio. */
@@ -56,7 +60,10 @@ export interface CategoryAmount {
 /** Um mês somado, em centavos. */
 export interface MonthAggregate {
   grossRevenue: number
+  /** Comissão dos apps de delivery. */
   platformFee: number
+  /** Taxa das maquininhas (S3.3). */
+  cardFee: number
   cmv: number
   opexCategories: Map<string, CategoryAmount>
   fixed: number
@@ -79,7 +86,7 @@ const effectiveBehavior = (b: CategoryBehavior) => (b === CategoryBehavior.Mixed
  * `nonOperatingIncome`/`nonOperatingExpenses`.
  */
 export function aggregateMonth (rows: MonthlyTotalRow[], month: string, categories: Map<string, CategoryInfo>): MonthAggregate {
-  const agg: MonthAggregate = { grossRevenue: 0, platformFee: 0, cmv: 0, opexCategories: new Map(), fixed: 0, variable: 0, nonOperatingIncome: 0, nonOperatingExpenses: 0 }
+  const agg: MonthAggregate = { grossRevenue: 0, platformFee: 0, cardFee: 0, cmv: 0, opexCategories: new Map(), fixed: 0, variable: 0, nonOperatingIncome: 0, nonOperatingExpenses: 0 }
 
   for (const r of rows) {
     if (r.month !== month) continue
@@ -92,7 +99,8 @@ export function aggregateMonth (rows: MonthlyTotalRow[], month: string, categori
     }
     if (r.direction === 'in') {
       agg.grossRevenue += toCents(r.gross)
-      agg.platformFee += toCents(r.fee)
+      if (r.cardMachine) agg.cardFee += toCents(r.fee)
+      else agg.platformFee += toCents(r.fee)
       continue
     }
 
@@ -119,12 +127,12 @@ export function aggregateMonth (rows: MonthlyTotalRow[], month: string, categori
     else agg.variable += cents
   }
 
-  agg.variable += agg.platformFee
+  agg.variable += agg.platformFee + agg.cardFee
   return agg
 }
 
 export function hasActivity (agg: MonthAggregate): boolean {
-  return agg.grossRevenue > 0 || agg.cmv > 0 || agg.platformFee > 0 || [...agg.opexCategories.values()].some((c) => c.cents > 0)
+  return agg.grossRevenue > 0 || agg.cmv > 0 || agg.platformFee > 0 || agg.cardFee > 0 || [...agg.opexCategories.values()].some((c) => c.cents > 0)
 }
 
 /**
@@ -145,7 +153,7 @@ export function monthTax (p: { regime: TaxRegime | null; month: string; firstMon
 /** Linhas do DRE de um mês (spec, "Linhas de um mês"). */
 export function buildLines (agg: MonthAggregate, tax: MonthTax): ResultLines {
   const taxes = tax.effectiveRate != null ? Math.round(agg.grossRevenue * tax.effectiveRate) : toCents(tax.fixedAmount ?? 0)
-  let opex = agg.platformFee
+  let opex = agg.platformFee + agg.cardFee
   for (const c of agg.opexCategories.values()) opex += c.cents
 
   const netRevenue = agg.grossRevenue - taxes
@@ -204,6 +212,9 @@ export function buildOpexItems (current: MonthAggregate, previous: MonthAggregat
   }
   if (current.platformFee > 0 || previous.platformFee > 0) {
     items.push(opexItem({ categoryId: null, name: PLATFORM_FEE_NAME, kind: 'platformFee', behavior: CategoryBehavior.Variable }, current.platformFee, previous.platformFee, current.grossRevenue))
+  }
+  if (current.cardFee > 0 || previous.cardFee > 0) {
+    items.push(opexItem({ categoryId: null, name: CARD_FEE_NAME, kind: 'cardFee', behavior: CategoryBehavior.Variable }, current.cardFee, previous.cardFee, current.grossRevenue))
   }
   return items.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, 'pt-BR'))
 }

@@ -62,6 +62,8 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
     const touchesTypeOrFee =
       changes.type !== undefined ||
       changes.feePercent !== undefined ||
+      changes.platformKind !== undefined ||
+      changes.feeByMethod !== undefined ||
       changes.settlementDays !== undefined ||
       changes.settlementRule !== undefined
     const touchesHistoryFields = touchesTypeOrFee || item.name !== undefined || item.status !== undefined
@@ -87,6 +89,8 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
           name: item.name,
           status: item.status,
           feePercent: changes.feePercent,
+          platformKind: changes.platformKind,
+          feeByMethod: changes.feeByMethod,
           settlementDays: changes.settlementDays,
           settlementRule: changes.settlementRule,
         },

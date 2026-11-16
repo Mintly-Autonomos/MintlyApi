@@ -6,6 +6,7 @@ import { REPORT_TIME_ZONE, addMonths, startOfLocalMonth } from '../shared/period
 import { excludeCategories, nonOperatingCategoryIds } from '../shared/non-operating'
 import { CategoryInfo, MonthlyTotalRow } from './result-metrics'
 import { sumUntilDay } from '../shared/until-day'
+import { cardMachineAccountIds } from '../shared/card-machines'
 
 /**
  * Consultas do Resultado (spec, "Consultas"). Somas por competência no fuso de SP,
@@ -25,6 +26,7 @@ export class ResultRepository {
    * `untilDay` (ajuste A1), também as somas até esse dia de cada mês.
    */
   async monthlyTotals (ctx: RequestContext, w: { from: string; to: string }, untilDay: number | null = null): Promise<MonthlyTotalRow[]> {
+    const cards = await cardMachineAccountIds(this.db(ctx), ctx.restaurantId)
     const rows = await this.db(ctx).collection('financial_movements').aggregate([
       { $match: { restaurantId: ctx.restaurantId, status: { $ne: MovementStatus.Cancelled }, date: this.monthRange(w.from, w.to) } },
       {
@@ -33,6 +35,8 @@ export class ResultRepository {
             month: { $dateToString: { format: '%Y-%m', date: '$date', timezone: REPORT_TIME_ZONE } },
             direction: '$direction',
             categoryId: '$category._id',
+            // S3.3: a taxa da maquininha vai numa linha própria.
+            cardMachine: cards.length > 0 ? { $in: ['$account._id', cards] } : { $literal: false },
           },
           gross: { $sum: '$grossValue' },
           fee: { $sum: '$feeValue' },
@@ -47,6 +51,7 @@ export class ResultRepository {
       direction: r._id.direction === MovementDirection.In ? 'in' : 'out',
       categoryId: String(r._id.categoryId),
       categoryName: r.categoryName ?? '',
+      ...(r._id.cardMachine ? { cardMachine: true } : {}),
       gross: decimalToNumber(r.gross),
       fee: decimalToNumber(r.fee),
       ...(untilDay != null ? { grossUntil: decimalToNumber(r.grossUntil), feeUntil: decimalToNumber(r.feeUntil) } : {}),

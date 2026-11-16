@@ -1,5 +1,5 @@
 import { ObjectId } from 'mongodb'
-import { financialMovementSchema, MovementStatus, MovementStatusSource } from 'mintly-lib'
+import { financialMovementSchema, MovementStatus, MovementStatusSource, platformFeePercent } from 'mintly-lib'
 import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connection'
 import { RequestContext } from '../../../core/context/request-context'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
@@ -134,10 +134,15 @@ export class UpdateMovementUseCase {
         // travar o settler, nem neutralizar o recomputo abaixo).
         const statusExplicitlyChanged = changes.status != null && changes.status !== mov.status
 
+        // S3.3: trocar a forma de pagamento (débito → crédito) troca a taxa pela da conta para a forma nova.
+        const newPaymentMethod = changes.paymentMethod ?? mov.paymentMethod
+        const methodChanged = changes.paymentMethod != null && changes.paymentMethod !== mov.paymentMethod
         const frozenFee = accountChanged
           ? undefined
           : {
-            percent: mov.feePercentApplied != null ? num(mov.feePercentApplied) : undefined,
+            percent: methodChanged
+              ? platformFeePercent(account as any, newPaymentMethod)
+              : mov.feePercentApplied != null ? num(mov.feePercentApplied) : undefined,
             settlementDays: mov.settlementDaysApplied != null ? Number(mov.settlementDaysApplied) : undefined,
             settlementRule: mov.settlementRuleApplied ?? undefined,
           }
@@ -148,6 +153,7 @@ export class UpdateMovementUseCase {
           date: newDate,
           account: account as any,
           fee: frozenFee,
+          paymentMethod: newPaymentMethod,
         })
 
         const now = new Date()

@@ -79,6 +79,7 @@ async function draftMovement (
     grossValue: input.grossValue,
     date,
     account: account as any,
+    paymentMethod: input.paymentMethod,
   })
   // M1 — vencimento: o informado pelo dono manda; senão vale o calculado
   // pela conta com prazo. Sem nenhum dos dois, é à vista.
