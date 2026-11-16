@@ -3,6 +3,7 @@ import MongoDBConnection from '../../../infrastructure/db/mongodb/mongodb-connec
 import { RequestContext } from '../../../core/context/request-context'
 import { decimalToNumber } from '../../../core/money/money'
 import { CashFlowMovement } from '../shared/cash-date'
+import { systemCategoryIds } from '../../financial-movement/system-categories'
 
 /**
  * As três consultas do Fluxo de Caixa (spec, "Consultas"). Devolve linhas e
@@ -22,9 +23,13 @@ export class CashFlowRepository {
    * por presença de campo em vez de `$expr` — cada ramo usa índice.
    */
   async findWindowMovements (ctx: RequestContext, w: { realizedFrom: Date; projectionEnd: Date }): Promise<CashFlowMovement[]> {
+    // S3.2: transferência entre contas (soma zero no caixa) e saldo inicial (já está no caixa de hoje) não
+    // são entradas nem saídas — contariam em dobro nas "Entradas × Saídas".
+    const system = await systemCategoryIds(this.db(ctx), ctx.restaurantId)
     const docs = await this.db(ctx).collection('financial_movements').find(
       {
         restaurantId: ctx.restaurantId,
+        ...(system.length > 0 ? { 'category._id': { $nin: system } } : {}),
         $or: [
           { status: MovementStatus.Pending, dueDate: { $lt: w.projectionEnd } },
           { status: MovementStatus.Pending, dueDate: { $exists: false }, date: { $lt: w.projectionEnd } },
@@ -53,9 +58,11 @@ export class CashFlowRepository {
 
   /** Σ saídas liquidadas com data de caixa em [from, to) + a primeira movimentação do restaurante. */
   async outflowHistory (ctx: RequestContext, w: { from: Date; to: Date }): Promise<{ total: number; firstMovementAt: Date | null }> {
+    const system = await systemCategoryIds(this.db(ctx), ctx.restaurantId)
+    const excludeSystem = system.length > 0 ? { 'category._id': { $nin: system } } : {}
     const movements = this.db(ctx).collection('financial_movements')
     const [agg] = await movements.aggregate([
-      { $match: { restaurantId: ctx.restaurantId, status: MovementStatus.Settled, direction: MovementDirection.Out } },
+      { $match: { restaurantId: ctx.restaurantId, status: MovementStatus.Settled, direction: MovementDirection.Out, ...excludeSystem } },
       { $addFields: { cashAt: { $ifNull: ['$settledAt', { $ifNull: ['$dueDate', '$date'] }] } } },
       { $match: { cashAt: { $gte: w.from, $lt: w.to } } },
       { $group: { _id: null, total: { $sum: '$grossValue' } } },

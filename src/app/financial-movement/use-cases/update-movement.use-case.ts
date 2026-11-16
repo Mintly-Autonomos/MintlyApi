@@ -10,6 +10,7 @@ import { applyBalanceImpact } from '../movement-balance'
 import { movementToStorage, movementFromStorage } from '../financial-movement-repository'
 import { MovementItemRequest, resolveMovementItems } from '../movement-items'
 import { toBusinessDate } from '../../reports/shared/period'
+import { assertNotSystemCategory } from '../system-categories'
 
 export interface UpdateMovementInput {
   title?: string
@@ -67,6 +68,15 @@ export class UpdateMovementUseCase {
           { session },
         )
         if (!mov) throw new NotFoundError(Resource.FinancialMovement, movementId)
+        if (mov.transferId) {
+          throw new ConflictError('Transferência não se edita: cancele e faça outra (os dois lados são cancelados juntos).')
+        }
+        const currentCategory = ObjectId.isValid(String(mov.category?._id))
+          ? await categories.findOne({ _id: new ObjectId(String(mov.category._id)), restaurantId: ctx.restaurantId }, { session })
+          : null
+        if (currentCategory?.systemKey) {
+          throw new ConflictError('O saldo inicial se muda na própria conta (Contas financeiras > editar).')
+        }
 
         const direction = mov.direction as string // imutável
         const oldAccountId = String(mov.account._id)
@@ -87,6 +97,7 @@ export class UpdateMovementUseCase {
           if (!ObjectId.isValid(changes.categoryId)) throw new NotFoundError(Resource.FinancialCategory, changes.categoryId)
           const cat = await categories.findOne({ _id: new ObjectId(changes.categoryId), restaurantId: ctx.restaurantId }, { session })
           if (!cat) throw new NotFoundError(Resource.FinancialCategory, changes.categoryId)
+          assertNotSystemCategory(cat)
           categorySnap = { _id: String(cat._id), name: cat.name, type: cat.type }
           categoryDoc = cat
         }

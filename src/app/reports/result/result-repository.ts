@@ -56,9 +56,9 @@ export class ResultRepository {
   /** Todas as categorias do restaurante (inativa também pode ter lançamento antigo). */
   async categories (ctx: RequestContext): Promise<Map<string, CategoryInfo>> {
     const docs = await this.db(ctx).collection('financial_categories')
-      .find({ restaurantId: ctx.restaurantId }, { projection: { name: 1, dreGroup: 1, behavior: 1, operationalNature: 1 } })
+      .find({ restaurantId: ctx.restaurantId }, { projection: { name: 1, dreGroup: 1, behavior: 1, operationalNature: 1, systemKey: 1 } })
       .toArray()
-    return new Map(docs.map((d) => [String(d._id), { id: String(d._id), name: d.name, dreGroup: d.dreGroup, behavior: d.behavior, operationalNature: d.operationalNature }]))
+    return new Map(docs.map((d) => [String(d._id), { id: String(d._id), name: d.name, dreGroup: d.dreGroup, behavior: d.behavior, operationalNature: d.operationalNature, ...(d.systemKey ? { systemKey: d.systemKey } : {}) }]))
   }
 
   /** Receita bruta por dia (AAAA-MM-DD) do mês. Sem as entradas "Não operacional" (empréstimo, aporte...). */

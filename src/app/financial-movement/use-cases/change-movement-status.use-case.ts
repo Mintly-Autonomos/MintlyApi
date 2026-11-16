@@ -142,6 +142,27 @@ export class ChangeMovementStatusUseCase {
           settledAt: informedSettledAt,
         })
 
+        // Transferência (S3.2): o outro lado acompanha (cancelar um lado sem o outro tiraria dinheiro do nada).
+        if (mov.transferId) {
+          const partner = await movements.findOne(
+            { restaurantId: ctx.restaurantId, transferId: mov.transferId, _id: { $ne: mov._id } },
+            { session },
+          )
+          if (partner && String(partner.status) !== newStatus) {
+            await applyStatusTransition({
+              movements,
+              accounts,
+              movement: partner,
+              newStatus,
+              actor: ctx.userId ?? 'system',
+              statusSource: MovementStatusSource.Manual,
+              session,
+              now: new Date(),
+              settledAt: transition.settledAt,
+            })
+          }
+        }
+
         updated = movementFromStorage({
           ...mov,
           status: newStatus,

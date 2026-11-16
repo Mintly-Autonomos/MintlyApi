@@ -8,6 +8,7 @@ import { NotFoundError } from '../../core/errors/core/not-found-error'
 import { Resource } from '../../core/types/resource'
 import { SetDefaultAccountUseCase } from './use-cases/set-default-account.use-case'
 import { InactivateAccountUseCase } from './use-cases/inactivate-account.use-case'
+import { OpeningBalanceUseCase } from '../financial-movement/use-cases/transfer.use-case'
 import { escapeRegex } from '../../core/util/escape-regex'
 import { StatusCodes } from 'http-status-codes'
 import {
@@ -27,6 +28,7 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
     // DI das use cases transacionais (mesmo padrão das demais rotas).
     private readonly setDefaultUseCase: SetDefaultAccountUseCase,
     private readonly inactivateUseCase: InactivateAccountUseCase,
+    private readonly openingBalanceUseCase: OpeningBalanceUseCase = new OpeningBalanceUseCase(),
   ) {
     // 3º argumento (ormPartial): schema parcial usado pelo update.
     // Sem ele, o CrudController valida o PATCH contra o schema COMPLETO e rejeita
@@ -139,5 +141,12 @@ export class FinancialAccountController extends CrudController<FinancialAccount,
       .status(StatusCodes.OK)
       .payload({ message: 'Conta inativada com sucesso.' })
       .send(reply)
+  }
+
+  /** PUT /financial-accounts/:id/opening-balance — saldo inicial (S3.2). Devolve o lançamento, ou null se removeu. */
+  async openingBalance (request: any, reply: any) {
+    const ctx = buildRequestContext(request)
+    const created = await this.openingBalanceUseCase.execute(request.params.id, request.body, ctx)
+    return new ResponseBuilder().status(StatusCodes.OK).payload(created).send(reply)
   }
 }

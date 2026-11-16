@@ -6,6 +6,7 @@ import { ChangeMovementStatusUseCase } from './use-cases/change-movement-status.
 import { UpdateMovementUseCase } from './use-cases/update-movement.use-case'
 import { RecomputeBalancesUseCase } from './use-cases/recompute-balances.use-case'
 import { ImportMovementsUseCase } from './use-cases/import-movements.use-case'
+import { TransferUseCase } from './use-cases/transfer.use-case'
 
 export async function financialMovementRoutes (fastify: FastifyInstance) {
   const repository = new FinancialMovementRepository()
@@ -17,6 +18,7 @@ export async function financialMovementRoutes (fastify: FastifyInstance) {
     new UpdateMovementUseCase(),
     new RecomputeBalancesUseCase(),
     new ImportMovementsUseCase(registerUseCase),
+    new TransferUseCase(),
   )
 
   // POST /financial-movements/import — importação em massa (até 500 linhas), idempotente.
@@ -26,6 +28,12 @@ export async function financialMovementRoutes (fastify: FastifyInstance) {
   // a linha com problema traz o motivo e as demais voltam como ROLLED_BACK (a chave é liberada).
   fastify.post('/import', { bodyLimit: 2 * 1024 * 1024 }, async (request: any, reply) => {
     return controller.importBatch(request, reply)
+  })
+
+  // POST /financial-movements/transfers — transferência entre contas (S3.2): saída na origem + entrada no
+  // destino, ligadas por transferId, sem taxa e já liquidadas. body: { fromAccountId, toAccountId, amount, date, description? }
+  fastify.post('/transfers', async (request: any, reply) => {
+    return controller.transfer(request, reply)
   })
 
   // POST /financial-movements — registra entrada/saída + ajusta saldo (transacional).

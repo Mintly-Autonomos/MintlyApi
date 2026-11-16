@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   update: vi.fn(),
   setDefault: vi.fn(),
   inactivate: vi.fn(),
+  openingBalance: vi.fn(),
 }))
 
 vi.mock('./financial-account-controller', () => ({
@@ -26,6 +27,7 @@ vi.mock('./financial-account-controller', () => ({
     update = h.update
     setDefault = h.setDefault
     inactivate = h.inactivate
+    openingBalance = h.openingBalance
   },
 }))
 
@@ -49,6 +51,7 @@ function makeFakeFastify () {
     post: (path: string, handler: any) => { routes[`POST ${path}`] = handler },
     get: (path: string, handler: any) => { routes[`GET ${path}`] = handler },
     patch: (path: string, handler: any) => { routes[`PATCH ${path}`] = handler },
+    put: (path: string, handler: any) => { routes[`PUT ${path}`] = handler },
   }
 }
 
@@ -72,7 +75,19 @@ describe('financialAccountRoutes', () => {
       'PATCH /:id/default',
       'PATCH /:id/inactivate',
       'POST /',
+      'PUT /:id/opening-balance',
     ])
+  })
+
+  it('PUT /:id/opening-balance delega para controller.openingBalance(request, reply)', async () => {
+    h.openingBalance.mockResolvedValue('opening-result')
+    const request = { params: { id: 'acc-1' }, body: { amount: 100, date: '2026-05-01' } }
+    const reply = makeReply()
+
+    const result = await fastify.routes['PUT /:id/opening-balance'](request, reply)
+
+    expect(h.openingBalance).toHaveBeenCalledWith(request, reply)
+    expect(result).toBe('opening-result')
   })
 
   it('POST / cria a conta e responde 201', async () => {

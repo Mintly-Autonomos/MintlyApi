@@ -10,6 +10,7 @@ import { computeSnapshot, defaultStatus, balanceImpact, resolveDueDate, resolveS
 import { applyBalanceImpact, applyBalanceImpacts } from '../movement-balance'
 import { MovementItemRequest, StoredMovementItem, resolveMovementItems, resolveMovementItemsFrom } from '../movement-items'
 import { toBusinessDate } from '../../reports/shared/period'
+import { assertNotSystemCategory } from '../system-categories'
 
 export interface RegisterMovementInput {
   direction: MovementDirection
@@ -48,6 +49,7 @@ function ensureAccount (account: any, accountId: string): void {
 /** Categoria viva (tenant-scoped). */
 function ensureCategory (category: any, categoryId: string): void {
   if (!category) throw new NotFoundError(Resource.FinancialCategory, categoryId)
+  assertNotSystemCategory(category)
 }
 
 /** A movimentação pronta para gravar, antes de tocar no banco. */
