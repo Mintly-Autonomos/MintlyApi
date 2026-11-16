@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { CategoryBehavior, FinancialAccountType, MovementChannel, MovementDirection, PaymentMethod, PlatformKind } from 'mintly-lib'
 import { effectiveChannel } from './channel'
 import { computeSnapshot } from '../../financial-movement/movement-rules'
-import { assertAccountUpdateAllowed } from '../../financial-account/account-rules'
+import { assertAccountUpdateAllowed, buildAccountChangeHistory } from '../../financial-account/account-rules'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { MonthlyTotalRow, aggregateMonth, buildLines, buildOpexItems, hasActivity } from '../result/result-metrics'
 import { ExpenseRow, computeExpenses } from '../expenses/expenses-metrics'
@@ -37,6 +37,17 @@ describe('maquininha e taxa por forma de pagamento (S3.3)', () => {
     expect(() => assertAccountUpdateAllowed('bank', { platformKind: PlatformKind.CardMachine })).toThrow(ConflictError)
     expect(() => assertAccountUpdateAllowed('cash', { feeByMethod: { pix: 1 } })).toThrow(ConflictError)
     expect(() => assertAccountUpdateAllowed('platform', { platformKind: PlatformKind.CardMachine, feeByMethod: { pix: 1 } })).not.toThrow()
+  })
+
+  it('histórico da conta: troca de tipo e de taxa por forma', () => {
+    const at = new Date('2026-11-16T12:00:00Z')
+    const h = buildAccountChangeHistory({ feePercent: 2.5, feeByMethod: { credit: 3 } }, { platformKind: 'cardMachine', feeByMethod: { debit: 1.2, credit: 3 } }, 'u', at)
+    expect(h.map((e) => [e.action, e.detail])).toEqual([
+      ['update-platform-kind', 'App de delivery → Maquininha'],
+      ['update-fee', 'Por forma de pagamento: Crédito 3% → Débito 1,2% · Crédito 3%'],
+    ])
+    expect(buildAccountChangeHistory({ platformKind: 'cardMachine', feeByMethod: { pix: 1 } }, { platformKind: 'cardMachine', feeByMethod: { pix: 1 } }, 'u', at)).toEqual([])
+    expect(buildAccountChangeHistory({ feeByMethod: { pix: 1 } }, { feeByMethod: {} }, 'u', at)[0].detail).toBe('Por forma de pagamento: Pix 1% → só a padrão')
   })
 
   it('Resultado: a taxa da maquininha é linha própria e entra na despesa operacional e no variável', () => {

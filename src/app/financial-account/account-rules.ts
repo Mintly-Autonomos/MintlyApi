@@ -100,11 +100,22 @@ export interface AccountHistoryState {
   name?: string
   status?: string
   feePercent?: number
+  platformKind?: string
+  feeByMethod?: Record<string, number>
   settlementDays?: number
   settlementRule?: SettlementRule
 }
 
 const fmtNumber = (n: number): string => String(n).replace('.', ',')
+
+const KIND_LABEL: Record<string, string> = { marketplace: 'App de delivery', cardMachine: 'Maquininha' }
+const METHOD_LABEL: Record<string, string> = { debit: 'Débito', credit: 'Crédito', pix: 'Pix', digitalWallet: 'Carteira digital' }
+
+/** "Débito 1% · Crédito 3%" (na ordem das formas); "padrão" quando não há taxa por forma. */
+function describeFeeByMethod (fees: Record<string, number> | undefined): string {
+  const parts = Object.keys(METHOD_LABEL).filter((k) => fees?.[k] != null).map((k) => `${METHOD_LABEL[k]} ${fmtNumber(fees![k])}%`)
+  return parts.length > 0 ? parts.join(' · ') : 'só a padrão'
+}
 
 /**
  * Eventos de histórico de um PATCH de conta, comparando o estado ARMAZENADO com o que o
@@ -136,6 +147,16 @@ export function buildAccountChangeHistory (
 
   if (changes.feePercent !== undefined && changes.feePercent !== (stored.feePercent ?? 0)) {
     add('update-fee', `${fmtNumber(stored.feePercent ?? 0)}% → ${fmtNumber(changes.feePercent)}%`)
+  }
+
+  if (changes.platformKind !== undefined && changes.platformKind !== (stored.platformKind ?? 'marketplace')) {
+    add('update-platform-kind', `${KIND_LABEL[stored.platformKind ?? 'marketplace']} → ${KIND_LABEL[changes.platformKind] ?? changes.platformKind}`)
+  }
+
+  if (changes.feeByMethod !== undefined) {
+    const before = describeFeeByMethod(stored.feeByMethod)
+    const after = describeFeeByMethod(changes.feeByMethod)
+    if (before !== after) add('update-fee', `Por forma de pagamento: ${before} → ${after}`)
   }
 
   if (changes.settlementRule !== undefined) {
