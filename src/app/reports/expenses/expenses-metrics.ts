@@ -1,4 +1,4 @@
-import { CategoryBehavior, DreGroup, ExpenseAnomaly, OperationalNature, ExpenseItem, ExpenseItemKind, ExpenseSubitem, ExpensesReport, FinancialAccountType, MovementChannel } from 'mintly-lib'
+import { CategoryBehavior, DreGroup, ExpenseAnomaly, OperationalNature, ExpenseItem, ExpenseItemKind, ExpenseSubitem, ExpensesReport, FinancialAccountType, MovementChannel, PlatformKind } from 'mintly-lib'
 import { fromCents, toCents } from '../../../core/money/money'
 import { ValidationError } from '../../../core/errors/core/validation-error'
 import { addMonths } from '../shared/period'
@@ -54,6 +54,8 @@ export interface ExpensesInput {
   rows: ExpenseRow[]
   categories: Map<string, ExpenseCategoryInfo>
   accountNames: Map<string, string>
+  /** S3.3: contas plataforma que são maquininha (a taxa vira `cardFee` e a venda é salão). */
+  cardMachines?: Set<string>
   firstMonth: string | null
   /** Agora — define se há projeção (mês atual em SP). */
   today: Date
@@ -82,8 +84,10 @@ interface MonthBucket {
   /** Parte de `revenue` com data depois de hoje (fatia 8: base da receita projetada). */
   revenueAfter: number
   deliveryRevenue: number
-  /** Σ bruto das entradas em conta de plataforma — base do % da taxa (decisão A). */
+  /** Σ bruto das entradas em conta de app de delivery — base do % da comissão (decisão A). */
   platformRevenue: number
+  /** S3.3: Σ bruto das entradas nas maquininhas — base do % da taxa da maquininha. */
+  cardRevenue: number
   shared: number
   items: Map<string, number>
   /** Parte de `items` com data depois de hoje — fica fora da base da projeção. */
@@ -92,7 +96,7 @@ interface MonthBucket {
   subs: Map<string, Map<string, number>>
 }
 
-const emptyBucket = (): MonthBucket => ({ revenue: 0, revenueAfter: 0, deliveryRevenue: 0, platformRevenue: 0, shared: 0, items: new Map(), itemsAfter: new Map(), subs: new Map() })
+const emptyBucket = (): MonthBucket => ({ revenue: 0, revenueAfter: 0, deliveryRevenue: 0, platformRevenue: 0, cardRevenue: 0, shared: 0, items: new Map(), itemsAfter: new Map(), subs: new Map() })
 
 /** Filtro da tela: só salão ou delivery — `shared` não é filtro (vai em `sharedExcluded`). */
 export function parseExpensesChannel (value: unknown): MovementChannel | null {
@@ -119,7 +123,9 @@ function bucketize (input: ExpensesInput) {
   for (const r of input.rows) {
     // Não operacional não é venda nem custo da operação (fica no Resultado, em linha própria).
     if (input.categories.get(r.categoryId)?.operationalNature === OperationalNature.NonOperational) continue
-    const channel = effectiveChannel({ direction: r.direction, account: { type: r.accountType }, channel: r.channel })
+    const isPlatform = r.accountType === FinancialAccountType.Platform
+    const isCard = isPlatform && (input.cardMachines?.has(r.accountId) ?? false)
+    const channel = effectiveChannel({ direction: r.direction, account: { type: r.accountType, platformKind: isCard ? PlatformKind.CardMachine : null }, channel: r.channel })
     const passes = input.channel == null || channel === input.channel
     const b = buckets.get(r.month) ?? emptyBucket()
     buckets.set(r.month, b)
@@ -129,12 +135,14 @@ function bucketize (input: ExpensesInput) {
       b.revenue += toCents(r.gross)
       b.revenueAfter += toCents(r.grossAfter ?? 0)
       if (channel === MovementChannel.Delivery) b.deliveryRevenue += toCents(r.gross)
-      if (r.accountType === FinancialAccountType.Platform) b.platformRevenue += toCents(r.gross)
+      if (isCard) b.cardRevenue += toCents(r.gross)
+      else if (isPlatform) b.platformRevenue += toCents(r.gross)
       // M6: a taxa é linha sintética, uma por conta de plataforma, no canal da entrada.
       if (r.fee > 0) {
+        const kind = isCard ? 'cardFee' : 'platformFee'
         add(b, {
-          key: `platformFee:${r.accountId}`,
-          kind: 'platformFee',
+          key: `${kind}:${r.accountId}`,
+          kind,
           categoryId: null,
           name: `Taxa ${input.accountNames.get(r.accountId) ?? r.accountName}`,
           behavior: CategoryBehavior.Variable,
@@ -325,6 +333,10 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   const fee = sumWhere(cur, isFee)
   const feePrev = sumWhere(prev, isFee)
   const feeCmp = sumWhere(atCmp(M), isFee)
+  const isCardFee = (m: ItemMeta) => m.kind === 'cardFee'
+  const cardFee = sumWhere(cur, isCardFee)
+  const cardFeePrev = sumWhere(prev, isCardFee)
+  const cardFeeCmp = sumWhere(atCmp(M), isCardFee)
   const behavior = (b: CategoryBehavior) => fromCents(sumWhere(cur, (m) => m.behavior === b))
 
   // % da taxa (decisão A, 13/10/2026): sobre o bruto das contas de plataforma —
@@ -345,6 +357,7 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
     cmv: { amount: fromCents(cmv), pctOfRevenue: share(cmv, cur.revenue), target: CMV_TARGET },
     primeCost: { amount: fromCents(cmv + labor), cmv: fromCents(cmv), labor: fromCents(labor), pctOfRevenue: share(cmv + labor, cur.revenue), targetMax: PRIME_COST_TARGET_MAX },
     platformFee: { amount: fromCents(fee), previous: fromCents(feePrev), deltaPrevious: delta(feeCmp, feePrev), deliveryRevenue: fromCents(cur.deliveryRevenue), pctOfDelivery: share(fee, cur.platformRevenue) },
+    cardFee: { amount: fromCents(cardFee), previous: fromCents(cardFeePrev), deltaPrevious: delta(cardFeeCmp, cardFeePrev), cardRevenue: fromCents(cur.cardRevenue), pctOfCardRevenue: share(cardFee, cur.cardRevenue) },
     byBehavior: { fixed: behavior(CategoryBehavior.Fixed), variable: behavior(CategoryBehavior.Variable), mixed: behavior(CategoryBehavior.Mixed) },
     items,
     sharedExcluded: input.channel == null ? null : fromCents(cur.shared),

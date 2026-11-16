@@ -12,6 +12,8 @@ import { ValidationError } from '../../core/errors/core/validation-error'
 export interface AccountUpdateChanges {
   type?: string
   feePercent?: number
+  platformKind?: string
+  feeByMethod?: Record<string, number>
   settlementDays?: number
   settlementRule?: SettlementRule
 }
@@ -41,11 +43,13 @@ export function assertAccountUpdateAllowed (storedType: string, changes: Account
 
   const touchesFee =
     changes.feePercent !== undefined ||
+    changes.platformKind !== undefined ||
+    changes.feeByMethod !== undefined ||
     changes.settlementDays !== undefined ||
     changes.settlementRule !== undefined
   if (touchesFee && storedType !== FinancialAccountType.Platform) {
     throw new ConflictError(
-      'Somente contas do tipo plataforma têm taxa (feePercent) e regra de repasse (settlementDays/settlementRule).',
+      'Somente contas do tipo plataforma têm taxa (feePercent/feeByMethod), tipo de plataforma (platformKind) e regra de repasse (settlementDays/settlementRule).',
     )
   }
   if (changes.settlementRule !== undefined) assertSettlementRuleValid(changes.settlementRule)

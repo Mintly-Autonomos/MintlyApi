@@ -6,6 +6,8 @@ import {
   SettlementRule,
   SettlementRuleKind,
   Subcategory,
+  FeeByMethod,
+  platformFeePercent,
   resolveSettlementRule,
   settlementDueDate,
 } from 'mintly-lib'
@@ -22,6 +24,9 @@ import { ValidationError } from '../../core/errors/core/validation-error'
 export interface AccountForRules {
   type: string
   feePercent?: number
+  /** S3.3: taxa por forma de pagamento (por cima do `feePercent`). */
+  feeByMethod?: FeeByMethod | null
+  platformKind?: string | null
   settlementDays?: number
   settlementRule?: SettlementRule | null
 }
@@ -106,12 +111,14 @@ export function computeSnapshot (params: {
   date: Date
   account: AccountForRules
   fee?: AppliedFee
+  /** S3.3: a taxa da conta pode depender da forma de pagamento (débito, crédito, Pix...). */
+  paymentMethod?: string | null
 }): MovementSnapshot {
-  const { direction, grossValue, date, account, fee } = params
+  const { direction, grossValue, date, account, fee, paymentMethod } = params
   const isPlatform = isPlatformAccount(account)
 
   if (direction === MovementDirection.In && isPlatform) {
-    const percent = fee != null ? fee.percent : account.feePercent
+    const percent = fee != null ? fee.percent : platformFeePercent(account, paymentMethod)
     // Tudo-ou-nada: com `fee` (edição) a regra vem SÓ do congelado; sem ele, da conta viva.
     const rule = resolveSettlementRule(fee != null ? fee : account)
 

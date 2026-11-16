@@ -5,6 +5,7 @@ import { decimalToNumber } from '../../../core/money/money'
 import { REPORT_TIME_ZONE, addMonths, startOfLocalMonth } from '../shared/period'
 import { ExpenseCategoryInfo, ExpenseRow } from './expenses-metrics'
 import { sumUntilDay } from '../shared/until-day'
+import { cardMachineAccountIds } from '../shared/card-machines'
 
 /**
  * Consultas de Custos & Despesas: por competência no fuso de SP, sem canceladas,
@@ -80,6 +81,11 @@ export class ExpensesRepository {
       operationalNature: d.operationalNature,
       subcategories: (d.subcategories ?? []).map((s: any) => ({ _id: s._id, name: s.name })),
     }]))
+  }
+
+  /** S3.3: contas plataforma que são maquininha. */
+  async cardMachines (ctx: RequestContext): Promise<Set<string>> {
+    return new Set(await cardMachineAccountIds(this.db(ctx), ctx.restaurantId))
   }
 
   /** Nome atual das contas (a linha da taxa usa o nome vivo). */

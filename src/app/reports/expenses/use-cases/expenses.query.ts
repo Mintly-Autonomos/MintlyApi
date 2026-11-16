@@ -18,12 +18,13 @@ export class ExpensesQuery {
     const referenceMonth = parseReferenceMonth(month, now)
     const untilDay = comparisonUntilDay(referenceMonth, now)
     const filter = parseExpensesChannel(channel)
-    const [rows, categories, accountNames, firstMonth] = await Promise.all([
+    const [rows, categories, accountNames, firstMonth, cardMachines] = await Promise.all([
       this.repo.monthlyRows(ctx, { from: addMonths(referenceMonth, -(HISTORY_MONTHS - 1)), to: referenceMonth }, startOfLocalDay(addDaysToDay(toLocalDay(now), 1)), untilDay),
       this.repo.categories(ctx),
       this.repo.accountNames(ctx),
       this.taxRepo.firstMovementMonth(ctx),
+      this.repo.cardMachines(ctx),
     ])
-    return computeExpenses({ referenceMonth, channel: filter, rows, categories, accountNames, firstMonth, today: now, untilDay })
+    return computeExpenses({ referenceMonth, channel: filter, rows, categories, accountNames, cardMachines, firstMonth, today: now, untilDay })
   }
 }
