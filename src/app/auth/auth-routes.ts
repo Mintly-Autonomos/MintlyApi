@@ -7,6 +7,8 @@ import {
   logoutController,
   requestRecoveryController,
   resetPasswordController,
+  invitePreviewController,
+  acceptInviteController,
 } from './auth-controller'
 
 const str = { type: 'string' as const }
@@ -74,4 +76,21 @@ export async function authRoutes (fastify: FastifyInstance) {
       body: bodySchema(['token', 'newPassword'], { token: str, newPassword: str, confirmNewPassword: str }),
     },
   }, resetPasswordController)
+
+  // Convite de funcionário (E.1): públicas, o token do e-mail é a credencial.
+  fastify.post('/invite/preview', {
+    schema: {
+      tags: ['auth'],
+      summary: 'Para quem é o convite (nome, e-mail, restaurante)',
+      body: bodySchema(['token'], { token: str }),
+    },
+  }, invitePreviewController)
+
+  fastify.post('/invite/accept', {
+    schema: {
+      tags: ['auth'],
+      summary: 'Aceita o convite: cria a senha e ativa o login do funcionário',
+      body: bodySchema(['token', 'newPassword'], { token: str, newPassword: str, confirmNewPassword: str }),
+    },
+  }, acceptInviteController)
 }

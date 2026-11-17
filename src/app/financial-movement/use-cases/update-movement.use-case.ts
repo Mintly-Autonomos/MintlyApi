@@ -12,6 +12,7 @@ import { MovementItemRequest, resolveMovementItems } from '../movement-items'
 import { toBusinessDate } from '../../reports/shared/period'
 import { assertNotSystemCategory } from '../system-categories'
 import { resolveSaleFields, SaleFields } from '../sale-fields'
+import { assertPersonnelAllowed } from '../../auth/access-control'
 
 export interface UpdateMovementInput {
   title?: string
@@ -82,6 +83,7 @@ export class UpdateMovementUseCase {
         if (currentCategory?.systemKey) {
           throw new ConflictError('O saldo inicial se muda na própria conta (Contas financeiras > editar).')
         }
+        assertPersonnelAllowed(ctx, currentCategory)
 
         const direction = mov.direction as string // imutável
         const oldAccountId = String(mov.account._id)
@@ -105,6 +107,7 @@ export class UpdateMovementUseCase {
           assertNotSystemCategory(cat)
           categorySnap = { _id: String(cat._id), name: cat.name, type: cat.type }
           categoryDoc = cat
+          assertPersonnelAllowed(ctx, cat)
         }
 
         // Fatia 5: subcategoria segue a regra pura; o documento da categoria

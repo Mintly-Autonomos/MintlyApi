@@ -12,6 +12,8 @@ import { MissingEnvError } from '../errors/core/missing-env-error'
 export interface RequestWithContext {
   headers: IncomingHttpHeaders
   jwtClaims?: { subject?: string; claims?: Record<string, string[]> }
+  /** Anexado pelo `enforceAccessLevel` (E.3). */
+  accessLevel?: RequestContext['accessLevel']
 }
 
 export type ContextSource = IncomingHttpHeaders | RequestWithContext
@@ -43,6 +45,8 @@ export function buildRequestContext (source?: ContextSource): RequestContext {
     const rid = jwt.claims?.restaurantId
     ctx.restaurantId = Array.isArray(rid) ? rid[0] : rid as string | undefined
   }
+  const level = isRequest ? (source as RequestWithContext).accessLevel : undefined
+  if (level) ctx.accessLevel = level
 
   return ctx
 }

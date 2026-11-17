@@ -5,7 +5,8 @@ import { ConflictError } from '../../core/errors/auth/conflict-error'
 import { NotFoundError } from '../../core/errors/core/not-found-error'
 import { Resource } from '../../core/types/resource'
 import { ensure as ensureFinancialCategoryIndexes } from '../../infrastructure/db/indices/financial-categories'
-import { FinancialCategory, CategoryType, RecordStatus, Subcategory } from 'mintly-lib'
+import { FinancialCategory, CategoryType, DreGroup, RecordStatus, Subcategory } from 'mintly-lib'
+import { hidesPersonnel } from '../auth/access-control'
 
 /** Documento antigo (antes da fatia 5) não tem o campo: lê como lista vazia. */
 const withSubcategories = (doc: any) => ({ ...doc, subcategories: doc.subcategories ?? [] })
@@ -83,7 +84,9 @@ export class FinancialCategoryRepository extends MongodbCrudRepository<Financial
 
     // sanitizeFilter: remove operadores Mongo ($…) de query param (anti-injeção;
     // sem isso o override furava a proteção da base e divergia do count).
-    const scopedFilter = { ...this.sanitizeFilter(queryFilter), restaurantId: ctx.restaurantId }
+    const scopedFilter: Record<string, unknown> = { ...this.sanitizeFilter(queryFilter), restaurantId: ctx.restaurantId }
+    // E.3: Operação não vê as categorias de pessoal (não lança nem vê esses lançamentos).
+    if (hidesPersonnel(ctx)) scopedFilter.dreGroup = { $ne: DreGroup.Labor }
     const customSort = { status: 1, name: 1 }
 
     const result = await collection
@@ -112,7 +115,7 @@ export class FinancialCategoryRepository extends MongodbCrudRepository<Financial
     const collection = this.getCollection(ctx)
 
     const result = await collection
-      .find({ restaurantId: ctx.restaurantId, status: RecordStatus.Active, type } as any)
+      .find({ restaurantId: ctx.restaurantId, status: RecordStatus.Active, type, ...(hidesPersonnel(ctx) ? { dreGroup: { $ne: DreGroup.Labor } } : {}) } as any)
       .sort({ lastUsedAt: -1, usage: -1 })
       .limit(limit)
       .toArray()

@@ -23,7 +23,8 @@ export async function enforceMemberLimit (
 ): Promise<string[]> {
   const limit = memberLimitForTier(tier)
   const db = MongoDBConnection.getInstance().getDatabase(env)
-  const filter = { restaurantId, role: UserRole.Member, status: UserStatus.Active }
+  // Convite pendente também ocupa vaga (E.1): entra na conta e pode ser inativado.
+  const filter = { restaurantId, role: UserRole.Member, status: { $in: [UserStatus.Active, UserStatus.Invited] } }
 
   const active = await db.collection('users')
     .find(filter, { projection: { _id: 1 } })

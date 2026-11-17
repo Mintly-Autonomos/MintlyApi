@@ -40,6 +40,8 @@ export interface MovementListFilter {
   dateTo?: string | Date
   page?: number | string
   size?: number | string
+  /** Do servidor, nunca da query (E.3): categorias que quem pede não vê (pessoal, para Operação). */
+  excludeCategoryIds?: string[]
 }
 
 export class FinancialMovementRepository extends MongodbCrudRepository<FinancialMovement & Document, string> {
@@ -57,8 +59,9 @@ export class FinancialMovementRepository extends MongodbCrudRepository<Financial
    * única usada por `findAll` E `count`, garantindo contagem consistente.
    */
   private buildListQuery (filter: MovementListFilter, ctx: RequestContext): Record<string, any> {
-    const { q, direction, status, dateFrom, dateTo } = filter
+    const { q, direction, status, dateFrom, dateTo, excludeCategoryIds } = filter
     const query: Record<string, any> = { restaurantId: ctx.restaurantId }
+    if (Array.isArray(excludeCategoryIds) && excludeCategoryIds.length > 0) query['category._id'] = { $nin: excludeCategoryIds }
     if (direction) query.direction = direction
     if (status) query.status = status
 
