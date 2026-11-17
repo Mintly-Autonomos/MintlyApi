@@ -11,6 +11,7 @@ import { movementToStorage, movementFromStorage } from '../financial-movement-re
 import { MovementItemRequest, resolveMovementItems } from '../movement-items'
 import { toBusinessDate } from '../../reports/shared/period'
 import { assertNotSystemCategory } from '../system-categories'
+import { resolveSaleFields, SaleFields } from '../sale-fields'
 
 export interface UpdateMovementInput {
   title?: string
@@ -31,6 +32,10 @@ export interface UpdateMovementInput {
   subcategoryId?: string | null
   /** Fatia 5: `null` remove (volta ao canal efetivo); ausente mantém. */
   channel?: string | null
+  /** S3.4: `null` remove; ausente mantém. Só em entrada. */
+  saleTime?: string | null
+  /** S3.4: `null` volta ao padrão (1 venda); ausente mantém. Só em entrada. */
+  salesCount?: number | null
 }
 
 const num = (v: any): number => Number((v ?? 0).toString())
@@ -267,6 +272,7 @@ export class UpdateMovementUseCase {
         }
         if (subcategory) newDoc.subcategory = subcategory
         if (channel != null) newDoc.channel = channel
+        Object.assign(newDoc, resolveSaleFields({ direction, current: mov as SaleFields, saleTime: changes.saleTime, salesCount: changes.salesCount }))
 
         // Validação Sapphire do doc resultante (categoria×direção, limites...).
         financialMovementSchema.parse(newDoc)

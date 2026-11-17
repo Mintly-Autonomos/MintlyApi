@@ -11,6 +11,7 @@ import { applyBalanceImpact, applyBalanceImpacts } from '../movement-balance'
 import { MovementItemRequest, StoredMovementItem, resolveMovementItems, resolveMovementItemsFrom } from '../movement-items'
 import { toBusinessDate } from '../../reports/shared/period'
 import { assertNotSystemCategory } from '../system-categories'
+import { resolveSaleFields } from '../sale-fields'
 
 export interface RegisterMovementInput {
   direction: MovementDirection
@@ -34,6 +35,10 @@ export interface RegisterMovementInput {
   subcategoryId?: string
   /** Fatia 5: canal informado; ausente, os relatórios usam o canal efetivo. */
   channel?: string
+  /** S3.4: hora da venda (`HH:MM`). Só em entrada. */
+  saleTime?: string
+  /** S3.4: quantas vendas o lançamento soma (padrão 1). Só em entrada. */
+  salesCount?: number
 }
 
 const DUPLICATE_MESSAGE = 'Possível movimentação duplicada nos últimos 2 minutos. Reenvie com confirmDuplicate=true para confirmar.'
@@ -132,6 +137,7 @@ async function draftMovement (
   const subcategory = resolveMovementSubcategory({ category: category as any, categoryChanged: true, requested: input.subcategoryId })
   if (subcategory) doc.subcategory = subcategory
   if (input.channel != null) doc.channel = input.channel
+  Object.assign(doc, resolveSaleFields({ direction: input.direction, saleTime: input.saleTime, salesCount: input.salesCount }))
 
   // 5. Validação Sapphire (categoria×direção, limites, grossValue>0...) -> 400.
   financialMovementSchema.parse(doc)
