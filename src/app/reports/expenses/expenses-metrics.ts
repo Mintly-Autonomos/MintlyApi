@@ -1,4 +1,4 @@
-import { CategoryBehavior, DreGroup, ExpenseAnomaly, OperationalNature, ExpenseItem, ExpenseItemKind, ExpenseSubitem, ExpensesReport, FinancialAccountType, MovementChannel, PlatformKind } from 'mintly-lib'
+import { CategoryBehavior, DreGroup, ExpenseAnomaly, OperationalNature, ExpenseItem, ExpenseItemKind, ExpenseSubitem, ExpensesReport, FinancialAccountType, MovementChannel, PlatformKind, SALES_CHANNELS } from 'mintly-lib'
 import { fromCents, toCents } from '../../../core/money/money'
 import { ValidationError } from '../../../core/errors/core/validation-error'
 import { addMonths } from '../shared/period'
@@ -98,11 +98,11 @@ interface MonthBucket {
 
 const emptyBucket = (): MonthBucket => ({ revenue: 0, revenueAfter: 0, deliveryRevenue: 0, platformRevenue: 0, cardRevenue: 0, shared: 0, items: new Map(), itemsAfter: new Map(), subs: new Map() })
 
-/** Filtro da tela: só salão ou delivery — `shared` não é filtro (vai em `sharedExcluded`). */
+/** Filtro da tela: salão, delivery ou encomendas — `shared` não é filtro (vai em `sharedExcluded`). */
 export function parseExpensesChannel (value: unknown): MovementChannel | null {
   if (value == null || value === '') return null
-  if (value === MovementChannel.DineIn || value === MovementChannel.Delivery) return value
-  throw new ValidationError('channel inválido: use dineIn ou delivery.')
+  if ((SALES_CHANNELS as readonly unknown[]).includes(value)) return value as MovementChannel
+  throw new ValidationError('channel inválido: use dineIn, delivery ou orders.')
 }
 
 const delta = (current: number, base: number | null): number | null => (base == null || base === 0 ? null : (current - base) / base)

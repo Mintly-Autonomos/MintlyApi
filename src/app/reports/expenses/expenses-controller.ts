@@ -6,7 +6,7 @@ import { ExpensesQuery } from './use-cases/expenses.query'
 export class ExpensesController {
   constructor (private readonly query: ExpensesQuery = new ExpensesQuery()) {}
 
-  /** GET /reports/expenses?month=AAAA-MM&channel=dineIn|delivery */
+  /** GET /reports/expenses?month=AAAA-MM&channel=dineIn|delivery|orders */
   async get (request: any, reply: any) {
     const ctx = buildRequestContext(request)
     const { month, channel } = request.query ?? {}
