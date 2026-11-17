@@ -56,6 +56,23 @@ describe('email-service', () => {
     expect(() => new GmailEmailService()).toThrow(/GMAIL_USER/)
   })
 
+  it('convite de funcionário (E.1): link para aceitar, nome e restaurante escapados; falha do Gmail lança', async () => {
+    await expect(getEmailService().sendMemberInvite('ana@x.com', 'tok', { memberName: 'Ana', restaurantName: 'Doceria', expiresInDays: 7 })).resolves.toBeUndefined()
+    process.env.GMAIL_USER = 'conta@gmail.com'
+    process.env.GMAIL_APP_PASSWORD = 'senha-de-app'
+    setEmailService(null as any)
+    mockSendMail.mockResolvedValue({ messageId: 'abc' })
+    await getEmailService().sendMemberInvite('ana@x.com', 'tok123', { memberName: '<b>Ana</b>', restaurantName: 'Doce & Cia', expiresInDays: 7 })
+    const mail = mockSendMail.mock.calls[0][0]
+    expect(mail).toMatchObject({ to: 'ana@x.com', subject: expect.stringContaining('Doce & Cia') })
+    expect(mail.html).toContain('/auth/aceitar-convite?token=tok123')
+    expect(mail.html).toContain('&lt;b&gt;Ana&lt;/b&gt;')
+    expect(mail.html).toContain('Doce &amp; Cia')
+    expect(mail.html).toContain('7 dias')
+    mockSendMail.mockRejectedValue(new Error('conexão recusada'))
+    await expect(getEmailService().sendMemberInvite('ana@x.com', 't', { memberName: 'Ana', restaurantName: '', expiresInDays: 7 })).rejects.toThrow(/falha/i)
+  })
+
   it('reutiliza a mesma instância (singleton)', () => {
     setEmailService(null as any)
     expect(getEmailService()).toBe(getEmailService())

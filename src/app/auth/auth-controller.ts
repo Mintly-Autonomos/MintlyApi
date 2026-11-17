@@ -3,6 +3,7 @@ import { StatusCodes } from 'http-status-codes'
 import { AuthUseCase } from './use-cases/auth-use-case'
 import { RegisterUseCase } from './use-cases/register-use-case'
 import { PasswordRecoveryUseCase } from './use-cases/password-recovery-use-case'
+import { MemberInviteUseCase } from './use-cases/member-invite-use-case'
 import { ResponseBuilder } from '../../core/builders/response-builder/response-builder'
 import { buildRequestContext } from '../../core/context/build-request-context'
 import { requireTenant } from '../../core/context/require-tenant'
@@ -10,6 +11,7 @@ import { requireTenant } from '../../core/context/require-tenant'
 const authUseCase = new AuthUseCase()
 const registerUseCase = new RegisterUseCase()
 const recoveryUseCase = new PasswordRecoveryUseCase()
+const memberInviteUseCase = new MemberInviteUseCase()
 
 export async function signupController (request: FastifyRequest, reply: FastifyReply) {
   const ctx = buildRequestContext(request)
@@ -59,6 +61,24 @@ export async function requestRecoveryController (
     .status(StatusCodes.ACCEPTED)
     .payload({ message: 'Se o e-mail estiver cadastrado, você receberá as instruções em breve.' })
     .send(reply)
+}
+
+export async function invitePreviewController (
+  request: FastifyRequest<{ Body: { token: string } }>,
+  reply: FastifyReply,
+) {
+  const ctx = buildRequestContext(request)
+  const preview = await memberInviteUseCase.preview(request.body, ctx)
+  return new ResponseBuilder().payload(preview).send(reply)
+}
+
+export async function acceptInviteController (
+  request: FastifyRequest<{ Body: { token: string; newPassword: string; confirmNewPassword: string } }>,
+  reply: FastifyReply,
+) {
+  const ctx = buildRequestContext(request)
+  await memberInviteUseCase.accept(request.body, ctx)
+  return new ResponseBuilder().payload({ message: 'Senha criada. Agora é só entrar com seu e-mail e a senha nova.' }).send(reply)
 }
 
 export async function resetPasswordController (

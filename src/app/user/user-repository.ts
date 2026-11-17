@@ -1,4 +1,5 @@
 import { ObjectId } from 'mongodb'
+import { accessLevelOf, MemberProfile, UserRole } from 'mintly-lib'
 import type { MyAccount } from 'mintly-lib'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { RequestContext } from '../../core/context/request-context'
@@ -22,6 +23,8 @@ export class UserRepository {
       email: user.email,
       phone: typeof person?.phone === 'string' ? person.phone : '',
       role: user.role,
+      // E.3: o perfil do funcionário, para a tela mostrar só o que ele pode usar.
+      ...(user.role === UserRole.Member ? { memberProfile: accessLevelOf(user as any) as MemberProfile } : {}),
     }
   }
 

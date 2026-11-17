@@ -54,6 +54,9 @@ export class AuthUseCase {
     if (user.status === 'blocked') {
       throw new ForbiddenError('Conta bloqueada. Entre em contato com o suporte.')
     }
+    if (user.status !== 'active') {
+      throw new UnauthorizedError('Credenciais inválidas')
+    }
 
     const userId = String(user._id)
     await this.repo.resetLoginAttempts(userId, ctx)

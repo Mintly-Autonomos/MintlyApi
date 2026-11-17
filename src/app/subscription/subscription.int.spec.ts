@@ -7,6 +7,7 @@ import { addDays as addDaysTo } from 'mintly-lib'
 import { mongoConnection } from '../../infrastructure/db/mongodb'
 import { ensureAllIndexes } from '../../infrastructure/db/indices'
 import { buildServer } from '../../infrastructure/server/build-server'
+import { setEmailService } from '../../infrastructure/email/email-service'
 
 // Este spec exercita o portão de assinatura DE VERDADE (os demais testes de integração o substituem).
 vi.unmock('../../core/hooks/require-active-subscription')
@@ -507,8 +508,19 @@ describe('Assinatura (Integration)', () => {
     describe('queda de plano e funcionários (Pro 20 -> Básico 5)', () => {
       const MEMBER_PASSWORD = 'Func12345'
       const memberEmail = (env: string, i: number) => `func${i}_${env}@teste.com`
-      const addMember = (auth: Record<string, string>, env: string, i: number) =>
-        app.inject({ method: 'POST', url: '/restaurants/me/members', headers: auth, payload: { name: `Func ${i}`, email: memberEmail(env, i), password: MEMBER_PASSWORD } })
+      // O funcionário é convidado e cria a senha pelo link (E.1); o e-mail não sai nos testes.
+      const invites = new Map<string, string>()
+      beforeAll(() => {
+        setEmailService({ sendPasswordRecovery: async () => {}, sendMemberInvite: async (to, token) => { invites.set(to, token) } })
+      })
+      const addMember = async (auth: Record<string, string>, env: string, i: number) => {
+        const created = await app.inject({ method: 'POST', url: '/restaurants/me/members', headers: auth, payload: { name: `Func ${i}`, email: memberEmail(env, i) } })
+        if (created.statusCode === 201) {
+          const accepted = await app.inject({ method: 'POST', url: '/auth/invite/accept', headers: { env }, payload: { token: invites.get(memberEmail(env, i)), newPassword: MEMBER_PASSWORD, confirmNewPassword: MEMBER_PASSWORD } })
+          expect(accepted.statusCode).toBe(200)
+        }
+        return created
+      }
       const members = async (auth: Record<string, string>) =>
         (await app.inject({ method: 'GET', url: '/restaurants/me/members', headers: auth })).json().payload as { _id: string, name: string, status: string }[]
       const memberLogin = async (env: string, i: number) => {

@@ -5,6 +5,7 @@ import { mongoConnection } from '../../infrastructure/db/mongodb'
 import { buildServer } from '../../infrastructure/server/build-server'
 import { verifyJwt } from '../hooks/verify-jwt'
 import { getRequestUser } from './request-user'
+import { setEmailService } from '../../infrastructure/email/email-service'
 
 let envCounter = 0
 const freshEnv = () => `int_request_user_${++envCounter}`
@@ -73,13 +74,18 @@ describe('getRequestUser com o token real (Integration)', () => {
     })
     const owner = signup.json().payload
     const memberEmail = `func_${env}@teste.com`
+    let inviteToken = ''
+    setEmailService({ sendPasswordRecovery: async () => {}, sendMemberInvite: async (_to, token) => { inviteToken = token } })
     const created = await app.inject({
       method: 'POST',
       url: '/restaurants/me/members',
       headers: { env, authorization: `Bearer ${owner.accessToken}` },
-      payload: { name: 'Ana Garçom', email: memberEmail, password: 'Func12345' },
+      payload: { name: 'Ana Garçom', email: memberEmail },
     })
     expect(created.statusCode).toBe(201)
+    // O funcionário cria a senha pelo convite (E.1).
+    const accepted = await app.inject({ method: 'POST', url: '/auth/invite/accept', headers: { env }, payload: { token: inviteToken, newPassword: 'Func12345', confirmNewPassword: 'Func12345' } })
+    expect(accepted.statusCode).toBe(200)
     const login = await app.inject({ method: 'POST', url: '/auth/login', headers: { env }, payload: { email: memberEmail, password: 'Func12345' } })
     expect(login.statusCode).toBe(200)
 

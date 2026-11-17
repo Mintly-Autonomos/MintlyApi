@@ -20,6 +20,7 @@ import { healthRoutes } from '../../app/health/health-routes'
 import { authRoutes } from '../../app/auth/auth-routes'
 import { verifyJwt } from '../../core/hooks/verify-jwt'
 import { requireActiveSubscription } from '../../core/hooks/require-active-subscription'
+import { enforceAccessLevel } from '../../app/auth/access-control'
 import { adminRoutes, subscriptionRoutes, webhookRoutes } from '../../app/subscription/subscription-routes'
 import { BaseError } from '../../core/errors/core/base-error'
 import { assertValidEnv } from '../../app/environment/env-allowlist'
@@ -161,6 +162,8 @@ export async function buildServer (server: FastifyInstance = Fastify({ bodyLimit
   await server.register(async (protectedScope: FastifyInstance) => {
     protectedScope.addHook('preHandler', verifyJwt)
     protectedScope.addHook('preHandler', requireActiveSubscription)
+    // Perfil do funcionário (E.3): Operação não vê relatórios nem muda cadastros.
+    protectedScope.addHook('preHandler', enforceAccessLevel)
     await protectedScope.register(personRoutes, { prefix: '/people' })
 
     await protectedScope.register(financialAccountRoutes, { prefix: '/financial-accounts' })

@@ -9,6 +9,7 @@ import { startOfLocalDay, toLocalDay } from '../../reports/shared/period'
 import { Resource } from '../../../core/types/resource'
 import { applyStatusTransition } from '../movement-status'
 import { movementFromStorage } from '../financial-movement-repository'
+import { assertPersonnelAllowed, hidesPersonnel } from '../../auth/access-control'
 
 const VALID = new Set<string>([MovementStatus.Pending, MovementStatus.Settled, MovementStatus.Cancelled])
 
@@ -81,6 +82,11 @@ export class ChangeMovementStatusUseCase {
           { session },
         )
         if (!mov) throw new NotFoundError(Resource.FinancialMovement, movementId)
+        // E.3: Operação não mexe em movimentação de pessoal (nem marcar o salário como pago).
+        if (hidesPersonnel(ctx) && ObjectId.isValid(String(mov.category?._id))) {
+          const category = await db.collection('financial_categories').findOne({ _id: new ObjectId(String(mov.category._id)), restaurantId: ctx.restaurantId }, { session })
+          assertPersonnelAllowed(ctx, category)
+        }
 
         // P1 — reafirmar o status ATUAL também é ação humana: é assim que o dono
         // TRAVA o movimento (ex.: sabe que o repasse do iFood não vai cair na data

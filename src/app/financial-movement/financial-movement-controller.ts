@@ -9,6 +9,8 @@ import { RecomputeBalancesUseCase } from './use-cases/recompute-balances.use-cas
 import { ImportMovementsUseCase, ImportMovementsInput } from './use-cases/import-movements.use-case'
 import { TransferUseCase } from './use-cases/transfer.use-case'
 import { attachAuditNames } from '../../core/audit/audit-names'
+import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
+import { hidesPersonnel, personnelCategoryIds } from '../auth/access-control'
 
 export class FinancialMovementController {
   constructor (
@@ -56,7 +58,12 @@ export class FinancialMovementController {
   /** GET /financial-movements — listagem (recente→antiga, busca/filtro). */
   async list (request: any, reply: any) {
     const ctx = buildRequestContext(request)
-    const filter = (request.query ?? {}) as MovementListFilter
+    const { excludeCategoryIds: _ignorado, ...query } = (request.query ?? {}) as MovementListFilter
+    const filter: MovementListFilter = { ...query }
+    // E.3: Operação não vê as movimentações de pessoal (salários, pró-labore, encargos).
+    if (hidesPersonnel(ctx)) {
+      filter.excludeCategoryIds = await personnelCategoryIds(MongoDBConnection.getInstance().getDatabase(ctx.env), ctx.restaurantId ?? '')
+    }
     // `totalItems` = total que casa o filtro (countDocuments), não o tamanho da
     // página — senão `totalPages` fica sempre 1 e o front não pagina.
     const [result, totalItems] = await Promise.all([
