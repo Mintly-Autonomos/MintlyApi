@@ -1,4 +1,4 @@
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import type { FastifyRequest } from 'fastify'
 import type { ClientSession, Db } from 'mongodb'
 import { accessLevelOf, canManageSetup, canSeePersonnel, canViewReports, DreGroup, MEMBER_PROFILE_LABEL, MemberProfile, UserRole } from 'mintly-lib'
 import type { AccessLevel } from 'mintly-lib'
@@ -44,7 +44,7 @@ export function accessDenial (level: AccessLevel, method: string, url: string): 
  * O dono passa direto (o papel não muda). Para funcionário, o perfil e a situação são lidos do BANCO a cada
  * pedido: trocar o perfil ou inativar vale na hora, sem esperar o token vencer.
  */
-export async function enforceAccessLevel (request: FastifyRequest, _reply: FastifyReply): Promise<void> {
+export async function enforceAccessLevel (request: FastifyRequest): Promise<void> {
   const jwt = (request as any).jwtClaims as { subject?: string, claims?: Record<string, string | string[] | undefined> } | undefined
   const userId = jwt?.subject
   if (!userId) return // o verifyJwt já recusou quem não tem token

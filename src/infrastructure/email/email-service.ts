@@ -15,7 +15,7 @@ export interface IEmailService {
 const frontendUrl = () => process.env.FRONTEND_URL ?? 'http://localhost:4200'
 const inviteUrl = (token: string) => `${frontendUrl()}/auth/aceitar-convite?token=${token}`
 
-const escapeHtml = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string)
+const escapeHtml = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' })[c] as string)
 
 function buildInviteEmailHtml (url: string, invite: MemberInviteEmail): string {
   const nome = escapeHtml(invite.memberName)
