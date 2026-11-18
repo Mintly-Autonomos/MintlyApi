@@ -101,9 +101,45 @@ describe('/restaurants/me (Integration)', () => {
     [{ name: '' }],
     [{ name: '   ' }],
     [{ taxRegime: null }],
+    [{ team: null }],
+    [{ team: [{ name: '   ', weeklyHours: 40 }] }],
+    [{ team: [{ name: 'Ana', weeklyHours: 0 }] }],
+    [{ team: [{ name: 'Ana', weeklyHours: 113 }] }],
+    [{ team: [{ name: 'Ana' }] }],
+    [{ team: [{ name: 'Ana', weeklyHours: 40, salario: 2000 }] }],
   ])('PATCH inválido %j → 400', async (payload) => {
     const { auth } = await signup(freshEnv())
     expect((await patchMe(auth, payload)).statusCode).toBe(400)
+  })
+
+  describe('equipe e carga semanal (P.4)', () => {
+    it('nasce sem equipe; PATCH grava a lista (nome sem espaços, horas com 1 casa) e o GET devolve', async () => {
+      const { auth } = await signup(freshEnv())
+      expect((await getMe(auth)).json().payload.restaurant.team).toBeUndefined()
+      const res = await patchMe(auth, { team: [{ name: '  Dona Bel ', weeklyHours: 60 }, { name: 'Joana', weeklyHours: 22.45 }] })
+      expect(res.statusCode).toBe(200)
+      expect(res.json().payload.team).toEqual([{ name: 'Dona Bel', weeklyHours: 60 }, { name: 'Joana', weeklyHours: 22.5 }])
+      expect((await getMe(auth)).json().payload.restaurant.team).toEqual([{ name: 'Dona Bel', weeklyHours: 60 }, { name: 'Joana', weeklyHours: 22.5 }])
+    })
+
+    it('a lista é trocada inteira; [] limpa; mexer só no nome não apaga a equipe', async () => {
+      const { auth } = await signup(freshEnv())
+      await patchMe(auth, { team: [{ name: 'Ana', weeklyHours: 44 }, { name: 'Bia', weeklyHours: 44 }] })
+      await patchMe(auth, { name: 'Cantina Renomeada' })
+      expect((await getMe(auth)).json().payload.restaurant.team).toHaveLength(2)
+      await patchMe(auth, { team: [{ name: 'Bia', weeklyHours: 30 }] })
+      expect((await getMe(auth)).json().payload.restaurant.team).toEqual([{ name: 'Bia', weeklyHours: 30 }])
+      await patchMe(auth, { team: [] })
+      expect((await getMe(auth)).json().payload.restaurant.team).toEqual([])
+    })
+
+    it('a equipe de um restaurante não aparece no outro', async () => {
+      const env = freshEnv()
+      const a = await signup(env, 'a')
+      const b = await signup(env, 'b')
+      await patchMe(a.auth, { team: [{ name: 'Ana', weeklyHours: 44 }] })
+      expect((await getMe(b.auth)).json().payload.restaurant.team).toBeUndefined()
+    })
   })
 
   it.each(['?month=2026-13', '?month=2026-1', 'FUTURE'])('GET %s → 400', async (query) => {
