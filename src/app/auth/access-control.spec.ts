@@ -14,6 +14,9 @@ describe('accessDenial (E.3)', () => {
   it('Operação: lê cadastros, mas não escreve; o recálculo de saldo também é cadastro', () => {
     expect(accessDenial(OP, 'GET', '/financial-accounts')).toBeNull()
     expect(accessDenial(OP, 'GET', '/menu-items/price-alerts')).toBeNull()
+    // Perfis de venda por categoria: Operação lê (o simulador usa), mas não troca.
+    expect(accessDenial(OP, 'GET', '/menu-items/category-profiles')).toBeNull()
+    expect(accessDenial(OP, 'PUT', '/menu-items/category-profiles')).toBe(SETUP_DENIED)
     for (const [m, u] of [['POST', '/financial-accounts'], ['PUT', '/financial-accounts/1/opening-balance'], ['PATCH', '/financial-categories/1'], ['POST', '/menu-items/1/price-review'], ['POST', '/financial-movements/recompute-balances']]) {
       expect(accessDenial(OP, m, u)).toBe(SETUP_DENIED)
     }

@@ -102,6 +102,21 @@ export class MenuItemRepository extends MongodbCrudRepository<MenuItem & Documen
    * restaurante, renovando a auditoria. O chamador decide o que entra no `$set` — por exemplo,
    * `priceUpdatedAt` só entra quando o valor mudou de fato.
    */
+  /** Remove campos opcionais do prato (ex.: `priceSensitivity` volta a valer o perfil da categoria). */
+  async applyUnset (id: string, fields: string[], ctx: RequestContext): Promise<MenuItem> {
+    if (!ObjectId.isValid(id)) throw new NotFoundError(Resource.MenuItem, id)
+    const result = await this.getCollection(ctx).findOneAndUpdate(
+      { _id: new ObjectId(id), restaurantId: ctx.restaurantId } as any,
+      {
+        $unset: Object.fromEntries(fields.map((f) => [f, ''])),
+        $set: { 'audit.updatedAt': new Date(), 'audit.updatedBy': ctx.userId },
+      } as any,
+      { returnDocument: 'after' },
+    )
+    if (!result) throw new NotFoundError(Resource.MenuItem, id)
+    return result as unknown as MenuItem
+  }
+
   async applySet (id: string, set: Record<string, unknown>, ctx: RequestContext): Promise<MenuItem> {
     if (!ObjectId.isValid(id)) throw new NotFoundError(Resource.MenuItem, id)
     const result = await this.getCollection(ctx).findOneAndUpdate(

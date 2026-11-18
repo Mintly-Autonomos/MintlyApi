@@ -17,6 +17,9 @@ export async function menuItemRoutes (fastify: FastifyInstance) {
 
   // Estática antes de "/:id" por clareza (o router já resolve estático primeiro).
   fastify.get('/price-alerts', async (request, reply) => controller.priceAlerts(request, reply))
+  // Perfil de venda por categoria (elasticidade padrão do simulador de preço). PUT troca a lista inteira.
+  fastify.get('/category-profiles', async (request, reply) => controller.categoryProfiles(request, reply))
+  fastify.put('/category-profiles', async (request, reply) => controller.saveCategoryProfiles(request, reply))
 
   fastify.patch('/:id', async (request: any, reply) => {
     const response = await controller.update(request.params.id, request.body as any, request)

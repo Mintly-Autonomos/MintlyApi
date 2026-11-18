@@ -240,6 +240,43 @@ describe('/menu-items (integração)', () => {
     })
   })
 
+  describe('perfil de venda e sensibilidade a preço', () => {
+    it('o prato guarda a própria sensibilidade; null volta a usar a da categoria (campo some)', async () => {
+      const id = (await create(a.token, 'Cheesecake', 22, 'Doces'))._id
+      const setRes = await call('PATCH', `/menu-items/${id}`, a.token, { priceSensitivity: 'high' })
+      expect(setRes.statusCode).toBe(200)
+      expect((await get(a.token, id)).priceSensitivity).toBe('high')
+      const clear = await call('PATCH', `/menu-items/${id}`, a.token, { priceSensitivity: null, cost: 7.8 })
+      expect(clear.statusCode).toBe(200)
+      const depois = await get(a.token, id)
+      expect(depois).not.toHaveProperty('priceSensitivity')
+      expect(depois.cost).toBe(7.8)
+      expect((await call('PATCH', `/menu-items/${id}`, a.token, { priceSensitivity: 'altissima' })).statusCode).toBe(400)
+    })
+
+    it('perfis por categoria: começa vazio; PUT troca a lista inteira, sem espaços e sem repetir a categoria', async () => {
+      expect((await call('GET', '/menu-items/category-profiles', a.token)).json().payload).toEqual({ profiles: [] })
+      const put = await server.inject({
+        method: 'PUT',
+        url: '/menu-items/category-profiles',
+        headers: { env: ENV, authorization: `Bearer ${a.token}` },
+        payload: { profiles: [{ category: ' Bebidas ', profile: 'drink' }, { category: 'Doces', profile: 'counter' }, { category: 'bebidas', profile: 'order' }] },
+      })
+      expect(put.statusCode).toBe(200)
+      expect(put.json().payload.profiles).toEqual([{ category: 'bebidas', profile: 'order' }, { category: 'Doces', profile: 'counter' }])
+      expect((await call('GET', '/menu-items/category-profiles', a.token)).json().payload.profiles).toHaveLength(2)
+      // O outro restaurante não vê os perfis de A.
+      expect((await call('GET', '/menu-items/category-profiles', b.token)).json().payload).toEqual({ profiles: [] })
+    })
+
+    it('perfil inválido ou categoria vazia → 400', async () => {
+      const put = (profiles: unknown) => server.inject({ method: 'PUT', url: '/menu-items/category-profiles', headers: { env: ENV, authorization: `Bearer ${a.token}` }, payload: { profiles } })
+      expect((await put([{ category: 'Bebidas', profile: 'cerveja' }])).statusCode).toBe(400)
+      expect((await put([{ category: '', profile: 'drink' }])).statusCode).toBe(400)
+      expect((await put('nada')).statusCode).toBe(400)
+    })
+  })
+
   it('sem token → 401', async () => {
     const res = await server.inject({ method: 'GET', url: '/menu-items/price-alerts', headers: { env: ENV } })
     expect(res.statusCode).toBe(401)
