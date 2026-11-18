@@ -6,6 +6,8 @@ import {
   menuItemInsertSchema,
   menuItemUpdateSchema,
   menuItemPriceSchema,
+  menuCategoryProfilesUpdateSchema,
+  MenuCategoryProfile,
   MenuItem,
   MenuItemPriceAlert,
   RecordStatus,
@@ -15,6 +17,7 @@ import { NotFoundError } from '../../core/errors/core/not-found-error'
 import { Resource } from '../../core/types/resource'
 import { escapeRegex } from '../../core/util/escape-regex'
 import { daysSince, staleCutoff } from './menu-item-rules'
+import { RestaurantRepository } from '../restaurant/restaurant-repository'
 
 export class MenuItemController extends CrudController<MenuItem, string> {
   constructor (private readonly repo: MenuItemRepository) {
@@ -26,6 +29,47 @@ export class MenuItemController extends CrudController<MenuItem, string> {
       filter.name = { $regex: escapeRegex(String(filter.name)), $options: 'i' }
     }
     return super.findAll(filter, source)
+  }
+
+  /**
+   * PATCH /:id. `priceSensitivity: null` tira a sensibilidade do prato (volta a valer o perfil da categoria):
+   * o update genérico gravaria `null`, então o campo é removido à parte.
+   */
+  async update (id: string, item: any, source?: ContextSource): Promise<ResponseStructure> {
+    if (!item || item.priceSensitivity !== null) return super.update(id, item, source)
+    const { priceSensitivity: _limpar, ...rest } = item
+    if (Object.keys(rest).length > 0) await super.update(id, rest, source)
+    else await this.loadOwn(id, source)
+    const updated = await this.repo.applyUnset(id, ['priceSensitivity'], buildRequestContext(source))
+    return new ResponseBuilder().payload(updated as any).build()
+  }
+
+  /** GET /category-profiles — perfil de venda escolhido para cada categoria do cardápio. */
+  async categoryProfiles (request: any, reply: any) {
+    const restaurant = await new RestaurantRepository().findMine(buildRequestContext(request))
+    const profiles: MenuCategoryProfile[] = restaurant.menuCategoryProfiles ?? []
+    return new ResponseBuilder().status(StatusCodes.OK).payload({ profiles } as any).send(reply)
+  }
+
+  /**
+   * PUT /category-profiles — troca a lista inteira. Categoria sem espaços nas pontas; a mesma categoria escrita
+   * com caixa diferente conta uma vez só (vale a última). Escrita em /menu-items: Operação não pode (access-control).
+   */
+  async saveCategoryProfiles (request: any, reply: any) {
+    const { profiles } = menuCategoryProfilesUpdateSchema.parse(request.body ?? {}) as { profiles: MenuCategoryProfile[] }
+    const porNome = new Map<string, MenuCategoryProfile>()
+    for (const p of profiles) {
+      const category = p.category.trim()
+      if (category) porNome.set(category.toLocaleLowerCase('pt-BR'), { category, profile: p.profile })
+    }
+    const lista = [...porNome.values()]
+    const ctx = buildRequestContext(request)
+    await new RestaurantRepository().updateMine(ctx, {
+      menuCategoryProfiles: lista,
+      'audit.updatedAt': new Date(),
+      'audit.updatedBy': ctx.userId,
+    })
+    return new ResponseBuilder().status(StatusCodes.OK).payload({ profiles: lista } as any).send(reply)
   }
 
   /** Prato do restaurante do contexto, ou 404. */
