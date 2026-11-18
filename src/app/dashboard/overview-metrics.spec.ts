@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { HealthPillar } from 'mintly-lib'
-import { computeOverview, healthCap, healthLabel, healthScore, pillarScore, revenueTrend, runwayDays } from './overview-metrics'
+import { computeOverview, debtsRatio, healthCap, healthLabel, healthScore, pillarScore, revenueTrend, runwayDays } from './overview-metrics'
 import { OVERVIEW_MONTH, overviewScenario } from './overview-scenario'
 
 describe('pillarScore (linear, limitado a 0..100)', () => {
@@ -81,9 +81,11 @@ describe('computeOverview — cenário (mês fechado)', () => {
   it('mês passado: score daquele mês, sem o fôlego (decisão A da revisão)', () => {
     expect(r.health).toMatchObject({ score: 100, label: 'healthy', basisMonth: '2026-07', bands: { risk: 40, attention: 70 } })
     const byKey = Object.fromEntries(r.health.pillars.map((pl) => [pl.key, pl]))
-    expect(byKey.netMargin).toMatchObject({ weight: 0.3, score: 100 })
-    expect(byKey.runway).toMatchObject({ weight: 0.3, value: null, score: null })
-    expect(byKey.primeCost).toMatchObject({ weight: 0.25, score: 100 })
+    expect(byKey.netMargin).toMatchObject({ weight: 0.25, score: 100 })
+    expect(byKey.runway).toMatchObject({ weight: 0.25, value: null, score: null })
+    expect(byKey.primeCost).toMatchObject({ weight: 0.2, score: 100 })
+    // Mês passado: sem a foto do vencido da época, o pilar Dívidas fica fora da média.
+    expect(byKey.debts).toMatchObject({ weight: 0.15, value: null, score: null })
     expect(byKey.revenueTrend).toMatchObject({ weight: 0.15, score: 100 })
     expect(byKey.revenueTrend.value).toBeCloseTo(58_400 / (156_200 / 3) - 1, 10)
     expect(r.cards.projection.runwayDays).toBe(20)
@@ -132,7 +134,8 @@ describe('computeOverview — bordas', () => {
     expect(byKey.primeCost.value).toBeCloseTo(26_000 / 54_200, 10)
     expect(byKey.revenueTrend.value).toBeCloseTo(54_200 / ((47_000 + 50_000 + 52_000) / 3) - 1, 10)
     expect(byKey.runway).toMatchObject({ value: 20 })
-    expect(r.health).toMatchObject({ score: 82, label: 'healthy' })
+    // Com o pilar Dívidas (nada vencido = 100, peso 15%) a nota de 82 vai a 85.
+    expect(r.health).toMatchObject({ score: 85, label: 'healthy' })
   })
 
   it('mês atual sem venda ainda: o mês pela metade não derruba o score', () => {
@@ -140,7 +143,7 @@ describe('computeOverview — bordas', () => {
     input.today = new Date('2026-07-01T15:00:00Z')
     ;(input.result as any).current = { ...input.result.current, grossRevenue: 0, netProfit: -6_000, netMargin: null }
     ;(input.expenses as any).primeCost = { ...input.expenses.primeCost, pctOfRevenue: null }
-    expect(computeOverview(input).health).toMatchObject({ score: 82, basisMonth: '2026-06' })
+    expect(computeOverview(input).health).toMatchObject({ score: 85, basisMonth: '2026-06' })
   })
 
   it('mês atual: ponto projetado de Receita × Despesa usa a receita projetada de Custos', () => {
@@ -200,7 +203,28 @@ describe('trava da nota da saúde (S2.3)', () => {
   })
 
   it('cenário sem problema: sem trava, nota cheia', () => {
-    expect(computeOverview(current()).health).toMatchObject({ score: 82, cap: null, label: 'healthy' })
+    expect(computeOverview(current()).health).toMatchObject({ score: 85, cap: null, label: 'healthy' })
+  })
+
+  it('pilar Dívidas: vencido ÷ despesa do mês-base entra na média; 20% ou mais zera o pilar; a trava continua', () => {
+    const sem = computeOverview(current()).health
+    expect(sem.pillars.find((p) => p.key === 'debts')).toMatchObject({ weight: 0.15, value: 0, score: 100 })
+    const input = current()
+    const despesaJunho = input.expenses.history.find((h) => h.month === '2026-06')!.total
+    ;(input.cashFlow as any).overdue = { count: 1, receivable: 0, payable: despesaJunho * 0.1 }
+    const h = computeOverview(input).health
+    expect(h.pillars.find((p) => p.key === 'debts')).toMatchObject({ value: 0.1, score: 50 })
+    expect(h.cap).toMatchObject({ maxScore: 69, reasons: ['overduePayables'] })
+    const muito = current()
+    ;(muito.cashFlow as any).overdue = { count: 3, receivable: 0, payable: despesaJunho * 0.5 }
+    expect(computeOverview(muito).health.pillars.find((p) => p.key === 'debts')!.score).toBe(0)
+  })
+
+  it('debtsRatio: sem despesa no mês usa a média diária × 30; vencido sem nenhuma referência = 1', () => {
+    expect(debtsRatio(0, 10_000, 300)).toBe(0)
+    expect(debtsRatio(1_000, 10_000, 300)).toBe(0.1)
+    expect(debtsRatio(900, 0, 300)).toBe(0.1)
+    expect(debtsRatio(500, 0, 0)).toBe(1)
   })
 
   it('conta a pagar vencida hoje: nota limitada a 69 (atenção)', () => {

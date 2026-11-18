@@ -72,7 +72,7 @@ describe('GET /dashboard/overview (Integration)', () => {
     expect(o.cards.cashToday.amount).toBe(cash.cashToday)
     expect(o.cards.projection.balance).toBe(cash.projectedBalance)
     expect(o.revenueVsExpense.map((p: any) => p.revenue)).toEqual(result.history.map((h: any) => h.grossRevenue))
-    expect(o.health.pillars.map((p: any) => p.key)).toEqual(['netMargin', 'runway', 'primeCost', 'revenueTrend'])
+    expect(o.health.pillars.map((p: any) => p.key)).toEqual(['netMargin', 'runway', 'primeCost', 'revenueTrend', 'debts'])
     expect(o.insights.some((i: any) => i.kind === 'breakEvenReached')).toBe(true)
   })
 
