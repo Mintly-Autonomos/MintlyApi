@@ -4,7 +4,7 @@ import { ValidationError } from '../../../core/errors/core/validation-error'
 import { RestaurantRepository } from '../restaurant-repository'
 
 /**
- * PATCH /restaurants/me — nome e regime tributário. O schema é estrito: audit,
+ * PATCH /restaurants/me — nome, regime tributário e equipe com a carga semanal (P.4: troca a lista inteira). O schema é estrito: audit,
  * restaurantId e qualquer outro campo são rejeitados (400 pelo error handler).
  * Só o dono chama (a trava fica no controller, que lê o papel do banco).
  */
@@ -20,6 +20,16 @@ export class UpdateRestaurantUseCase {
     }
     if ('taxRegime' in changes && changes.taxRegime == null) {
       throw new ValidationError('taxRegime inválido: use mei, simplesNacionalAnexoI ou simplesNacionalAnexoII.')
+    }
+    if ('team' in changes) {
+      if (!Array.isArray(changes.team)) throw new ValidationError('team inválido: envie a lista da equipe ([] para limpar).')
+      // Nome sem espaços nas pontas (só espaços não vale) e horas com uma casa decimal.
+      const team = (changes.team as Array<{ name: string, weeklyHours: number }>).map((p) => ({
+        name: p.name.trim(),
+        weeklyHours: Math.round(p.weeklyHours * 10) / 10,
+      }))
+      if (team.some((p) => p.name === '')) throw new ValidationError('Informe o nome de cada pessoa da equipe.')
+      changes.team = team
     }
     if (Object.keys(changes).length === 0) return this.repo.findMine(ctx)
     return this.repo.updateMine(ctx, {
