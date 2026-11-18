@@ -13,13 +13,19 @@ import { project, projectionWindow } from '../reports/expenses/expenses-detail'
  * Score de saúde: pesos, pontas e faixas são PROPOSTA do design — a MIN-83 não
  * os define (pendência N5). Ajuste aqui.
  */
-export const HEALTH_WEIGHTS: Record<HealthPillarKey, number> = { netMargin: 0.30, runway: 0.30, primeCost: 0.25, revenueTrend: 0.15 }
+/**
+ * Pesos dos pilares. `debts` (relatório Sweetie Bel, decisão do Nathan): conta vencida entra na média com 15%;
+ * a trava em 69 continua.
+ */
+export const HEALTH_WEIGHTS: Record<HealthPillarKey, number> = { netMargin: 0.25, runway: 0.25, primeCost: 0.20, revenueTrend: 0.15, debts: 0.15 }
 /** Valor que dá nota 0 e valor que dá nota 100 (linear entre os dois). */
 export const PILLAR_RANGES: Record<HealthPillarKey, { zero: number; full: number }> = {
   netMargin: { zero: 0, full: 0.10 },
   runway: { zero: 0, full: 45 },
   primeCost: { zero: 0.85, full: 0.65 },
   revenueTrend: { zero: -0.20, full: 0 },
+  /** Vencido ÷ despesa do mês: nada vencido = 100; 20% da despesa do mês ou mais = 0. */
+  debts: { zero: 0.20, full: 0 },
 }
 export const HEALTH_BANDS = { risk: 40, attention: 70 }
 /**
@@ -44,8 +50,18 @@ export interface OverviewInput {
   today: Date
 }
 
-const PILLAR_ORDER: HealthPillarKey[] = ['netMargin', 'runway', 'primeCost', 'revenueTrend']
+const PILLAR_ORDER: HealthPillarKey[] = ['netMargin', 'runway', 'primeCost', 'revenueTrend', 'debts']
 const SEVERITY_RANK: Record<OverviewInsight['severity'], number> = { warning: 0, positive: 1, info: 2 }
+
+/**
+ * Pilar Dívidas: contas a pagar vencidas hoje ÷ despesa do mês-base (sem despesa no mês, a média diária de saídas ×
+ * 30). Nada vencido = 0. Vencido sem nenhuma despesa de referência = 1 (nota 0).
+ */
+export function debtsRatio (overduePayable: number, monthExpense: number, avgDailyOutflow: number): number {
+  if (!(overduePayable > 0)) return 0
+  const base = monthExpense > 0 ? monthExpense : avgDailyOutflow * 30
+  return base > 0 ? Math.round((overduePayable / base) * 10000) / 10000 : 1
+}
 
 export function pillarScore (key: HealthPillarKey, value: number | null): number | null {
   if (value == null) return null
@@ -164,12 +180,15 @@ export function computeOverview (input: OverviewInput): OverviewReport {
       runway,
       primeCost: basis.primePct,
       revenueTrend: basisPoint ? revenueTrend(basisPoint.grossRevenue, result.history, basisMonth) : null,
+      debts: debtsRatio(cashFlow.overdue.payable, expenses.history.find((h) => h.month === basisMonth)?.total ?? 0, cashFlow.safetyThreshold.avgDailyOutflow),
     }
     : {
       netMargin: result.current.netMargin,
       runway: null,
       primeCost: expenses.primeCost.pctOfRevenue,
       revenueTrend: revenueTrend(result.current.grossRevenue, result.history, month),
+      // Mês passado: não há a foto do que estava vencido na época — sem dado (fora da média).
+      debts: null,
     }
   const pillars: HealthPillar[] = PILLAR_ORDER.map((key) => ({ key, weight: HEALTH_WEIGHTS[key], score: pillarScore(key, values[key]), value: values[key] }))
   // Trava: prejuízo no mês-base; conta vencida e caixa negativo só valem hoje (mês atual).
