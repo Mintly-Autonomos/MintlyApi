@@ -24,7 +24,8 @@ export class OverviewQuery {
   async execute (ctx: RequestContext, month?: string): Promise<OverviewReport> {
     const today = this.clock()
     const [result, cashFlow, expenses] = await Promise.all([
-      this.result.execute(ctx, month),
+      // 12 meses: o "Resultado mês a mês" da Visão geral mostra o ano (o histórico de Custos continua com 6).
+      this.result.execute(ctx, month, { historyMonths: 12 }),
       this.cashFlow.execute(ctx, OVERVIEW_HORIZON),
       this.expenses.execute(ctx, month),
     ])
