@@ -7,7 +7,7 @@ export const AI_MODEL = 'claude-haiku-5-5'
  * Versão do jeito de escrever. Entra na chave do cache: quando o prompt muda, os textos já guardados no dia (escritos
  * no jeito antigo) não são servidos de novo.
  */
-export const AI_PROMPT_VERSION = 2
+export const AI_PROMPT_VERSION = 3
 
 /** Tamanho máximo do título de um card, em palavras (o card inteiro tem `AI_INSIGHT_MAX_WORDS`). */
 export const AI_INSIGHT_TITLE_MAX_WORDS = 10
@@ -26,7 +26,8 @@ export const AI_SYSTEM_PROMPT = [
   '',
   'Números e símbolos:',
   '- Use algarismos e símbolos: escreva 42% (nunca "42 por cento"), R$ 934,83 (nunca "934 reais") e 3 dias (nunca "três dias").',
-  '- Use só caracteres básicos do teclado: letras, algarismos e % R$ , . : ; - ( ) ? e aspas retas. Nada de travessão longo, setas, reticências em um só caractere, aspas curvas, ≈, ≥ ou outros símbolos especiais.',
+  '- Escreva com a acentuação correta do português (você, média, gás, negócio, não, há, preço). Letras acentuadas e ç são obrigatórias quando a palavra pede.',
+  '- Fora as letras acentuadas, use só caracteres básicos do teclado: algarismos e % R$ , . : ; - ( ) ? e aspas retas. Nada de travessão longo, setas, reticências em um só caractere, aspas curvas, ≈, ≥ ou outros símbolos especiais.',
   '',
   'Regras:',
   '- Use SOMENTE os números e fatos que estão em <dados>. Nunca invente valores, datas, causas ou comparações que não estejam lá.',
@@ -86,10 +87,11 @@ export function buildInsightsPrompt (facts: unknown): string {
 
 export function buildPricePrompt (facts: unknown): string {
   return [
-    'Sugira o novo preço de venda do prato abaixo, que está há bastante tempo sem mudar de preço.',
-    `- suggestedPrice: em reais, com no máximo 2 casas. Aumento de no máximo ${AI_MAX_PRICE_INCREASE_PERCENT}% sobre o preço atual; nunca reduza. Prefira um valor redondo, no padrão dos preços do cardápio.`,
-    '- Pese: há quanto tempo o preço não muda; margem baixa pede aumento maior; prato muito vendido pede mais cuidado (aumento menor).',
-    `- reason: até ${AI_PRICE_REASON_MAX_WORDS} palavras, explicando o motivo em linguagem simples. NÃO escreva o novo preço nem percentuais (a tela já mostra esses números): fale do tempo parado, da margem e das vendas.`,
+    'Explique a recomendação de preço do prato abaixo, que está há bastante tempo sem mudar de preço.',
+    '- Quando houver o campo decision, o preço JÁ FOI CALCULADO pela conta de lucro com a sensibilidade dos clientes a preço (priceSensitivity). decision.keepPrice = true quer dizer que subir o preço tende a reduzir o lucro do prato: recomende manter. Caso contrário, o aumento calculado aumenta o lucro. Nunca contradiga decision.',
+    `- suggestedPrice: sem decision, sugira em reais (no máximo 2 casas), com aumento de no máximo ${AI_MAX_PRICE_INCREASE_PERCENT}% sobre o preço atual, nunca abaixo do atual. Com decision, repita o preço atual (a API usa o calculado).`,
+    '- soldLast30Days são as vendas registradas nos últimos 30 dias. Se for maior que zero, nunca diga que o prato não vendeu. marginVsMenuAverage diz se a margem está acima ou abaixo da média do cardápio: não chame de "margem baixa" uma margem acima da média.',
+    `- reason: até ${AI_PRICE_REASON_MAX_WORDS} palavras, explicando o motivo em linguagem simples. NÃO escreva o novo preço nem percentuais (a tela já mostra esses números): fale do tempo parado, da margem, das vendas e de como os clientes reagem a preço.`,
     '',
     '<dados>',
     JSON.stringify(facts),

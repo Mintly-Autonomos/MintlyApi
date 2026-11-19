@@ -1,4 +1,5 @@
 import { Collection, Document, MongoServerError, ObjectId } from 'mongodb'
+import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { MongodbCrudRepository } from '../../core/crud/mongodb-crud-repository'
 import { RequestContext } from '../../core/context/request-context'
 import { ConflictError } from '../../core/errors/auth/conflict-error'
@@ -82,6 +83,17 @@ export class MenuItemRepository extends MongodbCrudRepository<MenuItem & Documen
       .sort({ priceUpdatedAt: 1 })
       .toArray()
     return result as unknown as MenuItem[]
+  }
+
+  /** Unidades vendidas do prato desde `since`, somadas das vendas (entradas não canceladas) que informaram os pratos. */
+  async soldSince (menuItemId: string, since: Date, ctx: RequestContext): Promise<number> {
+    const [row] = await MongoDBConnection.getInstance().getDatabase(ctx.env).collection('financial_movements').aggregate([
+      { $match: { restaurantId: ctx.restaurantId, direction: 'in', status: { $ne: 'cancelled' }, date: { $gte: since }, 'items.menuItemId': menuItemId } },
+      { $unwind: '$items' },
+      { $match: { 'items.menuItemId': menuItemId } },
+      { $group: { _id: null, qty: { $sum: '$items.qty' } } },
+    ]).toArray()
+    return Number(row?.qty ?? 0)
   }
 
   /** Pratos ATIVOS cuja última revisão de preço foi em `cutoff` ou antes — os mais antigos primeiro. */
