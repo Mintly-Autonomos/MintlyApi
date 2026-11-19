@@ -367,10 +367,13 @@ describe('revisão dos ajustes — mês atual', () => {
   ])
   const out = (m: number, categoryId: string, gross: number, grossUntil: number, grossAfter = 0): ExpenseRow => ({ month: addMonths(M, m), direction: 'out', categoryId, categoryName: categoryId, accountId: 'c', accountName: 'Caixa', accountType: 'cash', channel: null, subcategoryId: null, subcategoryName: null, gross, fee: 0, grossUntil, feeUntil: 0, grossAfter })
 
-  it('lançamento agendado para depois de hoje não entra na comparação (valor do mês segue cheio)', () => {
+  it('lançamento agendado para depois de hoje não entra no valor do mês nem na comparação (reteste 18/11, item 8)', () => {
     const rows = [-3, -2, -1].map((m) => out(m, 'cmv', 3_000, 1_000)).concat([out(0, 'cmv', 3_100, 1_100, 2_000)])
     const r = scenario(null, { rows, categories: cats, today: TODAY, untilDay: 10 })
-    expect(byName(r, 'CMV')).toMatchObject({ amount: 3_100, previous: 1_000, hasAnomaly: false })
+    // Mostra até hoje (1.100); o agendado de 2.000 só entra na projeção do fechamento.
+    expect(byName(r, 'CMV')).toMatchObject({ amount: 1_100, previous: 1_000, hasAnomaly: false })
+    expect(r.total.current).toBe(1_100)
+    expect(byName(r, 'CMV').history.at(-1)!.amount).toBe(1_100)
     expect(byName(r, 'CMV').deltaPrevious).toBeCloseTo(0.1, 10)
     expect(r.total.deltaPrevious).toBeCloseTo(0.1, 10)
   })

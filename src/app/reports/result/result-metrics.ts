@@ -47,6 +47,8 @@ export interface CategoryInfo {
 export interface MonthTax {
   effectiveRate: number | null
   fixedAmount: number | null
+  /** MEI sem o valor do DAS configurado: o imposto do mês é o DAS PAGO no mês (categoria de imposto). */
+  usePaidTax?: boolean
 }
 
 export interface CategoryAmount {
@@ -71,6 +73,8 @@ export interface MonthAggregate {
   /** Entradas e saídas de categorias "Não operacional" (empréstimo, aporte, equipamento...). */
   nonOperatingIncome: number
   nonOperatingExpenses: number
+  /** Pagamentos em categoria de imposto (DAS). Nunca é gasto novo: quita o imposto do DRE (ou é ele, no MEI). */
+  taxPaid: number
 }
 
 const isNonOperating = (category: CategoryInfo | undefined) => category?.operationalNature === OperationalNature.NonOperational
@@ -86,12 +90,18 @@ const effectiveBehavior = (b: CategoryBehavior) => (b === CategoryBehavior.Mixed
  * `nonOperatingIncome`/`nonOperatingExpenses`.
  */
 export function aggregateMonth (rows: MonthlyTotalRow[], month: string, categories: Map<string, CategoryInfo>): MonthAggregate {
-  const agg: MonthAggregate = { grossRevenue: 0, platformFee: 0, cardFee: 0, cmv: 0, opexCategories: new Map(), fixed: 0, variable: 0, nonOperatingIncome: 0, nonOperatingExpenses: 0 }
+  const agg: MonthAggregate = { grossRevenue: 0, platformFee: 0, cardFee: 0, cmv: 0, opexCategories: new Map(), fixed: 0, variable: 0, nonOperatingIncome: 0, nonOperatingExpenses: 0, taxPaid: 0 }
 
   for (const r of rows) {
     if (r.month !== month) continue
     // Transferência entre contas e saldo inicial não são resultado nenhum: nem operacional, nem não operacional.
     if (categories.get(r.categoryId)?.systemKey) continue
+    // Reteste 18/11, item 2: o pagamento do imposto (grupo "tax") não é despesa nova nem "não operacional",
+    // mesmo que a categoria esteja marcada assim — senão o DAS conta duas vezes no Simples.
+    if (r.direction === 'out' && categories.get(r.categoryId)?.dreGroup === DreGroup.Tax) {
+      agg.taxPaid += toCents(r.gross)
+      continue
+    }
     if (isNonOperating(categories.get(r.categoryId))) {
       if (r.direction === 'in') agg.nonOperatingIncome += toCents(r.gross)
       else agg.nonOperatingExpenses += toCents(r.gross)
@@ -144,7 +154,11 @@ export function monthTax (p: { regime: TaxRegime | null; month: string; firstMon
   if (p.regime == null) return { effectiveRate: null, fixedAmount: null }
   if (p.regime === TaxRegime.Mei) {
     const active = p.firstMonth != null && p.firstMonth <= p.month
-    return { effectiveRate: null, fixedAmount: active ? (p.meiMonthlyDas ?? 0) : 0 }
+    if (!active) return { effectiveRate: null, fixedAmount: 0 }
+    // Sem o valor do DAS-MEI configurado, o imposto é o DAS pago no mês (como a janela de regime promete).
+    return p.meiMonthlyDas != null && p.meiMonthlyDas > 0
+      ? { effectiveRate: null, fixedAmount: p.meiMonthlyDas }
+      : { effectiveRate: null, fixedAmount: null, usePaidTax: true }
   }
   const profile = buildTaxProfile({ regime: p.regime, referenceMonth: p.month, firstMonth: p.firstMonth, revenueByMonth: p.revenueByMonth, meiMonthlyDas: null })
   return { effectiveRate: profile.effectiveRate, fixedAmount: null }
@@ -152,7 +166,9 @@ export function monthTax (p: { regime: TaxRegime | null; month: string; firstMon
 
 /** Linhas do DRE de um mês (spec, "Linhas de um mês"). */
 export function buildLines (agg: MonthAggregate, tax: MonthTax): ResultLines {
-  const taxes = tax.effectiveRate != null ? Math.round(agg.grossRevenue * tax.effectiveRate) : toCents(tax.fixedAmount ?? 0)
+  const taxes = tax.effectiveRate != null
+    ? Math.round(agg.grossRevenue * tax.effectiveRate)
+    : tax.usePaidTax ? agg.taxPaid : toCents(tax.fixedAmount ?? 0)
   let opex = agg.platformFee + agg.cardFee
   for (const c of agg.opexCategories.values()) opex += c.cents
 
@@ -304,20 +320,19 @@ export function computeResult (input: ResultInput): ResultReport {
   const months = Array.from({ length: n }, (_, i) => addMonths(input.referenceMonth, i - (n - 1)))
   const previousMonth = addMonths(input.referenceMonth, -1)
   const previousYearMonth = addMonths(input.referenceMonth, -12)
-  const aggs = new Map(months.map((m) => [m, aggregateMonth(input.rows, m, input.categories)]))
-  const linesOf = (m: string) => buildLines(aggs.get(m)!, input.taxByMonth.get(m) ?? NO_TAX)
-
   // Ajuste A1: no mês atual, o anterior é comparado pelos mesmos dias (1..untilDay)
   // — senão o mês pela metade sempre "cai". O histórico segue com meses cheios.
   const untilDay = input.untilDay ?? null
   const comparisonRows = untilDay == null ? input.rows : input.rows.map((r) => ({ ...r, gross: r.grossUntil ?? r.gross, fee: r.feeUntil ?? r.fee }))
+  // Reteste 18/11, itens 3 e 8: o mês EM ANDAMENTO é mostrado até hoje (o mesmo corte da comparação). Antes o
+  // valor exibido somava o agendado até o fim do mês e a variação não, e a "Leitura do mês" dava outra margem.
+  const aggs = new Map(months.map((m) => [m, aggregateMonth(untilDay != null && m === input.referenceMonth ? comparisonRows : input.rows, m, input.categories)]))
+  const linesOf = (m: string) => buildLines(aggs.get(m)!, input.taxByMonth.get(m) ?? NO_TAX)
   const current = linesOf(input.referenceMonth)
   const currentAgg = aggs.get(input.referenceMonth)!
   const previousAgg = aggregateMonth(comparisonRows, previousMonth, input.categories)
   const previous = buildLines(previousAgg, input.taxByMonth.get(previousMonth) ?? NO_TAX)
-  // O mês atual também é cortado para comparar: o agendado para depois de hoje
-  // está no mês (e aparece em `current`), mas não entra na variação.
-  const currentCmp = untilDay == null ? current : buildLines(aggregateMonth(comparisonRows, input.referenceMonth, input.categories), input.taxByMonth.get(input.referenceMonth) ?? NO_TAX)
+  const currentCmp = current
   const items = buildOpexItems(currentAgg, previousAgg)
   // U.4: mesmo mês do ano anterior, com o mesmo corte de dias do mês anterior no mês em andamento.
   const previousYearAgg = aggregateMonth(comparisonRows, previousYearMonth, input.categories)

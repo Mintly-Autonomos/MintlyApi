@@ -216,8 +216,9 @@ describe('GET /reports/expenses (Integration)', () => {
 
     const r = (await get(auth, '')).json().payload
 
-    expect(r.total.current).toBe(2_310)
-    expect(r.projection.total).toBe(Math.round(31_000 * days / elapsed) / 100 + 2_000)
+    // Reteste 18/11, item 8: o mês mostra até hoje; o aluguel do fim do mês entra só na projeção (valor cheio).
+    expect(r.total.current).toBe(310)
+    expect(r.projection.total).toBeCloseTo(Math.round(31_000 * days / elapsed) / 100 + 2_000, 2)
   })
 
   it('mês atual: projeção pelo dia de hoje em SP', async () => {
