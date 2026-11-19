@@ -211,7 +211,11 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
     // o mês atual também é cortado: o agendado para depois de hoje não entra na comparação
     : bucketize({ ...input, rows: input.rows.map((r) => ({ ...r, gross: r.grossUntil ?? r.gross, fee: r.feeUntil ?? r.fee })) }).buckets
   const atCmp = (m: string) => cmpBuckets.get(m) ?? emptyBucket()
-  const cur = at(M)
+  // Reteste 18/11, item 8: o mês em andamento é mostrado até hoje (mesmo corte da comparação). O mês inteiro,
+  // com o agendado para depois de hoje, só alimenta a projeção do fechamento.
+  const curFull = at(M)
+  const cur = untilDay == null ? curFull : atCmp(M)
+  const shown = (m: string) => (m === M ? cur : at(m))
   const prev = atCmp(P)
 
   const eligible = [1, 2, 3].map((i) => addMonths(M, -i)).filter((m) => input.firstMonth != null && m >= input.firstMonth)
@@ -319,7 +323,7 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
       }
     }
 
-    if (window) projectedTotal += projectedCents(amount, isFixedLike, fullAvg, cur.itemsAfter.get(meta.key) ?? 0)
+    if (window) projectedTotal += projectedCents(get(curFull), isFixedLike, fullAvg, curFull.itemsAfter.get(meta.key) ?? 0)
     items.push({
       ...meta,
       amount: fromCents(amount),
@@ -330,8 +334,8 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
       pctOfRevenue: share(amount, cur.revenue),
       subitems,
       hasAnomaly,
-      history: months.map((m) => ({ month: m, amount: fromCents(get(at(m))) })),
-      projected: window ? fromCents(projectedCents(amount, isFixedLike, fullAvg, cur.itemsAfter.get(meta.key) ?? 0)) : null,
+      history: months.map((m) => ({ month: m, amount: fromCents(get(shown(m))) })),
+      projected: window ? fromCents(projectedCents(get(curFull), isFixedLike, fullAvg, curFull.itemsAfter.get(meta.key) ?? 0)) : null,
     })
   }
   items.sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name, 'pt-BR'))
@@ -375,10 +379,10 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
     byBehavior: { fixed: behavior(CategoryBehavior.Fixed), variable: behavior(CategoryBehavior.Variable), mixed: behavior(CategoryBehavior.Mixed) },
     items,
     sharedExcluded: input.channel == null ? null : fromCents(cur.shared),
-    history: months.map((m) => ({ month: m, total: fromCents(total(at(m))) })),
+    history: months.map((m) => ({ month: m, total: fromCents(total(shown(m))) })),
     anomalies,
     projection: window
-      ? { total: fromCents(projectedTotal), revenue: fromCents(projectWithScheduled(cur.revenue, cur.revenueAfter)), ...window }
+      ? { total: fromCents(projectedTotal), revenue: fromCents(projectWithScheduled(curFull.revenue, curFull.revenueAfter)), ...window }
       : null,
     anomalyRule: ANOMALY_RULE,
     comparison: untilDay == null ? { kind: 'fullMonth', untilDay: null } : { kind: 'samePeriod', untilDay },
