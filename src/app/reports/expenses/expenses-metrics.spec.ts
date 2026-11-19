@@ -394,3 +394,22 @@ describe('revisão dos ajustes — mês atual', () => {
     expect(byName(r, 'Aluguel')).toMatchObject({ amount: 0, projected: 6_000 })
   })
 })
+
+describe('alerta de gasto fora do normal pela mediana (reteste 18/11, item 10)', () => {
+  const cats = new Map([['ene', { name: 'Energia e gás', behavior: CategoryBehavior.Variable, dreGroup: DreGroup.Opex }]])
+  const out = (m: number, gross: number): ExpenseRow => ({ month: addMonths(M, m), direction: 'out', categoryId: 'ene', categoryName: 'ene', accountId: 'c', accountName: 'Caixa', accountType: 'cash', channel: null, subcategoryId: null, subcategoryName: null, gross, fee: 0 })
+
+  it('um mês atípico (conta esquecida) não puxa a base: sem alerta falso', () => {
+    // 1.560 por mês, mas um mês com só 341 (a conta caiu no mês anterior, em dobro). Agosto 1.642 = +5% do normal.
+    const rows = [out(-6, 1_560), out(-5, 1_560), out(-4, 2_900), out(-3, 341), out(-2, 1_346), out(-1, 1_577), out(0, 1_642)]
+    const r = scenario(null, { rows, categories: cats, referenceMonth: M, untilDay: null, firstMonth: addMonths(M, -6) })
+    expect(r.anomalies).toEqual([])
+  })
+
+  it('gasto bem acima da mediana ainda alerta, com a mediana como base', () => {
+    const rows = [out(-4, 1_500), out(-3, 1_600), out(-2, 1_550), out(-1, 1_580), out(0, 2_600)]
+    const r = scenario(null, { rows, categories: cats, referenceMonth: M, untilDay: null, firstMonth: addMonths(M, -4) })
+    expect(r.anomalies).toHaveLength(1)
+    expect(r.anomalies[0].average3).toBe(1_565) // mediana de 1.500, 1.550, 1.580 e 1.600
+  })
+})
