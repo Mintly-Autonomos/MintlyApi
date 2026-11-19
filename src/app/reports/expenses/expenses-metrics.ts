@@ -11,6 +11,15 @@ import { ANOMALY_RULE, MIN_DAYS_CURRENT_ANOMALY, NO_SUBITEM_KEY, NO_SUBITEM_NAME
  * Somas em centavos; a média de 3 meses só conta meses desde o primeiro lançamento.
  */
 export const HISTORY_MONTHS = 6
+/** Meses usados na base (mediana) do alerta de gasto fora do normal. */
+export const ANOMALY_BASE_MONTHS = 12
+
+/** Mediana em centavos (arredondada). */
+function median (values: number[]): number {
+  const s = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(s.length / 2)
+  return s.length % 2 ? s[mid] : Math.round((s[mid - 1] + s[mid]) / 2)
+}
 /** Alvos de benchmark fechados pela MIN-84. */
 export const CMV_TARGET = { min: 0.28, max: 0.35 }
 export const PRIME_COST_TARGET_MAX = 0.65
@@ -238,11 +247,16 @@ export function computeExpenses (input: ExpensesInput): ExpensesReport {
   // primeiro mês em que AQUELA unidade (subitem ou categoria) teve gasto na janela —
   // quem começou a marcar "Frango" há 1 mês não tem histórico de zeros para comparar.
   // A média exibida no item/subitem segue a regra da fatia 6.
+  // Reteste 18/11, item 10: a base é a MEDIANA dos até 12 meses anteriores (desde o primeiro gasto da unidade), e
+  // não a média de 3 — uma conta lançada em dobro num mês e esquecida no outro não gera mais alerta falso.
+  const anomalyMonths = Array.from({ length: ANOMALY_BASE_MONTHS }, (_, i) => addMonths(M, -(i + 1)))
+    .filter((m) => input.firstMonth != null && m >= input.firstMonth)
+    .reverse()
   const unitBase = (get: (b: MonthBucket) => number): { avg: number | null; months: number } => {
-    const firstSpend = months.find((m) => get(at(m)) > 0)
-    const unitMonths = firstSpend == null ? [] : eligible.filter((m) => m >= firstSpend)
+    const firstSpend = anomalyMonths.find((m) => get(at(m)) > 0)
+    const unitMonths = firstSpend == null ? [] : anomalyMonths.filter((m) => m >= firstSpend)
     if (unitMonths.length === 0) return { avg: null, months: 0 }
-    return { avg: Math.round(sum(unitMonths.map((m) => get(atCmp(m)))) / unitMonths.length), months: unitMonths.length }
+    return { avg: median(unitMonths.map((m) => get(atCmp(m)))), months: unitMonths.length }
   }
   const anomalyOf = (meta: ItemMeta, sub: SubMeta | null, amount: number, avg: number): ExpenseAnomaly => ({
     itemKey: meta.key,

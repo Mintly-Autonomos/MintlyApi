@@ -315,9 +315,49 @@ describe('IA do Mintly: rotas /ai (Integration, com a IA falsa)', () => {
         usedToday: 1,
       })
       const dados = dadosEnviados()
-      expect(dados.dish).toMatchObject({ name: 'Frango Coreano', price: 30, cost: 14, soldPerMonth: 310, daysSincePriceChange: 300 })
+      // Reteste 18/11, item 6: vendas pelas movimentações (sem vendas registradas, 0), não o campo digitado.
+      expect(dados.dish).toMatchObject({ name: 'Frango Coreano', price: 30, cost: 14, soldLast30Days: 0, daysSincePriceChange: 300, priceSensitivity: -1.5 })
+      expect(dados.decision).toBeNull()
       expect(dados.dish.marginPct).toBeCloseTo((30 - 14) / 30, 3)
       expect(dados.menu.activeDishes).toBe(2)
+    })
+
+    /** Vendas do prato nos últimos dias, como a tela grava (entrada com os pratos). */
+    async function vendas (a: { env: string, restaurantId: string }, menuItemId: string, qtdPorDia: number, dias = 10) {
+      const docs = Array.from({ length: dias }, (_, i) => ({
+        restaurantId: a.restaurantId,
+        title: 'Venda',
+        direction: 'in',
+        status: 'settled',
+        date: new Date(Date.now() - (i + 1) * DAY_MS),
+        items: [{ menuItemId, name: 'x', qty: qtdPorDia, unitPrice: 30 }],
+      }))
+      await mongoConnection.getDatabase(a.env).collection('financial_movements').insertMany(docs)
+    }
+
+    it('com vendas registradas, o preço vem da conta de lucro com elasticidade: aumento que dá mais lucro', async () => {
+      const a = await signup(freshEnv())
+      // Dia a dia (-1,5), custo 14: o preço de maior lucro seria 42; o teto (+20%) é 36.
+      const id = await novoPrato(a, { name: 'Frango Coreano', price: 30, cost: 14, category: 'Pratos' }, 300)
+      await vendas(a, id, 10)
+      generator.generate.mockResolvedValue(sugestaoOk)
+      const res = await post('/ai/price-suggestion', a.auth, { menuItemId: id })
+      expect(res.json().payload).toMatchObject({ suggestedPrice: 36, increasePercent: 20 })
+      const dados = dadosEnviados()
+      expect(dados.dish.soldLast30Days).toBe(100)
+      expect(dados.decision).toMatchObject({ keepPrice: false })
+      expect(dados.decision.profitPerMonthAtNewPrice).toBeGreaterThan(dados.decision.profitPerMonthNow)
+    })
+
+    it('quando subir o preço reduz o lucro (cliente sensível, custo baixo), a sugestão é manter', async () => {
+      const a = await signup(freshEnv())
+      // Balcão (-2,0), custo 5: o preço de maior lucro seria 10, abaixo dos 30 atuais.
+      const id = await novoPrato(a, { name: 'Fatia de torta', price: 30, cost: 5, category: 'Doces' }, 300)
+      await vendas(a, id, 3)
+      generator.generate.mockResolvedValue(sugestaoOk)
+      const res = await post('/ai/price-suggestion', a.auth, { menuItemId: id })
+      expect(res.json().payload).toMatchObject({ suggestedPrice: 30, increasePercent: 0 })
+      expect(dadosEnviados().decision).toMatchObject({ keepPrice: true })
     })
 
     it('com prato escolhido usa esse prato', async () => {

@@ -5,6 +5,8 @@ import { NotFoundError } from '../../core/errors/core/not-found-error'
 import { ValidationError } from '../../core/errors/core/validation-error'
 import { Resource } from '../../core/types/resource'
 import { MenuItemRepository } from '../menu-item/menu-item-repository'
+import { RestaurantRepository } from '../restaurant/restaurant-repository'
+import { PriceDecision, bestPrice, elasticityOf } from './price-economics'
 import { daysSince } from '../menu-item/menu-item-rules'
 import { AiUnavailableError } from './ai-errors'
 import { AI_PROMPT_VERSION, AI_SYSTEM_PROMPT, PRICE_SCHEMA, buildPricePrompt } from './ai-prompts'
@@ -37,6 +39,7 @@ export class AiPriceSuggestionUseCase {
     private readonly repo: AiRepository = new AiRepository(),
     private readonly generator: () => TextGenerator | null = getTextGenerator,
     private readonly clock: () => Date = () => new Date(),
+    private readonly restaurants: RestaurantRepository = new RestaurantRepository(),
   ) {}
 
   async execute (ctx: RequestContext, rawBody: unknown): Promise<AiPriceSuggestion> {
@@ -53,7 +56,14 @@ export class AiPriceSuggestionUseCase {
 
     const id = String((dish as { _id?: unknown })._id)
     const days = daysSince(dish.priceUpdatedAt, now)
-    const facts = this.buildFacts(dish, dishes, days, now)
+    // Reteste 18/11, item 6: vendas de verdade (últimos 30 dias, pelas movimentações) e o preço decidido pela conta
+    // de lucro com elasticidade — a IA só explica. Antes ela via o campo digitado (0) e dizia "não houve vendas".
+    const sold = await this.menu.soldSince(id, new Date(now.getTime() - 30 * 86_400_000), ctx).catch(() => 0)
+    const restaurant = await this.restaurants.findMine(ctx).catch(() => null)
+    const el = elasticityOf(dish as any, restaurant?.menuCategoryProfiles ?? [])
+    const ceiling = roundMoney(dish.price * (1 + AI_MAX_PRICE_INCREASE_PERCENT / 100))
+    const decision = bestPrice({ price: dish.price, cost: dish.cost ?? 0, sold, elasticity: el.elasticity, ceiling })
+    const facts = this.buildFacts(dish, dishes, days, now, sold, el.elasticity, decision)
     const hash = stableHash({ v: AI_PROMPT_VERSION, facts })
 
     const cached = await this.repo.cacheGet<PriceResult>(ctx, 'price-suggestion', hash, now)
@@ -68,13 +78,15 @@ export class AiPriceSuggestionUseCase {
       throw error
     }
 
-    const result = this.validate(raw, dish, id, days)
+    const result = this.validate(raw, dish, id, days, decision)
     await this.repo.cacheSet(ctx, 'price-suggestion', hash, result, now)
     return { ...result, cached: false, ...usage }
   }
 
-  private buildFacts (dish: MenuItem, dishes: MenuItem[], days: number, now: Date) {
+  private buildFacts (dish: MenuItem, dishes: MenuItem[], days: number, now: Date, sold: number, elasticity: number, decision: PriceDecision | null) {
     const margins = dishes.map(margin).filter((m): m is number => m != null)
+    const avgMargin = margins.length > 0 ? round4(margins.reduce((a, b) => a + b, 0) / margins.length) : null
+    const own = margin(dish)
     const sameCategory = dishes.filter((d) => d !== dish && (d.category ?? '') === (dish.category ?? '') && d.price > 0)
     return {
       dish: {
@@ -82,14 +94,19 @@ export class AiPriceSuggestionUseCase {
         category: sanitizeFact(dish.category ?? ''),
         price: dish.price,
         cost: dish.cost ?? 0,
-        marginPct: margin(dish),
-        soldPerMonth: dish.soldPerMonth ?? 0,
+        marginPct: own,
+        marginVsMenuAverage: own == null || avgMargin == null ? null : own > avgMargin + 0.005 ? 'acima da média' : own < avgMargin - 0.005 ? 'abaixo da média' : 'na média',
+        soldLast30Days: sold,
+        priceSensitivity: elasticity,
         daysSincePriceChange: days,
         daysSinceReview: daysSince(dish.priceReviewedAt, now),
       },
+      decision: decision
+        ? { keepPrice: decision.keep, profitPerMonthNow: decision.profitNow, profitPerMonthAtNewPrice: decision.profitAtPrice, soldPerMonthAtNewPrice: decision.soldAtPrice }
+        : null,
       menu: {
         activeDishes: dishes.length,
-        averageMarginPct: margins.length > 0 ? round4(margins.reduce((a, b) => a + b, 0) / margins.length) : null,
+        averageMarginPct: avgMargin,
         sameCategory: sameCategory.length > 0
           ? { dishes: sameCategory.length, averagePrice: roundMoney(sameCategory.reduce((a, d) => a + d.price, 0) / sameCategory.length) }
           : null,
@@ -98,10 +115,13 @@ export class AiPriceSuggestionUseCase {
   }
 
   /** O que a IA propôs, conferido: preço entre o atual e o teto; justificativa só texto, sem `%`/`R$` e dentro do limite. */
-  private validate (raw: unknown, dish: MenuItem, id: string, days: number): PriceResult {
+  private validate (raw: unknown, dish: MenuItem, id: string, days: number, decision: PriceDecision | null): PriceResult {
     const proposed = Number((raw as { suggestedPrice?: unknown } | null)?.suggestedPrice)
     const ceiling = roundMoney(dish.price * (1 + AI_MAX_PRICE_INCREASE_PERCENT / 100))
-    const suggestedPrice = roundMoney(Math.min(Math.max(Number.isFinite(proposed) ? proposed : dish.price, dish.price), ceiling))
+    // Com vendas registradas, o preço é o da conta de lucro (nunca um que o simulador mostra como prejuízo).
+    const suggestedPrice = decision
+      ? decision.price
+      : roundMoney(Math.min(Math.max(Number.isFinite(proposed) ? proposed : dish.price, dish.price), ceiling))
     const increasePercent = Math.round((suggestedPrice / dish.price - 1) * 1000) / 10
 
     const text = cleanAiText((raw as { reason?: unknown } | null)?.reason)

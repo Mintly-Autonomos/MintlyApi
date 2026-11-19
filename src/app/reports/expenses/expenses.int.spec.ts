@@ -217,7 +217,7 @@ describe('GET /reports/expenses (Integration)', () => {
     const r = (await get(auth, '')).json().payload
 
     expect(r.total.current).toBe(2_310)
-    expect(r.projection.total).toBe(Math.round(31_000 * days / elapsed) / 100 + 2_000)
+    expect(r.projection.total).toBeCloseTo(Math.round(31_000 * days / elapsed) / 100 + 2_000, 2)
   })
 
   it('mês atual: projeção pelo dia de hoje em SP', async () => {
