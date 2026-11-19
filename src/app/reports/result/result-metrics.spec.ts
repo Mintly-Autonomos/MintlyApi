@@ -73,7 +73,8 @@ describe('monthTax', () => {
   it('MEI: DAS a partir do mês da primeira movimentação; antes, zero', () => {
     expect(monthTax({ regime: TaxRegime.Mei, month: M, firstMonth: '2026-06', revenueByMonth: revenue, meiMonthlyDas: 82.05 })).toEqual({ effectiveRate: null, fixedAmount: 82.05 })
     expect(monthTax({ regime: TaxRegime.Mei, month: '2026-05', firstMonth: '2026-06', revenueByMonth: revenue, meiMonthlyDas: 82.05 })).toEqual({ effectiveRate: null, fixedAmount: 0 })
-    expect(monthTax({ regime: TaxRegime.Mei, month: M, firstMonth: '2026-06', revenueByMonth: revenue, meiMonthlyDas: null })).toEqual({ effectiveRate: null, fixedAmount: 0 })
+    // Reteste 18/11, item 2: sem o valor do DAS-MEI configurado, vale o DAS pago no mês.
+    expect(monthTax({ regime: TaxRegime.Mei, month: M, firstMonth: '2026-06', revenueByMonth: revenue, meiMonthlyDas: null })).toEqual({ effectiveRate: null, fixedAmount: null, usePaidTax: true })
   })
 
   it('sem regime', () => {
@@ -352,7 +353,9 @@ describe('computeResult', () => {
       dailyRevenue: new Map(),
       untilDay: 13,
     })
-    expect(report.current.grossRevenue).toBe(20_000)
+    // Reteste 18/11, itens 3 e 8: o mês em andamento é mostrado até hoje, o mesmo corte da variação.
+    expect(report.current.grossRevenue).toBe(15_000)
+    expect(report.history.at(-1)!.grossRevenue).toBe(15_000)
     expect(report.deltas.grossRevenue).toBeCloseTo(15_000 / 25_000 - 1, 10)
   })
 
@@ -403,5 +406,42 @@ describe('U.4 — histórico de 12 meses e mesmo mês do ano anterior', () => {
     })
     expect(report.previousYear!.lines.grossRevenue).toBe(10_000)
     expect(report.previousYear!.deltas.grossRevenue).toBeCloseTo(0.2, 10)
+  })
+})
+
+describe('impostos: DAS pago não é gasto novo (reteste 18/11, item 2)', () => {
+  // Como na conta testada: a categoria Impostos é do grupo "tax", mas marcada como não operacional.
+  const cats = new Map<string, CategoryInfo>([
+    ...CATS,
+    ['impNo', { id: 'impNo', name: 'Impostos', dreGroup: DreGroup.Tax, behavior: CategoryBehavior.Fixed, operationalNature: OperationalNature.NonOperational }],
+    ['emp', { id: 'emp', name: 'Empréstimo', dreGroup: DreGroup.Opex, behavior: CategoryBehavior.Fixed, operationalNature: OperationalNature.NonOperational }],
+  ])
+  const rows = [
+    row({ direction: 'in', categoryId: 'ven', gross: 10_000 }),
+    row({ categoryId: 'impNo', gross: 600 }),
+    row({ categoryId: 'emp', gross: 700 }),
+  ]
+
+  it('o DAS fica fora do "não operacional" e vira taxPaid', () => {
+    const agg = aggregateMonth(rows, M, cats)
+    expect(agg.taxPaid).toBe(60_000)
+    expect(agg.nonOperatingExpenses).toBe(70_000)
+  })
+
+  it('Simples: o imposto é o calculado; o DAS pago só quita, sem aparecer de novo', () => {
+    const l = buildLines(aggregateMonth(rows, M, cats), { effectiveRate: 0.06, fixedAmount: null })
+    expect(l.taxes).toBe(600)
+    expect(l.nonOperatingExpenses).toBe(700)
+    expect(l.resultAfterNonOperating).toBe(10_000 - 600 - 700)
+  })
+
+  it('MEI sem o valor configurado: o imposto do mês é o DAS pago', () => {
+    const l = buildLines(aggregateMonth(rows, M, cats), { effectiveRate: null, fixedAmount: null, usePaidTax: true })
+    expect(l.taxes).toBe(600)
+    expect(l.netProfit).toBe(10_000 - 600)
+  })
+
+  it('MEI com o valor configurado usa o valor fixo', () => {
+    expect(buildLines(aggregateMonth(rows, M, cats), { effectiveRate: null, fixedAmount: 82.05 }).taxes).toBe(82.05)
   })
 })
