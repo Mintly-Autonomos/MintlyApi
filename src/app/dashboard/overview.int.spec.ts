@@ -72,6 +72,9 @@ describe('GET /dashboard/overview (Integration)', () => {
     expect(o.cards.cashToday.amount).toBe(cash.cashToday)
     expect(o.cards.projection.balance).toBe(cash.projectedBalance)
     expect(o.revenueVsExpense.map((p: any) => p.revenue)).toEqual(result.history.map((h: any) => h.grossRevenue))
+    // Lucro de 12 meses (Resultado mês a mês); Receita × despesa fica nos 6 meses de Custos.
+    expect(o.cards.netProfit.history).toHaveLength(12)
+    expect(o.cards.netProfit.history.slice(-6).map((h: any) => h.amount)).toEqual(result.history.map((h: any) => h.netProfit))
     expect(o.health.pillars.map((p: any) => p.key)).toEqual(['netMargin', 'runway', 'primeCost', 'revenueTrend', 'debts'])
     expect(o.insights.some((i: any) => i.kind === 'breakEvenReached')).toBe(true)
   })

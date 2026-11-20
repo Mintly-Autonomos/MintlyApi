@@ -203,7 +203,10 @@ export function computeOverview (input: OverviewInput): OverviewReport {
 
   const expenseByMonth = new Map(expenses.history.map((h) => [h.month, h.total]))
 
-  const revenueVsExpense = result.history.map((h) => ({ month: h.month, revenue: h.grossRevenue, expense: expenseByMonth.get(h.month) ?? 0, projected: false }))
+  // Receita × despesa só nos meses que Custos tem (6): o lucro dos 12 meses vai pelo cards.netProfit.history.
+  const revenueVsExpense = result.history
+    .filter((h) => expenseByMonth.has(h.month))
+    .map((h) => ({ month: h.month, revenue: h.grossRevenue, expense: expenseByMonth.get(h.month) ?? 0, projected: false }))
   if (window) revenueVsExpense.push({ month, revenue: revenueBase, expense: expenses.projection?.total ?? expenses.total.current, projected: true })
 
   return {
