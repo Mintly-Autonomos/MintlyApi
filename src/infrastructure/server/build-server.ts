@@ -11,6 +11,7 @@ import { financialMovementRoutes } from '../../app/financial-movement/financial-
 import { cashFlowRoutes } from '../../app/reports/cash-flow/cash-flow-routes'
 import { resultRoutes } from '../../app/reports/result/result-routes'
 import { expensesRoutes } from '../../app/reports/expenses/expenses-routes'
+import { timeseriesRoutes } from '../../app/reports/timeseries/timeseries-routes'
 import { overviewRoutes } from '../../app/dashboard/overview-routes'
 import { aiRoutes } from '../../app/ai/ai-routes'
 import { userRoutes } from '../../app/user/user-routes'
@@ -174,6 +175,7 @@ export async function buildServer (server: FastifyInstance = Fastify({ bodyLimit
     await protectedScope.register(cashFlowRoutes, { prefix: '/reports' })
     await protectedScope.register(resultRoutes, { prefix: '/reports' })
     await protectedScope.register(expensesRoutes, { prefix: '/reports' })
+    await protectedScope.register(timeseriesRoutes, { prefix: '/reports' })
     await protectedScope.register(overviewRoutes, { prefix: '/dashboard' })
     await protectedScope.register(aiRoutes, { prefix: '/ai' })
     await protectedScope.register(restaurantRoutes, { prefix: '/restaurants' })
