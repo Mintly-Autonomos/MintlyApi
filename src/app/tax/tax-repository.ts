@@ -1,4 +1,4 @@
-import { MovementDirection, MovementStatus } from 'mintly-lib'
+import { DreGroup, MovementDirection, MovementStatus } from 'mintly-lib'
 import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 import { RequestContext } from '../../core/context/request-context'
 import { decimalToNumber } from '../../core/money/money'
@@ -51,6 +51,28 @@ export class TaxRepository {
       .limit(1)
       .next()
     return first?.date ? toLocalMonth(first.date) : null
+  }
+
+  /**
+   * Cada pagamento em categoria de imposto (DAS) com a data em [from, to] (meses inclusivos), não cancelado. É a base
+   * do DAS típico do MEI sem o valor configurado (`typicalDas`).
+   */
+  async taxPayments (ctx: RequestContext, w: { from: string; to: string }): Promise<number[]> {
+    const db = MongoDBConnection.getInstance().getDatabase(ctx.env)
+    const cats = await db.collection('financial_categories')
+      .find({ restaurantId: ctx.restaurantId, dreGroup: DreGroup.Tax }, { projection: { _id: 1 } })
+      .toArray()
+    if (cats.length === 0) return []
+    const rows = await this.movements(ctx)
+      .find({
+        restaurantId: ctx.restaurantId,
+        direction: MovementDirection.Out,
+        status: { $ne: MovementStatus.Cancelled },
+        'category._id': { $in: cats.map((c) => String(c._id)) },
+        date: { $gte: startOfLocalMonth(w.from), $lt: startOfLocalMonth(addMonths(w.to, 1)) },
+      }, { projection: { grossValue: 1 } })
+      .toArray()
+    return rows.map((r) => decimalToNumber(r.grossValue))
   }
 
   /** Mês da primeira movimentação não cancelada do restaurante (qualquer direção). */

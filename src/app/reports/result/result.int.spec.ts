@@ -162,6 +162,48 @@ describe('GET /reports/result (Integration)', () => {
     expect(custos.total.current).toBe(4_200)
   })
 
+  it('MEI sem o DAS configurado: imposto fixo pelo DAS típico, mesmo com 2 DAS pagos no mês (reteste 22/11, T1)', async () => {
+    const env = freshEnv()
+    const { auth, restaurantId } = await signup(env)
+    const db = mongoConnection.getDatabase(env)
+    const now = new Date()
+    await db.collection('restaurants').updateOne({ _id: new ObjectId(restaurantId) }, { $set: { taxRegime: 'mei' } })
+    const vendas = String((await db.collection('financial_categories').insertOne({ restaurantId, name: 'Vendas', type: 'revenue', behavior: 'variable', operationalNature: 'operational', status: 'active', isSystem: false, audit: { createdAt: now, updatedAt: now } })).insertedId)
+    const das = String((await db.collection('financial_categories').insertOne({ restaurantId, name: 'Impostos', type: 'expense', behavior: 'fixed', dreGroup: 'tax', operationalNature: 'operational', status: 'active', isSystem: false, audit: { createdAt: now, updatedAt: now } })).insertedId)
+    const mov = (month: string, day: number, direction: 'in' | 'out', categoryId: string, value: number) => ({
+      restaurantId,
+      title: 'x',
+      direction,
+      status: 'settled',
+      statusSource: 'auto',
+      date: new Date(startOfLocalMonth(month).getTime() + (day - 1) * 86_400_000 + 12 * 3_600_000),
+      grossValue: toDecimal128(value),
+      feeValue: toDecimal128(0),
+      netValue: toDecimal128(value),
+      account: { _id: 'a', name: 'Caixa', type: 'cash' },
+      category: { _id: categoryId, name: direction === 'in' ? 'Vendas' : 'Impostos', type: direction === 'in' ? 'revenue' : 'expense' },
+      paymentMethod: 'pix',
+      origin: 'manual',
+      history: [],
+      audit: { createdAt: now, updatedAt: now },
+    })
+    const P = addMonths(M, -1)
+    await db.collection('financial_movements').insertMany([
+      mov(P, 5, 'in', vendas, 8_000),
+      mov(M, 5, 'in', vendas, 9_000),
+      mov(P, 20, 'out', das, 81.05),
+      // Dois DAS pagos no mesmo dia 20 (o de M−1 atrasado e o de M).
+      mov(M, 20, 'out', das, 81.05),
+      mov(M, 20, 'out', das, 81.05),
+    ])
+
+    const r = (await get(auth)).json().payload
+    expect(r.current.taxes).toBe(81.05)
+    expect(r.previous.taxes).toBe(81.05)
+    expect(r.tax).toMatchObject({ regime: 'mei', meiMonthlyDas: 81.05, meiDasEstimated: true })
+    expect(r.current.netProfit).toBe(9_000 - 81.05)
+  })
+
   it('lançamento do dia 1º cadastrado pelo app (AAAA-MM-DD) conta no próprio mês, não no anterior', async () => {
     const env = freshEnv()
     const { auth, restaurantId } = await signup(env)

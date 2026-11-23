@@ -22,7 +22,7 @@ export async function restaurantRoutes (fastify: FastifyInstance) {
   // Sem corpo; repetir não muda a data; restaurante antigo (sem o campo) não é alterado.
   fastify.post('/me/first-access', async (request: any, reply) => controller.completeFirstAccess(request, reply))
 
-  // PATCH /restaurants/me — body: { name?, taxRegime?, team? }. Só o dono. `team` troca a lista inteira (P.4).
+  // PATCH /restaurants/me — body: { name?, taxRegime?, team?, activityStart?, revenueBeforeMintly? }. Só o dono. `team` troca a lista inteira (P.4).
   fastify.patch('/me', async (request: any, reply) => controller.updateMe(request, reply))
 
   // Funcionários (logins com papel `member` do restaurante). Só o dono.
