@@ -318,6 +318,10 @@ describe('IA do Mintly: rotas /ai (Integration, com a IA falsa)', () => {
       // Reteste 18/11, item 6: vendas pelas movimentações (sem vendas registradas, 0), não o campo digitado.
       expect(dados.dish).toMatchObject({ name: 'Frango Coreano', price: 30, cost: 14, soldLast30Days: 0, daysSincePriceChange: 300, priceSensitivity: -1.5 })
       expect(dados.decision).toBeNull()
+      // T10 (reteste 22/11): a classificação da tela vai junto (sem venda com prato, vale o digitado, como na tela).
+      // Como na matriz, só o mesmo perfil entra: Bingsu (Sobremesa) é "Balcão" e Frango (Pratos) é "Dia a dia".
+      expect(dados.dish).toMatchObject({ unitMargin: 16, menuGroup: 'Melhores', marginVsMenuAverage: 'na média' })
+      expect(dados.menu).toMatchObject({ averageUnitMargin: 16, comparedDishes: 1 })
       expect(dados.dish.marginPct).toBeCloseTo((30 - 14) / 30, 3)
       expect(dados.menu.activeDishes).toBe(2)
     })

@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { cleanAiText, countWords, dayKey, roundMoney, sanitizeFact, stableHash, trimToWords } from './ai-text-rules'
+import { cleanAiText, countWords, dayKey, missingAccents, roundMoney, sanitizeFact, stableHash, trimToWords } from './ai-text-rules'
+
+describe('missingAccents (reteste 22/11, T10)', () => {
+  it('recusa o texto que saiu sem acento e aceita o acentuado', () => {
+    expect(missingAccents('Ponto de equilibrio alcancado')).toBe(true)
+    expect(missingAccents('O combo teve 305 vendas e sua margem esta abaixo da media do cardapio.')).toBe(true)
+    expect(missingAccents('Ponto de equilíbrio alcançado em novembro.')).toBe(false)
+    expect(missingAccents('Sua margem está acima da média do cardápio.')).toBe(false)
+    expect(cleanAiText('Os clientes sao sensiveis a preco')).toBeNull()
+  })
+
+  it('o nome que o dono escreveu sem acento não derruba o texto', () => {
+    expect(missingAccents('O Combo 20 pecas vende bem em novembro.', ['Combo 20 pecas'])).toBe(false)
+    expect(cleanAiText('O Combo 20 pecas vende bem.', ['Combo 20 pecas'])).toBe('O Combo 20 pecas vende bem.')
+  })
+})
 
 describe('countWords', () => {
   it('conta palavras separadas por espaço (e ignora espaços extras)', () => {

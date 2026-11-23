@@ -26,14 +26,29 @@ export function simplifySymbols (text: string): string {
 }
 
 /**
- * Texto da IA pronto para a tela: só texto simples, em uma linha. Devolve `null` quando não serve (não é texto,
- * vazio, com HTML/markdown/link/emoji) e o chamador cai no texto pronto. A tela mostra como texto puro (nunca
- * como HTML), então isto é um cinto a mais, não a única defesa.
+ * Palavras que só existem COM acento: se a IA escreve uma delas sem ("equilibrio", "voce", "cardapio"), o texto saiu
+ * sem acentuação (reteste 22/11, T10: "Ponto de equilibrio alcancado") e não vai para a tela.
  */
-export function cleanAiText (raw: unknown): string | null {
+const UNACCENTED = /\b(nao|voce|voces|sao|preco|precos|cardapio|equilibrio|alcancad[oa]s?|negocio|negocios|simulacao|sensiveis|mantem|pecas|tambem|proximos?|ultimos?|media|medias|margens? esta|esta abaixo|esta acima|minimo|maximo|historico|periodo|saude)\b/i
+
+/** O texto tem palavra que deveria ter acento e veio sem (ignorando os nomes do negócio, que vêm como o dono escreveu). */
+export function missingAccents (text: string, ignore: string[] = []): boolean {
+  let t = text
+  for (const name of ignore) if (name) t = t.split(name).join(' ')
+  return UNACCENTED.test(t)
+}
+
+/**
+ * Texto da IA pronto para a tela: só texto simples, em uma linha. Devolve `null` quando não serve (não é texto,
+ * vazio, com HTML/markdown/link/emoji, ou sem acentuação) e o chamador cai no texto pronto. A tela mostra como texto
+ * puro (nunca como HTML), então isto é um cinto a mais, não a única defesa. `ignore`: nomes do negócio (prato,
+ * categoria) que podem vir sem acento porque o dono escreveu assim.
+ */
+export function cleanAiText (raw: unknown, ignore: string[] = []): string | null {
   if (typeof raw !== 'string') return null
   const text = simplifySymbols(raw.replace(/\s+/g, ' ').trim())
   if (text === '' || FORBIDDEN_MARKS.test(text) || EMOJI.test(text)) return null
+  if (missingAccents(text, ignore)) return null
   return text
 }
 

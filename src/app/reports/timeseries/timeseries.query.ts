@@ -36,7 +36,7 @@ export class TimeseriesQuery {
     const [rows, categories, firstMonth, revenueByMonth, dasByMonth] = await Promise.all([
       this.repo.dailyTotals(ctx, { from, to }),
       this.result.categories(ctx),
-      this.taxRepo.firstMovementMonth(ctx),
+      this.taxRepo.firstRevenueMonth(ctx),
       this.taxRepo.revenueByMonth(ctx, { from: addMonths(months[0], -13), to: months[months.length - 1] }),
       regime === TaxRegime.Mei
         ? Promise.all(months.map(async (m) => [m, await this.settings.meiMonthlyDasAt(m)] as const)).then((e) => new Map<string, number | null>(e))

@@ -45,7 +45,7 @@ export class ResultQuery {
       this.repo.monthlyTotals(ctx, { from, to: referenceMonth }, untilDay),
       this.repo.categories(ctx),
       this.repo.dailyRevenue(ctx, referenceMonth),
-      this.taxRepo.firstMovementMonth(ctx),
+      this.taxRepo.firstRevenueMonth(ctx),
       this.taxRepo.revenueByMonth(ctx, { from: addMonths(from, -13), to: referenceMonth }),
       regime === TaxRegime.Mei
         ? Promise.all(months.map(async (m) => [m, await this.settings.meiMonthlyDasAt(m)] as const)).then((e) => new Map<string, number | null>(e))

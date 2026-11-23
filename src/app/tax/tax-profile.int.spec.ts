@@ -73,6 +73,25 @@ describe('TaxProfileQuery (Integration)', () => {
     expect(p).toMatchObject({ rbt12: 12_000, monthsOfHistory: 0, rbt12Proportional: true })
   })
 
+  it('T2 (reteste 22/11): despesa antes da primeira venda não conta como mês de atividade', async () => {
+    // Despesa em M-2, primeira venda em M-1 (R$ 3.000) e em M (R$ 5.000). Antes, M-2 virava o 1º mês: M-1 saía com
+    // RBT12 0 (4%) e M dividia por 2 meses. Agora M-1 é o 1º mês e M usa a média de M-1 × 12 (CGSN 140, art. 22).
+    const at = (m: string) => new Date(startOfLocalMonth(m).getTime() + 12 * 3600_000)
+    const revenue = { _id: 'c', name: 'V', type: 'revenue' }
+    await movements().insertMany([
+      line('r-inicio', { direction: 'out', status: 'settled', date: at(addMonths(month, -2)), grossValue: toDecimal128(800), netValue: toDecimal128(800), category: { _id: 'd', name: 'Aluguel', type: 'expense' } }),
+      line('r-inicio', { direction: 'in', status: 'settled', date: at(addMonths(month, -1)), grossValue: toDecimal128(3000), netValue: toDecimal128(3000), category: revenue }),
+      line('r-inicio', { direction: 'in', status: 'settled', date: at(month), grossValue: toDecimal128(5000), netValue: toDecimal128(5000), category: revenue }),
+    ])
+    const ctx = { env: ENV, restaurantId: 'r-inicio' }
+
+    const first = await query.execute(ctx, { regime: TaxRegime.SimplesNacionalAnexoI, referenceMonth: addMonths(month, -1) })
+    expect(first).toMatchObject({ rbt12: 36_000, monthsOfHistory: 0, rbt12Proportional: true })
+
+    const second = await query.execute(ctx, { regime: TaxRegime.SimplesNacionalAnexoI, referenceMonth: month })
+    expect(second).toMatchObject({ rbt12: 36_000, monthsOfHistory: 1, rbt12Proportional: true })
+  })
+
   it('receita às 22h do último dia do mês anterior conta naquele mês', async () => {
     const lastMonthNight = new Date(startOfLocalMonth(month).getTime() - 2 * 3600_000) // 22h local do último dia de M-1
     await movements().insertOne(line('r-fuso', {
