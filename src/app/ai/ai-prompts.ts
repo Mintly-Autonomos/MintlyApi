@@ -7,7 +7,7 @@ export const AI_MODEL = 'claude-haiku-5-5'
  * Versão do jeito de escrever. Entra na chave do cache: quando o prompt muda, os textos já guardados no dia (escritos
  * no jeito antigo) não são servidos de novo.
  */
-export const AI_PROMPT_VERSION = 3
+export const AI_PROMPT_VERSION = 4
 
 /** Tamanho máximo do título de um card, em palavras (o card inteiro tem `AI_INSIGHT_MAX_WORDS`). */
 export const AI_INSIGHT_TITLE_MAX_WORDS = 10
@@ -91,6 +91,7 @@ export function buildPricePrompt (facts: unknown): string {
     '- Quando houver o campo decision, o preço JÁ FOI CALCULADO pela conta de lucro com a sensibilidade dos clientes a preço (priceSensitivity). decision.keepPrice = true quer dizer que subir o preço tende a reduzir o lucro do prato: recomende manter. Caso contrário, o aumento calculado aumenta o lucro. Nunca contradiga decision.',
     `- suggestedPrice: sem decision, sugira em reais (no máximo 2 casas), com aumento de no máximo ${AI_MAX_PRICE_INCREASE_PERCENT}% sobre o preço atual, nunca abaixo do atual. Com decision, repita o preço atual (a API usa o calculado).`,
     '- soldLast30Days são as vendas registradas nos últimos 30 dias. Se for maior que zero, nunca diga que o prato não vendeu. marginVsMenuAverage diz se a margem está acima ou abaixo da média do cardápio: não chame de "margem baixa" uma margem acima da média.',
+    '- menuGroup é o grupo em que a tela do cardápio mostra o prato (Melhores, Populares, Promissores ou Fracos), calculado pela margem em reais por unidade (unitMargin) contra a média dos pratos comparados (menu.averageUnitMargin, pesada pelas vendas) e pelas vendas. Para falar de margem e de vendas, use só esses campos e nunca contradiga menuGroup: um prato em Melhores ou Promissores tem margem acima da média.',
     `- reason: até ${AI_PRICE_REASON_MAX_WORDS} palavras, explicando o motivo em linguagem simples. NÃO escreva o novo preço nem percentuais (a tela já mostra esses números): fale do tempo parado, da margem, das vendas e de como os clientes reagem a preço.`,
     '',
     '<dados>',

@@ -1,5 +1,31 @@
 import { describe, expect, it } from 'vitest'
-import { bestPrice, elasticityOf } from './price-economics'
+import { bestPrice, elasticityOf, menuClassOf } from './price-economics'
+
+describe('menuClassOf (reteste 22/11, T10: a IA usa a classificação da tela)', () => {
+  // Combo do reteste: margem de R$ 52,40 por unidade, acima da média do grupo; em % fica abaixo de pratos baratos.
+  const dishes = [
+    { id: 'combo', price: 79.9, cost: 27.5, sold: 305, category: 'Combos' },
+    { id: 'hot', price: 25.4, cost: 5, sold: 400, category: 'Combos' },
+    { id: 'temaki', price: 30, cost: 6, sold: 60, category: 'Combos' },
+    { id: 'refri', price: 7, cost: 2, sold: 900, category: 'Bebidas' },
+  ]
+
+  it('margem em R$ por unidade contra a média pesada pelas vendas, só no mesmo perfil', () => {
+    const c = menuClassOf('combo', dishes, [])!
+    expect(c.group).toBe('Melhores')
+    expect(c.unitMargin).toBe(52.4)
+    // (52,4 × 305 + 20,4 × 400 + 24 × 60) / 765 = 33,44; a bebida (outro perfil) fica fora.
+    expect(c.averageUnitMargin).toBeCloseTo(33.44, 2)
+    expect(c.comparedDishes).toBe(3)
+  })
+
+  it('pouca venda e margem abaixo: Fracos; sem custo ou sem venda: fora da análise', () => {
+    expect(menuClassOf('temaki', dishes, [])!.group).toBe('Fracos')
+    expect(menuClassOf('hot', dishes, [])!.group).toBe('Populares')
+    expect(menuClassOf('x', [{ id: 'x', price: 10, cost: 0, sold: 5 }], [])).toBeNull()
+    expect(menuClassOf('x', [{ id: 'x', price: 10, cost: 2, sold: 0 }], [])).toBeNull()
+  })
+})
 
 describe('price-economics (reteste 18/11, item 6)', () => {
   it('elasticidade: prato > perfil salvo da categoria > sugerido pelo nome > dia a dia', () => {

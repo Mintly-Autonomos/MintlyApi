@@ -96,6 +96,16 @@ export class MenuItemRepository extends MongodbCrudRepository<MenuItem & Documen
     return Number(row?.qty ?? 0)
   }
 
+  /** Unidades vendidas de cada prato desde `since` (vendas não canceladas que informaram os pratos). */
+  async soldByItemSince (since: Date, ctx: RequestContext): Promise<Map<string, number>> {
+    const rows = await MongoDBConnection.getInstance().getDatabase(ctx.env).collection('financial_movements').aggregate([
+      { $match: { restaurantId: ctx.restaurantId, direction: 'in', status: { $ne: 'cancelled' }, date: { $gte: since }, 'items.0': { $exists: true } } },
+      { $unwind: '$items' },
+      { $group: { _id: '$items.menuItemId', qty: { $sum: '$items.qty' } } },
+    ]).toArray()
+    return new Map(rows.filter((r) => r._id != null).map((r) => [String(r._id), Number(r.qty ?? 0)]))
+  }
+
   /** Pratos ATIVOS cuja última revisão de preço foi em `cutoff` ou antes — os mais antigos primeiro. */
   async findStale (cutoff: Date, ctx: RequestContext): Promise<MenuItem[]> {
     const result = await this.getCollection(ctx)

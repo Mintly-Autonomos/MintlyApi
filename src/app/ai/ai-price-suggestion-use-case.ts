@@ -6,7 +6,7 @@ import { ValidationError } from '../../core/errors/core/validation-error'
 import { Resource } from '../../core/types/resource'
 import { MenuItemRepository } from '../menu-item/menu-item-repository'
 import { RestaurantRepository } from '../restaurant/restaurant-repository'
-import { PriceDecision, bestPrice, elasticityOf } from './price-economics'
+import { MenuClass, PriceDecision, bestPrice, elasticityOf, menuClassOf } from './price-economics'
 import { daysSince } from '../menu-item/menu-item-rules'
 import { AiUnavailableError } from './ai-errors'
 import { AI_PROMPT_VERSION, AI_SYSTEM_PROMPT, PRICE_SCHEMA, buildPricePrompt } from './ai-prompts'
@@ -58,12 +58,22 @@ export class AiPriceSuggestionUseCase {
     const days = daysSince(dish.priceUpdatedAt, now)
     // Reteste 18/11, item 6: vendas de verdade (últimos 30 dias, pelas movimentações) e o preço decidido pela conta
     // de lucro com elasticidade — a IA só explica. Antes ela via o campo digitado (0) e dizia "não houve vendas".
-    const sold = await this.menu.soldSince(id, new Date(now.getTime() - 30 * 86_400_000), ctx).catch(() => 0)
+    const soldMap = await this.menu.soldByItemSince(new Date(now.getTime() - 30 * 86_400_000), ctx).catch(() => new Map<string, number>())
+    // Vendas e preço calculado: só as vendas registradas (reteste 18/11, item 6). A classificação usa a regra da
+    // tela do cardápio: sem nenhuma venda com prato informado, vale o "vendidos por mês" digitado.
+    const sold = soldMap.get(id) ?? 0
+    const soldOf = (d: MenuItem) => (soldMap.size > 0 ? soldMap.get(String((d as { _id?: unknown })._id)) ?? 0 : (d as { soldPerMonth?: number }).soldPerMonth ?? 0)
     const restaurant = await this.restaurants.findMine(ctx).catch(() => null)
-    const el = elasticityOf(dish as any, restaurant?.menuCategoryProfiles ?? [])
+    const profiles = restaurant?.menuCategoryProfiles ?? []
+    const el = elasticityOf(dish as any, profiles)
     const ceiling = roundMoney(dish.price * (1 + AI_MAX_PRICE_INCREASE_PERCENT / 100))
     const decision = bestPrice({ price: dish.price, cost: dish.cost ?? 0, sold, elasticity: el.elasticity, ceiling })
-    const facts = this.buildFacts(dish, dishes, days, now, sold, el.elasticity, decision)
+    const klass = menuClassOf(
+      id,
+      dishes.map((d) => ({ id: String((d as { _id?: unknown })._id), price: d.price, cost: d.cost ?? 0, sold: soldOf(d), category: d.category, priceSensitivity: (d as any).priceSensitivity ?? null })),
+      profiles,
+    )
+    const facts = this.buildFacts(dish, dishes, days, now, sold, el.elasticity, decision, klass)
     const hash = stableHash({ v: AI_PROMPT_VERSION, facts })
 
     const cached = await this.repo.cacheGet<PriceResult>(ctx, 'price-suggestion', hash, now)
@@ -78,12 +88,12 @@ export class AiPriceSuggestionUseCase {
       throw error
     }
 
-    const result = this.validate(raw, dish, id, days, decision)
+    const result = this.validate(raw, dish, id, days, decision, [sanitizeFact(dish.name), sanitizeFact(dish.category ?? '')])
     await this.repo.cacheSet(ctx, 'price-suggestion', hash, result, now)
     return { ...result, cached: false, ...usage }
   }
 
-  private buildFacts (dish: MenuItem, dishes: MenuItem[], days: number, now: Date, sold: number, elasticity: number, decision: PriceDecision | null) {
+  private buildFacts (dish: MenuItem, dishes: MenuItem[], days: number, now: Date, sold: number, elasticity: number, decision: PriceDecision | null, klass: MenuClass | null) {
     const margins = dishes.map(margin).filter((m): m is number => m != null)
     const avgMargin = margins.length > 0 ? round4(margins.reduce((a, b) => a + b, 0) / margins.length) : null
     const own = margin(dish)
@@ -95,7 +105,12 @@ export class AiPriceSuggestionUseCase {
         price: dish.price,
         cost: dish.cost ?? 0,
         marginPct: own,
-        marginVsMenuAverage: own == null || avgMargin == null ? null : own > avgMargin + 0.005 ? 'acima da média' : own < avgMargin - 0.005 ? 'abaixo da média' : 'na média',
+        // Com a classificação da tela, a comparação é a dela (R$ por unidade, média pesada pelas vendas).
+        unitMargin: klass?.unitMargin ?? roundMoney(dish.price - (dish.cost ?? 0)),
+        menuGroup: klass?.group ?? null,
+        marginVsMenuAverage: klass
+          ? (klass.unitMargin > klass.averageUnitMargin + 0.005 ? 'acima da média' : klass.unitMargin < klass.averageUnitMargin - 0.005 ? 'abaixo da média' : 'na média')
+          : own == null || avgMargin == null ? null : own > avgMargin + 0.005 ? 'acima da média' : own < avgMargin - 0.005 ? 'abaixo da média' : 'na média',
         soldLast30Days: sold,
         priceSensitivity: elasticity,
         daysSincePriceChange: days,
@@ -107,6 +122,8 @@ export class AiPriceSuggestionUseCase {
       menu: {
         activeDishes: dishes.length,
         averageMarginPct: avgMargin,
+        averageUnitMargin: klass?.averageUnitMargin ?? null,
+        comparedDishes: klass?.comparedDishes ?? null,
         sameCategory: sameCategory.length > 0
           ? { dishes: sameCategory.length, averagePrice: roundMoney(sameCategory.reduce((a, d) => a + d.price, 0) / sameCategory.length) }
           : null,
@@ -115,7 +132,7 @@ export class AiPriceSuggestionUseCase {
   }
 
   /** O que a IA propôs, conferido: preço entre o atual e o teto; justificativa só texto, sem `%`/`R$` e dentro do limite. */
-  private validate (raw: unknown, dish: MenuItem, id: string, days: number, decision: PriceDecision | null): PriceResult {
+  private validate (raw: unknown, dish: MenuItem, id: string, days: number, decision: PriceDecision | null, names: string[] = []): PriceResult {
     const proposed = Number((raw as { suggestedPrice?: unknown } | null)?.suggestedPrice)
     const ceiling = roundMoney(dish.price * (1 + AI_MAX_PRICE_INCREASE_PERCENT / 100))
     // Com vendas registradas, o preço é o da conta de lucro (nunca um que o simulador mostra como prejuízo).
@@ -124,7 +141,7 @@ export class AiPriceSuggestionUseCase {
       : roundMoney(Math.min(Math.max(Number.isFinite(proposed) ? proposed : dish.price, dish.price), ceiling))
     const increasePercent = Math.round((suggestedPrice / dish.price - 1) * 1000) / 10
 
-    const text = cleanAiText((raw as { reason?: unknown } | null)?.reason)
+    const text = cleanAiText((raw as { reason?: unknown } | null)?.reason, names)
     // A tela mostra o preço e o percentual: a justificativa não pode citar números diferentes dos que foram aplicados.
     const usable = text != null && !/%|R\$/.test(text)
     const reason = usable ? trimToWords(text, AI_PRICE_REASON_MAX_WORDS) : fallbackReason(sanitizeFact(dish.name), days)

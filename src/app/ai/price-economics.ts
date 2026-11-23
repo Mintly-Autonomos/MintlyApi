@@ -25,6 +25,47 @@ export function elasticityOf (
 
 const money = (n: number) => Math.round(n * 100) / 100
 
+/** Grupos da matriz do cardápio, com os nomes que a tela mostra (Kasavana & Smith, 1982). */
+export type MenuGroup = 'Melhores' | 'Populares' | 'Promissores' | 'Fracos'
+/** Regra dos 70%: popular é quem vende pelo menos 70% da média de vendas por prato. */
+export const POPULARITY_FACTOR = 0.7
+
+export interface MenuClass {
+  group: MenuGroup
+  /** Margem do prato por unidade, em R$ (preço − custo). */
+  unitMargin: number
+  /** Margem média por unidade dos pratos comparados, pesada pelas vendas. */
+  averageUnitMargin: number
+  /** Perfil de venda do grupo comparado: a tela compara cada prato só com os do mesmo perfil. */
+  profile: SalesProfile
+  comparedDishes: number
+}
+
+/**
+ * A mesma classificação da matriz do cardápio do web (reteste 22/11, T10): entra o prato ativo com custo e vendas,
+ * comparado só com os do mesmo perfil de venda; margem em R$ por unidade contra a média pesada pelas vendas; popular
+ * com pelo menos 70% da média de vendas. Antes a IA comparava a margem em % com a média simples e dizia "margem
+ * abaixo da média" de um prato que a tela punha em "Melhores". null: o prato não entra na análise.
+ */
+export function menuClassOf (
+  dishId: string,
+  dishes: { id: string, price: number, cost: number, sold: number, category?: string | null, priceSensitivity?: PriceSensitivity | null }[],
+  profiles: MenuCategoryProfile[],
+): MenuClass | null {
+  const withProfile = dishes.map((d) => ({ ...d, profile: elasticityOf(d, profiles).profile }))
+  const target = withProfile.find((d) => d.id === dishId)
+  if (!target || !(target.cost > 0) || !(target.sold > 0)) return null
+  const peers = withProfile.filter((d) => d.profile === target.profile && d.cost > 0 && d.sold > 0)
+  const totalSold = peers.reduce((s, d) => s + d.sold, 0)
+  const threshold = (totalSold / peers.length) * POPULARITY_FACTOR
+  const avg = peers.reduce((s, d) => s + (d.price - d.cost) * d.sold, 0) / totalSold
+  const unit = target.price - target.cost
+  const popular = target.sold >= threshold
+  const good = unit >= avg
+  const group: MenuGroup = popular && good ? 'Melhores' : popular ? 'Populares' : good ? 'Promissores' : 'Fracos'
+  return { group, unitMargin: money(unit), averageUnitMargin: money(avg), profile: target.profile, comparedDishes: peers.length }
+}
+
 export interface PriceDecision {
   /** Preço que mais dá lucro entre o atual e o teto (de R$ 0,50 em R$ 0,50); igual ao atual = manter. */
   price: number

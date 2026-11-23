@@ -34,6 +34,25 @@ export class TaxRepository {
     return new Map(rows.map((r) => [String(r._id), decimalToNumber(r.total)]))
   }
 
+  /**
+   * Primeiro mês de atividade para o imposto (reteste 22/11, T2): o mês da primeira VENDA não cancelada (entrada
+   * operacional). Antes era a primeira movimentação de qualquer tipo: uma despesa lançada antes da primeira venda
+   * virava um "mês de atividade" com receita zero. O 1º mês com venda saía com RBT12 0 (4%, em vez da receita do mês
+   * × 12, CGSN 140/2018, art. 22 §2º) e do 2º ao 12º a média dividia por um mês a mais (§3º).
+   */
+  async firstRevenueMonth (ctx: RequestContext): Promise<string | null> {
+    const nonOperating = await nonOperatingCategoryIds(MongoDBConnection.getInstance().getDatabase(ctx.env), ctx.restaurantId)
+    const first = await this.movements(ctx)
+      .find(
+        { restaurantId: ctx.restaurantId, direction: MovementDirection.In, status: { $ne: MovementStatus.Cancelled }, ...excludeCategories(nonOperating) },
+        { projection: { date: 1 } },
+      )
+      .sort({ date: 1 })
+      .limit(1)
+      .next()
+    return first?.date ? toLocalMonth(first.date) : null
+  }
+
   /** Mês da primeira movimentação não cancelada do restaurante (qualquer direção). */
   async firstMovementMonth (ctx: RequestContext): Promise<string | null> {
     const first = await this.movements(ctx)

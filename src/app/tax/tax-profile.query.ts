@@ -18,7 +18,7 @@ export class TaxProfileQuery {
 
   async execute (ctx: RequestContext, p: { regime: TaxRegime | null; referenceMonth: string }): Promise<RestaurantTaxProfile> {
     const [firstMonth, revenueByMonth, meiMonthlyDas] = await Promise.all([
-      this.taxRepo.firstMovementMonth(ctx),
+      this.taxRepo.firstRevenueMonth(ctx),
       this.taxRepo.revenueByMonth(ctx, { from: addMonths(p.referenceMonth, -13), to: p.referenceMonth }),
       p.regime === TaxRegime.Mei ? this.settingsRepo.meiMonthlyDasAt(p.referenceMonth) : Promise.resolve(null),
     ])

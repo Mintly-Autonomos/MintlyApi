@@ -26,6 +26,13 @@ function insightFacts (insight: OverviewInsight, index: number): Record<string, 
  * Os dados vêm do próprio relatório (montado aqui, pelo token): o cliente só diz a tela e o mês. Texto igual para
  * os mesmos dados no mesmo dia vem do cache e não gasta chamada. Falha da IA devolve a chamada ao limite.
  */
+/** Os textos dos dados (nome do negócio, de categoria, de prato): podem vir sem acento porque o dono escreveu assim. */
+function factStrings (value: unknown, out: string[] = []): string[] {
+  if (typeof value === 'string') { if (value.length > 2) out.push(value) } else if (Array.isArray(value)) value.forEach((v) => factStrings(v, out))
+  else if (value && typeof value === 'object') Object.values(value).forEach((v) => factStrings(v, out))
+  return out
+}
+
 export class AiInsightsUseCase {
   constructor (
     private readonly overview: OverviewQuery = new OverviewQuery(),
@@ -58,7 +65,7 @@ export class AiInsightsUseCase {
       throw error
     }
 
-    const insights = this.validate(raw, report.insights)
+    const insights = this.validate(raw, report.insights, factStrings(facts))
     if (insights.length === 0) {
       // Nada aproveitável (fora do limite de palavras, com marcas proibidas...): a chamada não conta e a tela fica com o texto de sempre.
       await this.repo.release(ctx, now)
@@ -85,7 +92,7 @@ export class AiInsightsUseCase {
   }
 
   /** Confere cada texto: índice válido e único, só texto simples, título e card dentro do limite de palavras. */
-  private validate (raw: unknown, insights: OverviewInsight[]): AiInsightText[] {
+  private validate (raw: unknown, insights: OverviewInsight[], names: string[] = []): AiInsightText[] {
     const texts = (raw as { texts?: unknown } | null)?.texts
     if (!Array.isArray(texts)) return []
     const seen = new Set<number>()
@@ -93,8 +100,8 @@ export class AiInsightsUseCase {
     for (const item of texts as Array<Record<string, unknown> | null>) {
       const index = item?.index
       if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index >= insights.length || seen.has(index)) continue
-      const title = cleanAiText(item?.title)
-      const description = cleanAiText(item?.description)
+      const title = cleanAiText(item?.title, names)
+      const description = cleanAiText(item?.description, names)
       if (!title || !description) continue
       const titleWords = countWords(title)
       if (titleWords > AI_INSIGHT_TITLE_MAX_WORDS || titleWords + countWords(description) > AI_INSIGHT_MAX_WORDS) continue
