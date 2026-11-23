@@ -112,6 +112,40 @@ describe('/restaurants/me (Integration)', () => {
     expect((await patchMe(auth, payload)).statusCode).toBe(400)
   })
 
+  describe('início da atividade e faturamento antes do Mintly (reteste 22/11, T2)', () => {
+    it('PATCH grava o mês de abertura e o faturamento (ordenado); o perfil usa no RBT12', async () => {
+      const { auth } = await signup(freshEnv())
+      await patchMe(auth, { taxRegime: 'simplesNacionalAnexoI' })
+      const m1 = addMonths(month, -2)
+      const m2 = addMonths(month, -1)
+      const res = await patchMe(auth, { activityStart: addMonths(month, -3), revenueBeforeMintly: [{ month: m2, amount: 24_000.456 }, { month: m1, amount: 20_000 }] })
+      expect(res.statusCode).toBe(200)
+      expect(res.json().payload.revenueBeforeMintly).toEqual([{ month: m1, amount: 20_000 }, { month: m2, amount: 24_000.46 }])
+      const tax = (await getMe(auth)).json().payload.tax
+      // Sem venda no Mintly: M−3 sem valor (fica fora), M−2 e M−1 informados → média × 12.
+      expect(tax).toMatchObject({ activityStartMonth: addMonths(month, -3), rbt12: 264_002.76, rbt12Proportional: true })
+    })
+
+    it('"" apaga o mês de abertura e [] apaga o faturamento', async () => {
+      const { auth } = await signup(freshEnv())
+      await patchMe(auth, { activityStart: addMonths(month, -3), revenueBeforeMintly: [{ month: addMonths(month, -1), amount: 1000 }] })
+      const res = await patchMe(auth, { activityStart: '', revenueBeforeMintly: [] })
+      expect(res.statusCode).toBe(200)
+      expect(res.json().payload).toMatchObject({ activityStart: '', revenueBeforeMintly: [] })
+    })
+
+    it.each([
+      [{ activityStart: '2026-13' }],
+      [{ activityStart: addMonths(toLocalMonth(new Date()), 1) }],
+      [{ revenueBeforeMintly: [{ month: addMonths(toLocalMonth(new Date()), 1), amount: 10 }] }],
+      [{ revenueBeforeMintly: [{ month: '2025-01', amount: 10 }, { month: '2025-01', amount: 20 }] }],
+      [{ revenueBeforeMintly: [{ month: '2025-01', amount: -1 }] }],
+    ])('PATCH inválido %j → 400', async (payload) => {
+      const { auth } = await signup(freshEnv())
+      expect((await patchMe(auth, payload)).statusCode).toBe(400)
+    })
+  })
+
   describe('equipe e carga semanal (P.4)', () => {
     it('nasce sem equipe; PATCH grava a lista (nome sem espaços, horas com 1 casa) e o GET devolve', async () => {
       const { auth } = await signup(freshEnv())

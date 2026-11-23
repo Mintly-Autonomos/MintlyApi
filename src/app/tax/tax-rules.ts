@@ -79,7 +79,7 @@ const cents = (n: number) => toCents(n)
  * de atividade, a receita do próprio mês × 12; de 1 a 11 meses, a média dos
  * meses anteriores × 12. Somas em centavos.
  */
-export function computeRbt12 (p: { referenceMonth: string; firstMonth: string | null; revenueByMonth: Map<string, number> }) {
+export function computeRbt12 (p: { referenceMonth: string; firstMonth: string | null; revenueByMonth: Map<string, number>; unknownMonths?: ReadonlySet<string> }) {
   const revenueOf = (month: string) => cents(p.revenueByMonth.get(month) ?? 0)
   const monthsOfHistory = p.firstMonth == null ? 0 : Math.max(0, diffMonths(p.firstMonth, p.referenceMonth))
 
@@ -87,12 +87,20 @@ export function computeRbt12 (p: { referenceMonth: string; firstMonth: string | 
     return { rbt12: fromCents(revenueOf(p.referenceMonth) * 12), monthsOfHistory, proportional: true }
   }
 
+  // Reteste 22/11 (T2): mês entre a abertura e o Mintly sem faturamento informado fica fora da média.
   const window = Math.min(12, monthsOfHistory)
   let sum = 0
-  for (let i = 1; i <= window; i++) sum += revenueOf(addMonths(p.referenceMonth, -i))
+  let known = 0
+  for (let i = 1; i <= window; i++) {
+    const m = addMonths(p.referenceMonth, -i)
+    if (p.unknownMonths?.has(m)) continue
+    sum += revenueOf(m)
+    known++
+  }
 
-  if (monthsOfHistory >= 12) return { rbt12: fromCents(sum), monthsOfHistory, proportional: false }
-  return { rbt12: fromCents(Math.round((sum / window) * 12)), monthsOfHistory, proportional: true }
+  if (known === 0) return { rbt12: fromCents(revenueOf(p.referenceMonth) * 12), monthsOfHistory, proportional: true }
+  if (monthsOfHistory >= 12 && known === 12) return { rbt12: fromCents(sum), monthsOfHistory, proportional: false }
+  return { rbt12: fromCents(Math.round((sum / known) * 12)), monthsOfHistory, proportional: true }
 }
 
 /**
@@ -122,6 +130,7 @@ export function buildTaxProfile (p: {
   firstMonth: string | null
   revenueByMonth: Map<string, number>
   meiMonthlyDas: number | null
+  unknownMonths?: ReadonlySet<string>
 }): RestaurantTaxProfile {
   const current = computeRbt12(p)
   const profile: RestaurantTaxProfile = {
@@ -130,6 +139,7 @@ export function buildTaxProfile (p: {
     rbt12: current.rbt12,
     monthsOfHistory: current.monthsOfHistory,
     rbt12Proportional: current.proportional,
+    activityStartMonth: p.firstMonth,
     effectiveRate: null,
     bracket: null,
     previousBracketIndex: null,

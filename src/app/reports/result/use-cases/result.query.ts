@@ -6,7 +6,8 @@ import { RestaurantRepository } from '../../../restaurant/restaurant-repository'
 import { TaxRepository } from '../../../tax/tax-repository'
 import { TaxSettingsRepository } from '../../../tax/tax-settings-repository'
 import { ResultRepository } from '../result-repository'
-import { HISTORY_MONTHS, MAX_FUTURE_MONTHS, computeResult, monthTax } from '../result-metrics'
+import { HISTORY_MONTHS, MAX_FUTURE_MONTHS, computeResult } from '../result-metrics'
+import { TaxContextLoader } from '../../../tax/tax-context'
 
 /** `?historyMonths=6|12` (padrão 6). */
 export function parseHistoryMonths (value: unknown): ResultHistoryMonths {
@@ -41,19 +42,15 @@ export class ResultQuery {
     const restaurant = await this.restaurants.findMine(ctx)
     const regime: TaxRegime | null = restaurant.taxRegime ?? null
 
-    const [rows, categories, dailyRevenue, firstMonth, revenueByMonth, dasByMonth] = await Promise.all([
+    const [rows, categories, dailyRevenue, tax] = await Promise.all([
       this.repo.monthlyTotals(ctx, { from, to: referenceMonth }, untilDay),
       this.repo.categories(ctx),
       this.repo.dailyRevenue(ctx, referenceMonth),
-      this.taxRepo.firstRevenueMonth(ctx),
-      this.taxRepo.revenueByMonth(ctx, { from: addMonths(from, -13), to: referenceMonth }),
-      regime === TaxRegime.Mei
-        ? Promise.all(months.map(async (m) => [m, await this.settings.meiMonthlyDasAt(m)] as const)).then((e) => new Map<string, number | null>(e))
-        : Promise.resolve(new Map<string, number | null>()),
+      new TaxContextLoader(this.taxRepo, this.settings).load(ctx, { regime, restaurant, months }),
     ])
 
-    const taxByMonth = new Map(months.map((m) => [m, monthTax({ regime, month: m, firstMonth, revenueByMonth, meiMonthlyDas: dasByMonth.get(m) ?? null })]))
+    const taxByMonth = new Map(months.map((m) => [m, tax.taxOf(m)]))
 
-    return computeResult({ referenceMonth, regime, rows, categories, taxByMonth, meiMonthlyDas: dasByMonth.get(referenceMonth) ?? null, dailyRevenue, untilDay, historyMonths })
+    return computeResult({ referenceMonth, regime, rows, categories, taxByMonth, meiMonthlyDas: tax.das.get(referenceMonth)?.value ?? null, dailyRevenue, untilDay, historyMonths })
   }
 }

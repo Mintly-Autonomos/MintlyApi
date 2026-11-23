@@ -15,7 +15,7 @@ export class GetRestaurantProfileQuery {
   async execute (ctx: RequestContext, month: string | undefined): Promise<RestaurantProfileResponse> {
     const referenceMonth = parseReferenceMonth(month, this.clock())
     const restaurant = await this.repo.findMine(ctx)
-    const tax = await this.taxQuery.execute(ctx, { regime: restaurant.taxRegime ?? null, referenceMonth })
+    const tax = await this.taxQuery.execute(ctx, { regime: restaurant.taxRegime ?? null, referenceMonth, restaurant })
     return { restaurant, tax }
   }
 }

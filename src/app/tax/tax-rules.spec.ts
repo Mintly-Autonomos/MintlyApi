@@ -150,6 +150,7 @@ describe('buildTaxProfile', () => {
       rbt12: 12_000,
       monthsOfHistory: 0,
       rbt12Proportional: true,
+      activityStartMonth: '2026-10',
       effectiveRate: null,
       bracket: null,
       previousBracketIndex: null,

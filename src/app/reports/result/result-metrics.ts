@@ -47,8 +47,8 @@ export interface CategoryInfo {
 export interface MonthTax {
   effectiveRate: number | null
   fixedAmount: number | null
-  /** MEI sem o valor do DAS configurado: o imposto do mês é o DAS PAGO no mês (categoria de imposto). */
-  usePaidTax?: boolean
+  /** MEI: o DAS fixo foi estimado pelos DAS pagos (sem o valor configurado). */
+  estimated?: boolean
 }
 
 export interface CategoryAmount {
@@ -150,17 +150,18 @@ export function hasActivity (agg: MonthAggregate): boolean {
  * vigente, só a partir do mês da primeira movimentação (antes disso o restaurante
  * não existia no Mintly — sem prejuízo fantasma no histórico); sem regime → nada.
  */
-export function monthTax (p: { regime: TaxRegime | null; month: string; firstMonth: string | null; revenueByMonth: Map<string, number>; meiMonthlyDas: number | null }): MonthTax {
+export function monthTax (p: { regime: TaxRegime | null; month: string; firstMonth: string | null; revenueByMonth: Map<string, number>; meiMonthlyDas: number | null; meiDasEstimated?: boolean; unknownMonths?: ReadonlySet<string> }): MonthTax {
   if (p.regime == null) return { effectiveRate: null, fixedAmount: null }
   if (p.regime === TaxRegime.Mei) {
     const active = p.firstMonth != null && p.firstMonth <= p.month
     if (!active) return { effectiveRate: null, fixedAmount: 0 }
-    // Sem o valor do DAS-MEI configurado, o imposto é o DAS pago no mês (como a janela de regime promete).
+    // Reteste 22/11 (T1): o DAS é um valor FIXO por mês: o configurado ou, sem ele, o DAS típico dos pagamentos.
+    // Antes, sem configuração, o imposto era o DAS pago no mês (2 DAS em novembro dobravam o imposto).
     return p.meiMonthlyDas != null && p.meiMonthlyDas > 0
-      ? { effectiveRate: null, fixedAmount: p.meiMonthlyDas }
-      : { effectiveRate: null, fixedAmount: null, usePaidTax: true }
+      ? { effectiveRate: null, fixedAmount: p.meiMonthlyDas, ...(p.meiDasEstimated ? { estimated: true } : {}) }
+      : { effectiveRate: null, fixedAmount: 0 }
   }
-  const profile = buildTaxProfile({ regime: p.regime, referenceMonth: p.month, firstMonth: p.firstMonth, revenueByMonth: p.revenueByMonth, meiMonthlyDas: null })
+  const profile = buildTaxProfile({ regime: p.regime, referenceMonth: p.month, firstMonth: p.firstMonth, revenueByMonth: p.revenueByMonth, meiMonthlyDas: null, unknownMonths: p.unknownMonths })
   return { effectiveRate: profile.effectiveRate, fixedAmount: null }
 }
 
@@ -168,7 +169,7 @@ export function monthTax (p: { regime: TaxRegime | null; month: string; firstMon
 export function buildLines (agg: MonthAggregate, tax: MonthTax): ResultLines {
   const taxes = tax.effectiveRate != null
     ? Math.round(agg.grossRevenue * tax.effectiveRate)
-    : tax.usePaidTax ? agg.taxPaid : toCents(tax.fixedAmount ?? 0)
+    : toCents(tax.fixedAmount ?? 0)
   let opex = agg.platformFee + agg.cardFee
   for (const c of agg.opexCategories.values()) opex += c.cents
 
@@ -348,7 +349,8 @@ export function computeResult (input: ResultInput): ResultReport {
     tax: {
       regime: input.regime,
       effectiveRate: tax.effectiveRate,
-      meiMonthlyDas: input.regime === TaxRegime.Mei ? input.meiMonthlyDas : null,
+      meiMonthlyDas: input.regime === TaxRegime.Mei ? (tax.fixedAmount ?? input.meiMonthlyDas) : null,
+      meiDasEstimated: input.regime === TaxRegime.Mei && tax.estimated === true,
     },
     operatingExpenseItems: items,
     breakEven: buildBreakEven(currentAgg, current, input.referenceMonth, input.dailyRevenue),

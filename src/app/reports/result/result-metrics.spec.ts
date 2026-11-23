@@ -73,8 +73,9 @@ describe('monthTax', () => {
   it('MEI: DAS a partir do mês da primeira movimentação; antes, zero', () => {
     expect(monthTax({ regime: TaxRegime.Mei, month: M, firstMonth: '2026-06', revenueByMonth: revenue, meiMonthlyDas: 82.05 })).toEqual({ effectiveRate: null, fixedAmount: 82.05 })
     expect(monthTax({ regime: TaxRegime.Mei, month: '2026-05', firstMonth: '2026-06', revenueByMonth: revenue, meiMonthlyDas: 82.05 })).toEqual({ effectiveRate: null, fixedAmount: 0 })
-    // Reteste 18/11, item 2: sem o valor do DAS-MEI configurado, vale o DAS pago no mês.
-    expect(monthTax({ regime: TaxRegime.Mei, month: M, firstMonth: '2026-06', revenueByMonth: revenue, meiMonthlyDas: null })).toEqual({ effectiveRate: null, fixedAmount: null, usePaidTax: true })
+    // Reteste 22/11 (T1): o DAS é fixo. Estimado pelos pagamentos, vem marcado; sem valor nenhum, zero (nunca o pago no mês).
+    expect(monthTax({ regime: TaxRegime.Mei, month: M, firstMonth: '2026-06', revenueByMonth: revenue, meiMonthlyDas: 81.05, meiDasEstimated: true })).toEqual({ effectiveRate: null, fixedAmount: 81.05, estimated: true })
+    expect(monthTax({ regime: TaxRegime.Mei, month: M, firstMonth: '2026-06', revenueByMonth: revenue, meiMonthlyDas: null })).toEqual({ effectiveRate: null, fixedAmount: 0 })
   })
 
   it('sem regime', () => {
@@ -310,7 +311,7 @@ describe('computeResult', () => {
 
   it('MEI: DAS do mês no campo tax; mês sem imposto informado usa "sem regime"', () => {
     const report = computeResult({ referenceMonth: M, regime: TaxRegime.Mei, rows: [], categories: CATS, taxByMonth: new Map(), meiMonthlyDas: 82.05, dailyRevenue: new Map() })
-    expect(report.tax).toEqual({ regime: TaxRegime.Mei, effectiveRate: null, meiMonthlyDas: 82.05 })
+    expect(report.tax).toEqual({ regime: TaxRegime.Mei, effectiveRate: null, meiMonthlyDas: 82.05, meiDasEstimated: false })
     expect(report.current.taxes).toBe(0)
   })
 
@@ -435,10 +436,11 @@ describe('impostos: DAS pago não é gasto novo (reteste 18/11, item 2)', () => 
     expect(l.resultAfterNonOperating).toBe(10_000 - 600 - 700)
   })
 
-  it('MEI sem o valor configurado: o imposto do mês é o DAS pago', () => {
-    const l = buildLines(aggregateMonth(rows, M, cats), { effectiveRate: null, fixedAmount: null, usePaidTax: true })
-    expect(l.taxes).toBe(600)
-    expect(l.netProfit).toBe(10_000 - 600)
+  it('MEI: o DAS pago no mês não é o imposto; vale o valor fixo (reteste 22/11, T1)', () => {
+    // Antes, sem o valor configurado, o imposto era o DAS pago (2 DAS no mês dobravam o imposto).
+    const l = buildLines(aggregateMonth(rows, M, cats), { effectiveRate: null, fixedAmount: 300, estimated: true })
+    expect(l.taxes).toBe(300)
+    expect(l.netProfit).toBe(10_000 - 300)
   })
 
   it('MEI com o valor configurado usa o valor fixo', () => {

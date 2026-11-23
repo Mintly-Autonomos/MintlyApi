@@ -213,8 +213,8 @@ export function computeOverview (input: OverviewInput): OverviewReport {
     referenceMonth: month,
     today: cashFlow.today,
     cards: {
-      netProfit: { amount: result.current.netProfit, delta: result.deltas.netProfit, history: result.history.map((h) => ({ month: h.month, amount: h.netProfit })) },
-      revenue: { amount: result.current.grossRevenue, delta: result.deltas.grossRevenue, history: result.history.map((h) => ({ month: h.month, amount: h.grossRevenue })) },
+      netProfit: { amount: result.current.netProfit, previousAmount: result.previous.netProfit, delta: result.deltas.netProfit, history: result.history.map((h) => ({ month: h.month, amount: h.netProfit })) },
+      revenue: { amount: result.current.grossRevenue, previousAmount: result.previous.grossRevenue, delta: result.deltas.grossRevenue, history: result.history.map((h) => ({ month: h.month, amount: h.grossRevenue })) },
       cashToday: { amount: cashFlow.cashToday, realized: cashFlow.realized.map((p) => ({ date: p.date, balance: p.balance })) },
       projection: { horizon: cashFlow.horizon, balance: cashFlow.projectedBalance, lowest: cashFlow.lowestBalance, runwayDays: runway },
       cmv: { pct: expenses.cmv.pctOfRevenue, previousPct: cmvPrev, deltaPoints: points(expenses.cmv.pctOfRevenue, cmvPrev), target: expenses.cmv.target },
