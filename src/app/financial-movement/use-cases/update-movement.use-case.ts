@@ -9,10 +9,10 @@ import { computeSnapshot, balanceImpact, defaultStatus, resolveDueDate, shouldRe
 import { applyBalanceImpact } from '../movement-balance'
 import { movementToStorage, movementFromStorage } from '../financial-movement-repository'
 import { MovementItemRequest, resolveMovementItems } from '../movement-items'
-import { toBusinessDate } from '../../reports/shared/period'
+import { toBusinessDate, toLocalMonth } from '../../reports/shared/period'
 import { assertNotSystemCategory } from '../system-categories'
 import { resolveSaleFields, SaleFields } from '../sale-fields'
-import { assertPersonnelAllowed } from '../../auth/access-control'
+import { assertCategoryAllowed, assertOwnCurrentMovement } from '../../auth/access-control'
 
 export interface UpdateMovementInput {
   title?: string
@@ -83,7 +83,13 @@ export class UpdateMovementUseCase {
         if (currentCategory?.systemKey) {
           throw new ConflictError('O saldo inicial se muda na própria conta (Contas financeiras > editar).')
         }
-        assertPersonnelAllowed(ctx, currentCategory)
+        assertCategoryAllowed(ctx, currentCategory)
+        // Problemas 23/11 (decisão do Nathan): Operação só altera o próprio lançamento, e só no mês atual.
+        assertOwnCurrentMovement(ctx, mov, {
+          currentMonth: toLocalMonth(new Date()),
+          monthOf: toLocalMonth,
+          newDate: changes.date ? toBusinessDate(changes.date) : null,
+        })
 
         const direction = mov.direction as string // imutável
         const oldAccountId = String(mov.account._id)
@@ -107,7 +113,7 @@ export class UpdateMovementUseCase {
           assertNotSystemCategory(cat)
           categorySnap = { _id: String(cat._id), name: cat.name, type: cat.type }
           categoryDoc = cat
-          assertPersonnelAllowed(ctx, cat)
+          assertCategoryAllowed(ctx, cat)
         }
 
         // Fatia 5: subcategoria segue a regra pura; o documento da categoria

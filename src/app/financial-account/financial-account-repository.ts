@@ -7,6 +7,8 @@ import { toDecimal128, decimalToNumber } from '../../core/money/money'
 import { FinancialAccount } from 'mintly-lib'
 import { NotFoundError } from '../../core/errors/core/not-found-error'
 import { AccountHistoryEntry } from './account-rules'
+import { hidesPersonnel, personnelCategoryIds } from '../auth/access-control'
+import MongoDBConnection from '../../infrastructure/db/mongodb/mongodb-connection'
 
 /** Saldos são persistidos como Decimal128 (dinheiro exato); a leitura volta a number. */
 function balancesToNumber<T extends Record<string, any>> (doc: T): T {
@@ -111,6 +113,33 @@ export class FinancialAccountRepository extends MongodbCrudRepository<FinancialA
       .limit(sizeNum)
       .toArray()
 
-    return result.map(d => balancesToNumber(d as any)) as unknown as FinancialAccount[]
+    const accounts = result.map(d => balancesToNumber(d as any)) as unknown as FinancialAccount[]
+    return this.withoutHiddenPending(accounts, ctx)
+  }
+
+  /**
+   * Problemas 23/11 (item 17): para quem não vê a mão de obra (perfil Operação), o saldo previsto da conta sai sem as
+   * pendências de salários, pró-labore, encargos e freelancers. Antes, Contas mostrava as pendências completas e a
+   * diferença para Movimentações era exatamente o total de mão de obra a pagar.
+   */
+  private async withoutHiddenPending (accounts: FinancialAccount[], ctx: RequestContext): Promise<FinancialAccount[]> {
+    if (!hidesPersonnel(ctx) || accounts.length === 0) return accounts
+    const db = MongoDBConnection.getInstance().getDatabase(ctx.env)
+    const ids = await personnelCategoryIds(db, ctx.restaurantId ?? '')
+    if (ids.length === 0) return accounts
+    const rows = await db.collection('financial_movements').aggregate([
+      { $match: { restaurantId: ctx.restaurantId, status: 'pending', 'category._id': { $in: ids } } },
+      {
+        $group: {
+          _id: '$account._id',
+          delta: { $sum: { $cond: [{ $eq: ['$direction', 'in'] }, '$netValue', { $multiply: ['$grossValue', -1] }] } },
+        },
+      },
+    ]).toArray()
+    const hidden = new Map(rows.map((r) => [String(r._id), decimalToNumber(r.delta)]))
+    return accounts.map((a: any) => {
+      const h = hidden.get(String(a._id))
+      return h ? { ...a, predictedBalance: Math.round((a.predictedBalance - h) * 100) / 100 } : a
+    })
   }
 }
