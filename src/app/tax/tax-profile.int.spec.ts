@@ -109,6 +109,19 @@ describe('TaxProfileQuery (Integration)', () => {
     expect(p).toMatchObject({ monthsOfHistory: 1, rbt12: 24_000, rbt12Proportional: true })
   })
 
+  it('MEI acima do teto (problemas 23/11, item 25): o perfil traz o aviso, com o ano inteiro somado', async () => {
+    // Começou no ano passado (teto cheio de R$ 81 mil) e faturou R$ 100 mil no ano: 123% do teto.
+    const at = (m: string) => new Date(startOfLocalMonth(m).getTime() + 12 * 3600_000)
+    const revenue = { _id: 'c', name: 'V', type: 'revenue' }
+    await movements().insertMany([
+      line('r-teto', { direction: 'in', status: 'settled', date: at(addMonths(month, -12)), grossValue: toDecimal128(5_000), netValue: toDecimal128(5_000), category: revenue }),
+      line('r-teto', { direction: 'in', status: 'settled', date: at(month), grossValue: toDecimal128(100_000), netValue: toDecimal128(100_000), category: revenue }),
+    ])
+    const p = await query.execute({ env: ENV, restaurantId: 'r-teto' }, { regime: TaxRegime.Mei, referenceMonth: month })
+    expect(p.meiCap).toMatchObject({ annualLimit: 81_000, yearToDateRevenue: 100_000 })
+    expect(p.insights).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'meiCapNear', yearToDateRevenue: 100_000 })]))
+  })
+
   it('MEI: DAS vigente pelo validFrom; sem DAS semeado, null', async () => {
     const settings = mongoConnection.getDatabase(APP_DB).collection(TAX_SETTINGS_COLLECTION)
 

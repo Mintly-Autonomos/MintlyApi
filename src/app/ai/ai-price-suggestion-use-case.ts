@@ -24,7 +24,7 @@ const margin = (dish: MenuItem): number | null => (dish.price > 0 ? round4((dish
 /** Texto de apoio quando a IA não entrega uma justificativa utilizável: a sugestão em si continua valendo. */
 function fallbackReason (name: string, days: number): string {
   const months = Math.floor(days / 30)
-  const tempo = months >= 1 ? `há ${months} ${months === 1 ? 'mês' : 'meses'}` : `há ${days} dias`
+  const tempo = months >= 1 ? `há ${months} ${months === 1 ? 'mês' : 'meses'}` : `há ${days} ${days === 1 ? 'dia' : 'dias'}`
   return `O preço de ${name} não muda ${tempo}. Um ajuste pequeno ajuda a acompanhar o aumento dos custos sem pesar muito no bolso de quem já pede o prato.`
 }
 
