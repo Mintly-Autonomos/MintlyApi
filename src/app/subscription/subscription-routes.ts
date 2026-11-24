@@ -1,5 +1,13 @@
 import { FastifyInstance } from 'fastify'
 import { SubscriptionController } from './subscription-controller'
+import { buildRequestContext } from '../../core/context/build-request-context'
+import { requireOwner } from '../auth/require-owner'
+
+/**
+ * Problemas 23/11 (item 16): pagar, cancelar a renovação e as simulações de pagamento são só do dono. O GET continua
+ * para todos: o portão de assinatura do app (funcionário inclusive) lê se o restaurante está com a assinatura em dia.
+ */
+const ownerOnly = { preHandler: async (request: any) => { await requireOwner(buildRequestContext(request)) } }
 
 /**
  * Rotas de /subscription: exigem login (verifyJwt) mas FICAM FORA do portão de assinatura, porque é por
@@ -12,16 +20,16 @@ export async function subscriptionRoutes (fastify: FastifyInstance) {
   fastify.get('/', async (request, reply) => controller.overview(request, reply))
 
   // POST /subscription/checkout — body: { months: 1|3|6|12, tier?: "basic"|"pro", autoRenew?: boolean } -> { paymentId, checkoutUrl, … }
-  fastify.post('/checkout', async (request, reply) => controller.checkout(request, reply))
+  fastify.post('/checkout', ownerOnly, async (request, reply) => controller.checkout(request, reply))
 
   // POST /subscription/cancel-renewal — cancela a renovação automática (sem corpo).
-  fastify.post('/cancel-renewal', async (request, reply) => controller.cancelRenewal(request, reply))
+  fastify.post('/cancel-renewal', ownerOnly, async (request, reply) => controller.cancelRenewal(request, reply))
 
   // POST /subscription/mock/charge-next — só com PAYMENT_PROVIDER=mock: simula a cobrança do próximo ciclo.
-  fastify.post('/mock/charge-next', async (request, reply) => controller.mockChargeNext(request, reply))
+  fastify.post('/mock/charge-next', ownerOnly, async (request, reply) => controller.mockChargeNext(request, reply))
 
   // POST /subscription/mock/decide — body: { paymentId, decision } — só com PAYMENT_PROVIDER=mock (senão 404).
-  fastify.post('/mock/decide', async (request, reply) => controller.mockDecide(request, reply))
+  fastify.post('/mock/decide', ownerOnly, async (request, reply) => controller.mockDecide(request, reply))
 }
 
 /** Rotas de administração: PÚBLICAS (sem JWT), protegidas pela chave ADMIN_API_KEY. Ver GiftSubscriptionUseCase. */

@@ -7,7 +7,7 @@ import { buildServer } from '../../infrastructure/server/build-server'
 import { setEmailService } from '../../infrastructure/email/email-service'
 import { FinancialAccountRepository } from '../financial-account/financial-account-repository'
 import { FinancialMovementRepository } from '../financial-movement/financial-movement-repository'
-import { toLocalDay } from '../reports/shared/period'
+import { addMonths, toLocalDay } from '../reports/shared/period'
 
 // E.3 do relatório Sweetie Bel: perfis Operação e Gerente, conferidos na API.
 
@@ -135,7 +135,7 @@ describe('perfis de funcionário: Operação e Gerente (E.3, integração)', () 
 
     const novoSalario = await call('POST', '/financial-movements', s.member, { direction: 'out', title: 'Salário Caio', grossValue: 1_950, date: s.today, accountId: s.accountId, categoryId: s.salarios, paymentMethod: 'pix' })
     expect(novoSalario.statusCode).toBe(403)
-    expect(novoSalario.json().message).toMatch(/pessoal/)
+    expect(novoSalario.json().message).toMatch(/mão de obra/)
 
     expect((await call('PATCH', `/financial-movements/${s.salario._id}`, s.member, { title: 'Mexido' })).statusCode).toBe(403)
     expect((await call('PATCH', `/financial-movements/${s.salario._id}/status`, s.member, { status: 'settled' })).statusCode).toBe(403)
@@ -148,11 +148,64 @@ describe('perfis de funcionário: Operação e Gerente (E.3, integração)', () 
       rows: [{ row: 1, direction: 'out', title: 'Salário importado', grossValue: 100, date: s.today, accountId: s.accountId, categoryId: s.salarios, paymentMethod: 'pix' }],
     })
     expect(imp.json().payload.created).toBe(0)
-    expect(imp.json().payload.results[0].error.message).toMatch(/pessoal/)
+    expect(imp.json().payload.results[0].error.message).toMatch(/mão de obra/)
 
     const doc = await s.db.collection('financial_movements').findOne({ _id: new ObjectId(s.salario._id) })
     expect(doc?.title).toBe('Salário Bia')
     expect(doc?.status).toBe('pending')
+  })
+
+  it('problemas 23/11: Operação só altera o próprio lançamento do mês atual', async () => {
+    const s = await setup('operations')
+    // Lançamento da dona (do mês): nem editar, nem marcar como pendente, nem cancelar.
+    const daDona = (await call('POST', '/financial-movements', s.owner, { direction: 'out', title: 'Caixas da dona', grossValue: 40, date: s.today, accountId: s.accountId, categoryId: s.embalagens, paymentMethod: 'pix' })).json().payload
+    const r1 = await call('PATCH', `/financial-movements/${daDona._id}`, s.member, { title: 'Mexido' })
+    expect(r1.statusCode).toBe(403)
+    expect(r1.json().message).toMatch(/lançamentos que você mesmo fez/)
+    expect((await call('PATCH', `/financial-movements/${daDona._id}/status`, s.member, { status: 'cancelled' })).statusCode).toBe(403)
+    // O próprio, no mês: edita e cancela.
+    const meu = (await call('POST', '/financial-movements', s.member, { direction: 'in', title: 'Venda', grossValue: 10, date: s.today, accountId: s.accountId, categoryId: s.vendas, paymentMethod: 'pix' })).json().payload
+    expect((await call('PATCH', `/financial-movements/${meu._id}`, s.member, { grossValue: 12 })).statusCode).toBe(200)
+    // Levar para o mês passado não pode.
+    const passado = `${addMonths(month(), -1)}-15`
+    const r2 = await call('PATCH', `/financial-movements/${meu._id}`, s.member, { date: passado })
+    expect(r2.statusCode).toBe(403)
+    expect(r2.json().message).toMatch(/mês atual/)
+    // Lançamento dela, mas de mês fechado: recusa.
+    await s.db.collection('financial_movements').updateOne({ _id: new ObjectId(meu._id) }, { $set: { date: new Date(`${passado}T15:00:00Z`) } })
+    expect((await call('PATCH', `/financial-movements/${meu._id}/status`, s.member, { status: 'cancelled' })).statusCode).toBe(403)
+    // O dono continua mexendo em tudo.
+    expect((await call('PATCH', `/financial-movements/${meu._id}`, s.owner, { title: 'Venda (dona)' })).statusCode).toBe(200)
+  })
+
+  it('problemas 23/11: Operação não lança em categoria não operacional nem transfere entre contas', async () => {
+    const s = await setup('operations')
+    const audit = { createdAt: new Date(), updatedAt: new Date() }
+    const aporte = String((await s.db.collection('financial_categories').insertOne({ restaurantId: (await s.db.collection('financial_accounts').findOne({}))?.restaurantId, name: 'Aporte do sócio', type: 'revenue', behavior: 'fixed', operationalNature: 'nonOperational', status: 'active', isSystem: false, audit })).insertedId)
+    const r = await call('POST', '/financial-movements', s.member, { direction: 'in', title: 'Aporte', grossValue: 500, date: s.today, accountId: s.accountId, categoryId: aporte, paymentMethod: 'pix' })
+    expect(r.statusCode).toBe(403)
+    expect(r.json().message).toMatch(/não operacionais/)
+    expect((await call('POST', '/financial-movements', s.owner, { direction: 'in', title: 'Aporte', grossValue: 500, date: s.today, accountId: s.accountId, categoryId: aporte, paymentMethod: 'pix' })).statusCode).toBe(201)
+
+    const outra = (await call('POST', '/financial-accounts', s.owner, { name: 'Banco', type: 'bank', status: 'active' })).json().payload._id
+    const t = await call('POST', '/financial-movements/transfers', s.member, { fromAccountId: s.accountId, toAccountId: outra, amount: 10, date: s.today })
+    expect(t.statusCode).toBe(403)
+    expect(t.json().message).toMatch(/não transfere/)
+  })
+
+  it('problemas 23/11: Contas não mostra a mão de obra pendente para Operação; assinatura só do dono', async () => {
+    const s = await setup('operations')
+    const conta = (lista: any[]) => lista.find((a: any) => a._id === s.accountId)
+    // O salário pendente de R$ 2.400 da dona entra no previsto dela, não no da Operação.
+    expect(conta((await call('GET', '/financial-accounts?size=100', s.owner)).json().payload).predictedBalance).toBe(-2_400)
+    expect(conta((await call('GET', '/financial-accounts?size=100', s.member)).json().payload).predictedBalance).toBe(0)
+
+    expect((await call('GET', '/subscription', s.member)).statusCode).toBe(200)
+    for (const url of ['/subscription/checkout', '/subscription/cancel-renewal']) {
+      const r = await call('POST', url, s.member, { months: 1 })
+      expect(r.statusCode, url).toBe(403)
+      expect(r.json().message).toMatch(/Só o dono/)
+    }
   })
 
   it('Gerente vê relatórios, muda cadastros e vê pessoal; só o que é do dono continua fechado', async () => {

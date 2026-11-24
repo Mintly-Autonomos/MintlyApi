@@ -1,6 +1,6 @@
 import type { FastifyRequest } from 'fastify'
 import type { ClientSession, Db } from 'mongodb'
-import { accessLevelOf, canManageSetup, canSeePersonnel, canViewReports, DreGroup, MEMBER_PROFILE_LABEL, MemberProfile, UserRole } from 'mintly-lib'
+import { accessLevelOf, canManageSetup, canSeePersonnel, canViewReports, DreGroup, MEMBER_PROFILE_LABEL, MemberProfile, OperationalNature, UserRole } from 'mintly-lib'
 import type { AccessLevel } from 'mintly-lib'
 import { buildRequestContext } from '../../core/context/build-request-context'
 import { RequestContext } from '../../core/context/request-context'
@@ -19,7 +19,13 @@ import { AuthRepository } from './auth-repository'
 
 export const REPORTS_DENIED = `Seu perfil (${MEMBER_PROFILE_LABEL[MemberProfile.Operations]}) não tem acesso aos relatórios.`
 export const SETUP_DENIED = `Seu perfil (${MEMBER_PROFILE_LABEL[MemberProfile.Operations]}) não muda cadastros: contas, categorias e cardápio ficam com o dono ou o gerente.`
-export const PERSONNEL_DENIED = `Seu perfil (${MEMBER_PROFILE_LABEL[MemberProfile.Operations]}) não vê nem lança movimentações de pessoal (salários, pró-labore e encargos).`
+export const PERSONNEL_DENIED = `Seu perfil (${MEMBER_PROFILE_LABEL[MemberProfile.Operations]}) não vê nem lança movimentações de mão de obra (salários, pró-labore, encargos e freelancers).`
+const OP = MEMBER_PROFILE_LABEL[MemberProfile.Operations]
+/** Decisões do Nathan (problemas de 23/11). */
+export const TRANSFER_DENIED = `Seu perfil (${OP}) não transfere entre contas: as contas ficam com o dono ou o gerente.`
+export const NON_OPERATING_DENIED = `Seu perfil (${OP}) não lança em categorias não operacionais (aporte, empréstimo, equipamento): elas ficam com o dono ou o gerente.`
+export const NOT_OWN_MOVEMENT_DENIED = `Seu perfil (${OP}) só altera os lançamentos que você mesmo fez.`
+export const CLOSED_MONTH_DENIED = `Seu perfil (${OP}) só altera lançamentos do mês atual.`
 
 const REPORT_PREFIXES = ['/reports', '/dashboard', '/ai']
 const SETUP_PREFIXES = ['/financial-accounts', '/financial-categories', '/menu-items']
@@ -35,6 +41,7 @@ export function accessDenial (level: AccessLevel, method: string, url: string): 
     const write = !READ_METHODS.has(method.toUpperCase())
     if (write && SETUP_PREFIXES.some((p) => startsWithSegment(path, p))) return SETUP_DENIED
     if (write && path === '/financial-movements/recompute-balances') return SETUP_DENIED
+    if (write && path === '/financial-movements/transfers') return TRANSFER_DENIED
   }
   return null
 }
@@ -84,6 +91,34 @@ export function isPersonnelCategory (category: Record<string, any> | null | unde
 /** Recusa (403) lançar ou mexer em movimentação de pessoal quando o perfil não pode. */
 export function assertPersonnelAllowed (ctx: RequestContext, ...categories: Array<Record<string, any> | null | undefined>): void {
   if (hidesPersonnel(ctx) && categories.some(isPersonnelCategory)) throw new ForbiddenError(PERSONNEL_DENIED)
+}
+
+/** Perfil que só lança: não usa categoria não operacional e só altera o próprio lançamento do mês atual (Operação). */
+export function isOperationsOnly (ctx: RequestContext): boolean {
+  return ctx.accessLevel != null && !canManageSetup(ctx.accessLevel)
+}
+
+/** Recusa (403) lançar em categoria "Não operacional" (aporte do sócio, empréstimo) para o perfil Operação. */
+export function assertCategoryAllowed (ctx: RequestContext, ...categories: Array<Record<string, any> | null | undefined>): void {
+  assertPersonnelAllowed(ctx, ...categories)
+  if (isOperationsOnly(ctx) && categories.some((c) => c?.operationalNature === OperationalNature.NonOperational && !c?.systemKey)) {
+    throw new ForbiddenError(NON_OPERATING_DENIED)
+  }
+}
+
+/**
+ * O perfil Operação só edita, muda o status ou cancela o lançamento que ele mesmo fez e que é do mês atual (pela
+ * data do lançamento, no fuso do restaurante). `currentMonth` e `monthOf` vêm de quem chama (período em São Paulo).
+ */
+export function assertOwnCurrentMovement (
+  ctx: RequestContext,
+  mov: Record<string, any>,
+  p: { currentMonth: string, monthOf: (d: Date) => string, newDate?: Date | null },
+): void {
+  if (!isOperationsOnly(ctx)) return
+  if (!ctx.userId || mov.audit?.createdBy !== ctx.userId) throw new ForbiddenError(NOT_OWN_MOVEMENT_DENIED)
+  const dates = [mov.date ? new Date(mov.date) : null, p.newDate ?? null].filter((d): d is Date => d != null)
+  if (dates.some((d) => p.monthOf(d) !== p.currentMonth)) throw new ForbiddenError(CLOSED_MONTH_DENIED)
 }
 
 /** Ids das categorias de pessoal do restaurante (para tirar da listagem). */

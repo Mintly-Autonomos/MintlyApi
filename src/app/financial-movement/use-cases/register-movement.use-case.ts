@@ -12,7 +12,7 @@ import { MovementItemRequest, StoredMovementItem, resolveMovementItems, resolveM
 import { toBusinessDate } from '../../reports/shared/period'
 import { assertNotSystemCategory } from '../system-categories'
 import { resolveSaleFields } from '../sale-fields'
-import { assertPersonnelAllowed } from '../../auth/access-control'
+import { assertCategoryAllowed } from '../../auth/access-control'
 
 export interface RegisterMovementInput {
   direction: MovementDirection
@@ -195,7 +195,7 @@ export class RegisterMovementUseCase {
           ? await categories.findOne({ _id: new ObjectId(input.categoryId), restaurantId: ctx.restaurantId }, { session })
           : null
         ensureCategory(category, input.categoryId)
-        assertPersonnelAllowed(ctx, category)
+        assertCategoryAllowed(ctx, category)
 
         // 3-5. Cálculo, documento e validação (sem banco), exceto o cardápio dos pratos.
         const { doc, date, impact, now } = await draftMovement(
@@ -277,7 +277,7 @@ export class RegisterMovementUseCase {
         ensureAccount(account, input.accountId)
         const category = lookup(categoriesById, input.categoryId)
         ensureCategory(category, input.categoryId)
-        assertPersonnelAllowed(ctx, category)
+        assertCategoryAllowed(ctx, category)
 
         const draft = await draftMovement(input, ctx, account, category, (items) => resolveMovementItemsFrom(items, dishesById))
 

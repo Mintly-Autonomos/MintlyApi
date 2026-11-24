@@ -5,11 +5,11 @@ import { RequestContext } from '../../../core/context/request-context'
 import { NotFoundError } from '../../../core/errors/core/not-found-error'
 import { ConflictError } from '../../../core/errors/auth/conflict-error'
 import { ValidationError } from '../../../core/errors/core/validation-error'
-import { startOfLocalDay, toLocalDay } from '../../reports/shared/period'
+import { startOfLocalDay, toLocalDay, toLocalMonth } from '../../reports/shared/period'
 import { Resource } from '../../../core/types/resource'
 import { applyStatusTransition } from '../movement-status'
 import { movementFromStorage } from '../financial-movement-repository'
-import { assertPersonnelAllowed, hidesPersonnel } from '../../auth/access-control'
+import { assertCategoryAllowed, assertOwnCurrentMovement, hidesPersonnel, isOperationsOnly } from '../../auth/access-control'
 
 const VALID = new Set<string>([MovementStatus.Pending, MovementStatus.Settled, MovementStatus.Cancelled])
 
@@ -83,10 +83,12 @@ export class ChangeMovementStatusUseCase {
         )
         if (!mov) throw new NotFoundError(Resource.FinancialMovement, movementId)
         // E.3: Operação não mexe em movimentação de pessoal (nem marcar o salário como pago).
-        if (hidesPersonnel(ctx) && ObjectId.isValid(String(mov.category?._id))) {
+        if ((hidesPersonnel(ctx) || isOperationsOnly(ctx)) && ObjectId.isValid(String(mov.category?._id))) {
           const category = await db.collection('financial_categories').findOne({ _id: new ObjectId(String(mov.category._id)), restaurantId: ctx.restaurantId }, { session })
-          assertPersonnelAllowed(ctx, category)
+          assertCategoryAllowed(ctx, category)
         }
+        // Problemas 23/11: Operação só marca pendente/pago ou cancela o próprio lançamento do mês atual.
+        assertOwnCurrentMovement(ctx, mov, { currentMonth: toLocalMonth(new Date()), monthOf: toLocalMonth })
 
         // P1 — reafirmar o status ATUAL também é ação humana: é assim que o dono
         // TRAVA o movimento (ex.: sabe que o repasse do iFood não vai cair na data

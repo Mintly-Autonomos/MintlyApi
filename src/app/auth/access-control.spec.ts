@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MemberProfile } from 'mintly-lib'
-import { accessDenial, assertPersonnelAllowed, hidesPersonnel, isPersonnelCategory, PERSONNEL_DENIED, REPORTS_DENIED, SETUP_DENIED } from './access-control'
+import { accessDenial, assertCategoryAllowed, assertOwnCurrentMovement, assertPersonnelAllowed, CLOSED_MONTH_DENIED, hidesPersonnel, isPersonnelCategory, NON_OPERATING_DENIED, NOT_OWN_MOVEMENT_DENIED, PERSONNEL_DENIED, REPORTS_DENIED, SETUP_DENIED, TRANSFER_DENIED } from './access-control'
 
 const OP = MemberProfile.Operations
 
@@ -22,10 +22,16 @@ describe('accessDenial (E.3)', () => {
     }
   })
 
-  it('Operação: movimentações, transferência, conta e restaurante passam; prefixo parecido não confunde', () => {
-    for (const [m, u] of [['POST', '/financial-movements'], ['PATCH', '/financial-movements/1'], ['POST', '/financial-movements/transfers'], ['GET', '/restaurants/me'], ['GET', '/reportsx']]) {
+  it('Operação: movimentações, conta e restaurante passam; prefixo parecido não confunde', () => {
+    for (const [m, u] of [['POST', '/financial-movements'], ['PATCH', '/financial-movements/1'], ['GET', '/restaurants/me'], ['GET', '/reportsx']]) {
       expect(accessDenial(OP, m, u)).toBeNull()
     }
+  })
+
+  it('Operação não transfere entre contas (problemas 23/11); dono e Gerente transferem', () => {
+    expect(accessDenial(OP, 'POST', '/financial-movements/transfers')).toBe(TRANSFER_DENIED)
+    expect(accessDenial(MemberProfile.Manager, 'POST', '/financial-movements/transfers')).toBeNull()
+    expect(accessDenial('owner', 'POST', '/financial-movements/transfers')).toBeNull()
   })
 
   it('dono e Gerente passam em tudo', () => {
@@ -33,6 +39,30 @@ describe('accessDenial (E.3)', () => {
       expect(accessDenial(level, 'GET', '/reports/result')).toBeNull()
       expect(accessDenial(level, 'POST', '/financial-accounts')).toBeNull()
     }
+  })
+})
+
+describe('Operação: categoria não operacional e só o próprio lançamento do mês (problemas 23/11)', () => {
+  const op = { env: 'x', accessLevel: OP, userId: 'u-op' } as const
+  const ger = { env: 'x', accessLevel: MemberProfile.Manager, userId: 'u-ger' } as const
+  const monthOf = (d: Date) => d.toISOString().slice(0, 7)
+
+  it('categoria não operacional é recusada só para Operação (a do sistema não conta)', () => {
+    expect(() => assertCategoryAllowed(op, { operationalNature: 'nonOperational' })).toThrow(NON_OPERATING_DENIED)
+    expect(() => assertCategoryAllowed(op, { operationalNature: 'operational' })).not.toThrow()
+    expect(() => assertCategoryAllowed(op, { operationalNature: 'nonOperational', systemKey: 'transferIn' })).not.toThrow()
+    expect(() => assertCategoryAllowed(ger, { operationalNature: 'nonOperational' })).not.toThrow()
+    expect(() => assertCategoryAllowed(op, { dreGroup: 'labor' })).toThrow(PERSONNEL_DENIED)
+  })
+
+  it('Operação só altera o que ela lançou, no mês atual (e não leva para outro mês)', () => {
+    const p = { currentMonth: '2026-11', monthOf }
+    const meu = { audit: { createdBy: 'u-op' }, date: new Date('2026-11-10T15:00:00Z') }
+    expect(() => assertOwnCurrentMovement(op, meu, p)).not.toThrow()
+    expect(() => assertOwnCurrentMovement(op, { ...meu, audit: { createdBy: 'dona' } }, p)).toThrow(NOT_OWN_MOVEMENT_DENIED)
+    expect(() => assertOwnCurrentMovement(op, { ...meu, date: new Date('2026-10-30T15:00:00Z') }, p)).toThrow(CLOSED_MONTH_DENIED)
+    expect(() => assertOwnCurrentMovement(op, meu, { ...p, newDate: new Date('2026-10-30T15:00:00Z') })).toThrow(CLOSED_MONTH_DENIED)
+    expect(() => assertOwnCurrentMovement(ger, { audit: { createdBy: 'dona' }, date: new Date('2025-01-01') }, p)).not.toThrow()
   })
 })
 
